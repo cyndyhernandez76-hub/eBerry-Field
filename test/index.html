@@ -35,7 +35,7 @@
 </script>
 <script>
 // V20_21: check versión + ackedVersion para romper loop infinito cuando version.txt≠APP_VERSION
-window.APP_VERSION = 'V20_187';
+window.APP_VERSION = 'V20_188';
 (function(){
   // V20_77: AUTO-LIMPIEZA de _ackedVersion envenenado.
   // Bug detectado: surqueros tocaban "Actualizar ahora" pero el SW interceptaba el reload con HTML viejo.
@@ -10827,9 +10827,13 @@ function buildPDFWindow(vals, wks, ep, hp, cp, ausArr, grpActsArr){
         }
         trTotal+='<td style="text-align:center;border:1px solid #000;border-top:3px solid #1a2b8c;color:#1a2b8c;font-weight:700">'+smartNum(_subTot)+' h</td>';
       }
-    } else if(col4.payType==='Daywork' && _NS>1){
+    } else if(col4.payType==='Daywork'){
       // V20_55: TOTAL Daywork — pago FIJO del día. Sumar qty UNA vez por worker, 1 celda colspan=N.
       // V20_152: matcher unificado con payType.
+      // V20_188: quitada condición `_NS>1`. V20_183 fuerza _NS=1 para Daywork (bypass header),
+      // así que la rama anterior nunca se ejecutaba y caía al `else` final que dejaba TOTAL vacío.
+      // Reportado por Serafín 2026-06-01: PDF Gadsden Tomato V20_187 mostraba Bus Driver Daywork TOTAL=0
+      // con celdas vacías aunque el busero tenía qty=74. Ahora la rama Daywork procesa siempre.
       var _totQUni=0;
       var _anyQtyUni=false;
       for(var wtsD=0;wtsD<wks.length;wtsD++){
