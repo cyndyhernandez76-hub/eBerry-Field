@@ -35,7 +35,7 @@
 </script>
 <script>
 // V20_21: check versión + ackedVersion para romper loop infinito cuando version.txt≠APP_VERSION
-window.APP_VERSION = 'V20_184';
+window.APP_VERSION = 'V20_186';
 (function(){
   // V20_77: AUTO-LIMPIEZA de _ackedVersion envenenado.
   // Bug detectado: surqueros tocaban "Actualizar ahora" pero el SW interceptaba el reload con HTML viejo.
@@ -1020,6 +1020,7 @@ html.login-locked{overflow:hidden!important;height:100%!important}
       <div id="assignFincaSlot"></div>
     </div>
 
+    <!-- V20_186: turno principal (T1) + contenedor de turnos extras + botón "+ Agregar turno" -->
     <div style="display:flex;gap:10px;margin-bottom:12px">
       <div style="flex:1">
         <label style="display:block;font-size:12px;font-weight:600;color:#666;margin-bottom:4px">Hora inicio</label>
@@ -1030,6 +1031,8 @@ html.login-locked{overflow:hidden!important;height:100%!important}
         <input id="assignFin" type="time" oninput="renderAssignWlist()" onchange="renderAssignWlist()" style="width:100%;padding:10px;border:1px solid #ddd;border-radius:6px;font-size:14px">
       </div>
     </div>
+    <div id="assignExtraShifts"></div>
+    <button type="button" onclick="addAssignShift()" class="shift-add" style="margin-bottom:12px">+ Agregar turno</button>
 
     <div id="assignVarInputs" style="margin-bottom:12px"></div>
 
@@ -9321,12 +9324,60 @@ function _saveEditedActivityGroup(){
 // ============================================================================
 var _assignSelectedIds = [];
 var _assignCurrentActIdx = -1;
+// V20_186: turnos adicionales del modal "Asignar actividad a varios" (turno 1 está en assignIni/assignFin)
+// Permite asignar al busero (u otra actividad) varios turnos en una sola operación.
+var _assignExtraShifts = [];
+
+// V20_186: agrega un nuevo par de turno al modal
+function addAssignShift(){
+  _assignExtraShifts.push({ini:'', fin:''});
+  renderAssignExtraShifts();
+}
+
+// V20_186: quita un turno extra (idx en _assignExtraShifts)
+function removeAssignShift(idx){
+  if(idx<0 || idx>=_assignExtraShifts.length) return;
+  _assignExtraShifts.splice(idx, 1);
+  renderAssignExtraShifts();
+}
+
+// V20_186: handler de cambio en turnos extras
+function _onAssignExtraShiftChange(idx, field, value){
+  if(!_assignExtraShifts[idx]) return;
+  _assignExtraShifts[idx][field] = value;
+}
+
+// V20_186: renderiza la lista de turnos extras
+function renderAssignExtraShifts(){
+  var wrap = gEl('assignExtraShifts'); if(!wrap) return;
+  var html = '';
+  for(var i=0; i<_assignExtraShifts.length; i++){
+    var s = _assignExtraShifts[i];
+    var ini = s.ini ? esc(s.ini) : '';
+    var fin = s.fin ? esc(s.fin) : '';
+    html += '<div style="display:flex;gap:10px;margin-bottom:10px;align-items:end;background:#f0f7f4;padding:8px;border-radius:6px;border-left:3px solid #1a7a4a">'
+      +   '<div style="flex:1">'
+      +     '<label style="display:block;font-size:11px;font-weight:600;color:#666;margin-bottom:4px">Turno '+(i+2)+' Inicio</label>'
+      +     '<input type="time" value="'+ini+'" oninput="_onAssignExtraShiftChange('+i+',\'ini\',this.value)" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:6px;font-size:14px">'
+      +   '</div>'
+      +   '<div style="flex:1">'
+      +     '<label style="display:block;font-size:11px;font-weight:600;color:#666;margin-bottom:4px">Turno '+(i+2)+' Fin</label>'
+      +     '<input type="time" value="'+fin+'" oninput="_onAssignExtraShiftChange('+i+',\'fin\',this.value)" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:6px;font-size:14px">'
+      +   '</div>'
+      +   '<button type="button" onclick="removeAssignShift('+i+')" title="Quitar este turno" style="background:none;border:1.5px solid #c0392b;color:#c0392b;width:36px;height:38px;border-radius:6px;font-size:14px;font-weight:700;cursor:pointer;padding:0">✕</button>'
+      + '</div>';
+  }
+  wrap.innerHTML = html;
+}
 
 function openAssignManyModal(){
   if(_readOnlyMode){ toast && toast('🔒 Modo lectura — no se pueden agregar actividades'); return; }
   if(!workers || !workers.length){ toast && toast('⚠️ Primero agrega trabajadores con Check-in cuadrilla'); return; }
   _assignSelectedIds = [];
   _assignCurrentActIdx = -1;
+  // V20_186: reset turnos extras al abrir
+  _assignExtraShifts = [];
+  var extraWrap = gEl('assignExtraShifts'); if(extraWrap) extraWrap.innerHTML = '';
   // Llenar dropdown actividades del MASTER (ACTS ya filtrado por rancho activo)
   var sel = gEl('assignActSel');
   if(sel){
@@ -9359,6 +9410,9 @@ function closeAssignManyModal(){
   var ov = gEl('assignManyOv'); if(ov) ov.classList.remove('on');
   _assignSelectedIds = [];
   _assignCurrentActIdx = -1;
+  // V20_186: reset turnos extras al cerrar
+  _assignExtraShifts = [];
+  var extraWrap = gEl('assignExtraShifts'); if(extraWrap) extraWrap.innerHTML = '';
   // V20_141: limpiar modo edición y restaurar título/botón al estado "Asignar"
   _editingActivityGroup = null;
   var titleEl = gEl('assignModalTitle');
@@ -9514,11 +9568,20 @@ function confirmAssignMany(){
   var ini = gVal('assignIni') || '';
   var fin = gVal('assignFin') || '';
   if(!ini || !fin){ toast && toast('⚠️ Captura horario inicio y fin'); return; }
+  // V20_186: construir lista de shifts incluyendo turnos extras del modal.
+  // El turno 1 está en assignIni/assignFin; los extras vienen de _assignExtraShifts.
+  var _shifts = [{ini:ini, fin:fin}];
+  for(var sx=0; sx<_assignExtraShifts.length; sx++){
+    var es = _assignExtraShifts[sx];
+    if(!es.ini || !es.fin){ toast && toast('⚠️ Captura inicio y fin de TODOS los turnos extras'); return; }
+    _shifts.push({ini:es.ini, fin:es.fin});
+  }
   var fincaSel = gEl('assignFincaSel'); var fincaInp = gEl('assignFincaInput');
   var finca = fincaSel ? (fincaSel.value||'') : (fincaInp ? (fincaInp.value||'') : '');
   if(!finca){ toast && toast('⚠️ Selecciona finca'); return; }
 
   // VALIDACIÓN TRANSLAPE — usar checkOverlapsInWorker existente (regresa {ok:true/false,...})
+  // V20_186: usar TODOS los shifts (incluye extras) al validar
   var conflicts = [];
   for(var i=0; i<_assignSelectedIds.length; i++){
     var w = getW(_assignSelectedIds[i]);
@@ -9527,7 +9590,7 @@ function confirmAssignMany(){
       ai: _assignCurrentActIdx, esName: act.es,
       tipo: _derivarTipoActividad(act), // V20_133_a: data-driven (col G + col J)
       p: act.p, payType: act.payType||'', ini:ini, fin:fin, finca:finca,
-      qty: 0, showTime:true, shifts:[{ini:ini, fin:fin}], inputs:{}
+      qty: 0, showTime:true, shifts:_shifts.slice(), inputs:{}
     };
     w.acts = w.acts || [];
     w.acts.push(tempAct);
@@ -9574,7 +9637,8 @@ function confirmAssignMany(){
       ini: ini, fin: fin, finca: finca,
       qty: 0,  // V20_173: Daywork ya NO se preasigna con 1 — surquero teclea explícito como piezas/cajas.
       showTime: true,
-      shifts: [{ini:ini, fin:fin}],
+      // V20_186: shifts ahora incluye turnos extras del modal (deep copy por worker)
+      shifts: JSON.parse(JSON.stringify(_shifts)),
       inputs: JSON.parse(JSON.stringify(commonVars))
     };
     var newAi = w.acts.length;
@@ -14778,6 +14842,12 @@ function advanceToNextUnregistered(){
 
 var invoiceManualRows = []; // [{product, equipment, units, field, blockNum, misc, total}]
 var invRowId = 0;
+// V20_185: mapa de filas auto ocultadas TEMPORALMENTE de la pestaña Invoice.
+// Reset en refreshInvoiceAuto (cuando entras a la pestaña o presionas "Actualizar").
+// NO persiste — al cambiar de pestaña / recargar, las filas vuelven a aparecer.
+// El PDF Payroll no se afecta (sigue calculando desde workers/acts directamente).
+// Reportado por Serafín 2026-06-01: a veces hay Daywork que no debe plasmarse en invoice.
+var _invoiceAutoHidden = {};
 
 // ── Refresh auto-populated data from current day ──
 function refreshInvoiceAuto(){
@@ -14791,23 +14861,47 @@ function refreshInvoiceAuto(){
 
   gEl('invWeek').textContent = getWeekNumber(gVal('fecha'));
 
-  // Build auto rows from worker activities + group activities
+  // V20_185: reset filas ocultadas al refrescar (botón "Actualizar" actúa como "Restaurar todo")
+  _invoiceAutoHidden = {};
+  _renderInvAutoTable();
+}
+
+// V20_185: render separado para poder re-renderizar tras ocultar fila sin resetear _invoiceAutoHidden
+function _renderInvAutoTable(){
   var container = gEl('invAutoRows');
+  if(!container) return;
   container.innerHTML = '';
   var autoData = buildInvoiceAutoData();
-  if(!autoData.length){
-    container.innerHTML = '<div style="text-align:center;padding:20px;color:var(--gr);font-size:13px">Sin actividades registradas aún</div>';
+  // Filtrar filas marcadas como ocultas
+  var visible = [];
+  for(var vi=0; vi<autoData.length; vi++){
+    var rv = autoData[vi];
+    if(rv._key && _invoiceAutoHidden[rv._key]) continue;
+    visible.push(rv);
+  }
+  if(!visible.length){
+    var msg = autoData.length ? 'Todas las filas auto fueron ocultadas. Toca "🔄 Actualizar" para restaurarlas.' : 'Sin actividades registradas aún';
+    container.innerHTML = '<div style="text-align:center;padding:20px;color:var(--gr);font-size:13px">' + msg + '</div>';
     return;
   }
-  for(var i=0; i<autoData.length; i++){
-    var r = autoData[i];
-    container.innerHTML += '<div class="inv-auto-row">'
+  for(var i=0; i<visible.length; i++){
+    var r = visible[i];
+    var keyAttr = r._key ? r._key.replace(/'/g,"\\'") : '';
+    container.innerHTML += '<div class="inv-auto-row" style="position:relative">'
       + '<div class="inv-a-prod">' + esc(r.product) + ' · ' + esc(r.equipment) + '</div>'
       + (r.units ? '<div style="font-size:12px;color:var(--gr)">' + esc(r.units) + '</div>' : '')
       + '<div class="inv-a-val">' + esc(r.field) + '</div>'
       + '<div style="font-size:11px;color:var(--gr)">' + esc(r.blockNum) + '</div>'
+      + (keyAttr ? '<button title="Quitar de invoice (no afecta nómina)" onclick="hideInvAutoRow(\''+keyAttr+'\')" style="position:absolute;top:6px;right:6px;background:none;border:1.5px solid #c0392b;color:#c0392b;width:26px;height:26px;border-radius:50%;font-size:14px;font-weight:700;cursor:pointer;line-height:1;padding:0">✕</button>' : '')
       + '</div>';
   }
+}
+
+// V20_185: oculta una fila auto del invoice (solo visual, no afecta payroll)
+function hideInvAutoRow(key){
+  if(!key) return;
+  _invoiceAutoHidden[key] = true;
+  _renderInvAutoTable();
 }
 
 // ── Extract invoice data from current activities ──
@@ -14901,7 +14995,8 @@ function buildInvoiceAutoData(){
       equipment: equipLbl,
       units: m.personas + ' Personas',
       field: fieldVal,
-      blockNum: blockLabel
+      blockNum: blockLabel,
+      _key: 'i|' + k  // V20_185: key único para ocultar/restaurar
     });
   }
 
@@ -14953,7 +15048,8 @@ function buildInvoiceAutoData(){
         equipment: gact.es,
         units: ga.participantes.length + ' Personas',
         field: acresLabel,
-        blockNum: blockLabelInv
+        blockNum: blockLabelInv,
+        _key: 'g|' + gi + '|p'  // V20_185
       });
     } else if(ct === 'cajas'){
       // Upsilon2: el campo se llama totalC en vars (no totalCajas)
@@ -14963,7 +15059,8 @@ function buildInvoiceAutoData(){
         equipment: gact.es,
         units: ga.participantes.length + ' Personas',
         field: totalCajas.toFixed(0),
-        blockNum: 'Cajas'
+        blockNum: 'Cajas',
+        _key: 'g|' + gi + '|c'  // V20_185
       });
     } else {
       var qty = parseFloat(v.qty) || 0;
@@ -14977,7 +15074,8 @@ function buildInvoiceAutoData(){
         equipment: gEquip,
         units: ga.participantes.length + ' Personas',
         field: qty.toFixed(2),
-        blockNum: ct === 'hora' ? 'Horas' : 'Piezas'
+        blockNum: ct === 'hora' ? 'Horas' : 'Piezas',
+        _key: 'g|' + gi + '|' + (ct==='hora'?'h':'o')  // V20_185
       });
     }
   }
@@ -15047,11 +15145,14 @@ function generateInvoicePDF(){
   var weekStr = gEl('invWeek') ? gEl('invWeek').textContent : '—';
 
   // Combine auto + manual rows
+  // V20_185: respetar filas auto ocultadas por el usuario (botón ✕ en la pestaña Invoice).
+  // El PDF del invoice NO incluirá las filas que el surquero quitó visualmente.
   var autoRows = buildInvoiceAutoData();
   var allRows = [];
 
   for(var i=0; i<autoRows.length; i++){
     var ar = autoRows[i];
+    if(ar._key && _invoiceAutoHidden && _invoiceAutoHidden[ar._key]) continue;
     allRows.push({product:ar.product, equipment:ar.equipment, units:ar.units, field:ar.field, blockNum:ar.blockNum, misc:'', total:''});
   }
   for(var j=0; j<invoiceManualRows.length; j++){
