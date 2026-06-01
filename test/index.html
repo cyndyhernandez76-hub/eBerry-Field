@@ -35,7 +35,35 @@
 </script>
 <script>
 // V20_21: check versión + ackedVersion para romper loop infinito cuando version.txt≠APP_VERSION
-window.APP_VERSION = 'V20_188';
+window.APP_VERSION = 'V20_189';
+// V20_189: buffer de logs diagnóstico que se muestra como modal al generar PDF
+window._diagLogs = [];
+window._diagLog = function(tag, data){
+  try {
+    window._diagLogs.push('['+tag+'] '+JSON.stringify(data));
+    console.log('['+tag+']', data);
+  } catch(e){
+    window._diagLogs.push('['+tag+'] (no serializable)');
+  }
+};
+window._showDiagLogs = function(){
+  if(!window._diagLogs.length) return;
+  var html = '<div id="diagOv" style="position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:99999;padding:16px;overflow-y:auto;color:#fff;font-family:monospace;font-size:11px;line-height:1.4">'
+    + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;position:sticky;top:0;background:rgba(0,0,0,.95);padding:8px;border-radius:6px">'
+    + '<b style="color:#5eba45">🔍 Diagnóstico V20_189 (' + window._diagLogs.length + ' logs)</b>'
+    + '<button onclick="navigator.clipboard && navigator.clipboard.writeText(window._diagLogs.join(String.fromCharCode(10)));alert(\'Copiado al portapapeles\')" style="background:#5eba45;color:#fff;border:none;padding:8px 12px;border-radius:6px;font-weight:700">📋 Copiar</button>'
+    + '<button onclick="document.getElementById(\'diagOv\').remove();window._diagLogs=[]" style="background:#c0392b;color:#fff;border:none;padding:8px 12px;border-radius:6px;font-weight:700">✕ Cerrar</button>'
+    + '</div>';
+  for(var i=0; i<window._diagLogs.length; i++){
+    var l = window._diagLogs[i];
+    var color = l.indexOf('Daywork')>=0 ? '#5eba45' : '#aaa';
+    html += '<div style="border-bottom:1px solid #333;padding:4px 0;word-break:break-all;color:'+color+'">' + (i+1) + '. ' + l.replace(/</g,'&lt;') + '</div>';
+  }
+  html += '</div>';
+  var div = document.createElement('div');
+  div.innerHTML = html;
+  document.body.appendChild(div.firstChild);
+};
 (function(){
   // V20_77: AUTO-LIMPIEZA de _ackedVersion envenenado.
   // Bug detectado: surqueros tocaban "Actualizar ahora" pero el SW interceptaba el reload con HTML viejo.
@@ -10276,7 +10304,10 @@ function genPDFFromKey(key){
 function genPDF(){
   // Theta: usa collectSaveFields para recoger todos los campos automáticamente
   var vals=collectSaveFields();
+  // V20_189: reset buffer y mostrar overlay con logs al terminar
+  window._diagLogs = [];
   buildPDFWindow(vals, workers, estP, hilP, cajasP, ausencias, grpActs);
+  setTimeout(function(){ try { window._showDiagLogs(); } catch(e){} }, 800);
 }
 
 function buildPDFWindow(vals, wks, ep, hp, cp, ausArr, grpActsArr){
@@ -10374,11 +10405,17 @@ function buildPDFWindow(vals, wks, ep, hp, cp, ausArr, grpActsArr){
       colKey = actName + '|' + actTipo + '|' + _fincaKey + '|' + (actPayT||'');
       var found=false;
       for(var k=0;k<actCols.length;k++){ if(actCols[k].colKey===colKey){found=true;break;} }
-      if(!found) actCols.push({
-        ai:ai, colKey:colKey, wid:null,
-        label:actLabel, tipo:actTipo, payType:actPayT, hr:actHr,
-        esName:actName, finca:_fincaKey
-      });
+      if(!found) {
+        actCols.push({
+          ai:ai, colKey:colKey, wid:null,
+          label:actLabel, tipo:actTipo, payType:actPayT, hr:actHr,
+          esName:actName, finca:_fincaKey
+        });
+        // V20_189 DIAG: log creación de columnas Daywork específicamente
+        if(actPayT === 'Daywork'){
+          try { window._diagLog('actCol push Daywork', {worker:wks[i].name, role:wks[i].role, actName, actTipo, actPayT, finca:_fincaKey, ai, _payType:a_._payType, _actEs:a_._actEs, qty:a_.qty}); } catch(_e){}
+        }
+      }
     }
   }
   // V20_152: helper interno — identidad estable de un worker-act (prefiere metadata preservada).
@@ -10829,20 +10866,23 @@ function buildPDFWindow(vals, wks, ep, hp, cp, ausArr, grpActsArr){
       }
     } else if(col4.payType==='Daywork'){
       // V20_55: TOTAL Daywork — pago FIJO del día. Sumar qty UNA vez por worker, 1 celda colspan=N.
-      // V20_152: matcher unificado con payType.
-      // V20_188: quitada condición `_NS>1`. V20_183 fuerza _NS=1 para Daywork (bypass header),
-      // así que la rama anterior nunca se ejecutaba y caía al `else` final que dejaba TOTAL vacío.
-      // Reportado por Serafín 2026-06-01: PDF Gadsden Tomato V20_187 mostraba Bus Driver Daywork TOTAL=0
-      // con celdas vacías aunque el busero tenía qty=74. Ahora la rama Daywork procesa siempre.
+      // V20_188: quitada condición `_NS>1`.
       var _totQUni=0;
       var _anyQtyUni=false;
+      // V20_189 DIAG: log TOTAL Daywork
+      try { window._diagLog('TOTAL Daywork col', {colKey:col4.colKey, payType:col4.payType, esName:col4.esName, finca:col4.finca, _NS:_NS}); } catch(_e){}
       for(var wtsD=0;wtsD<wks.length;wtsD++){
         for(var kaD=0;kaD<wks[wtsD].acts.length;kaD++){
           var _wActD=wks[wtsD].acts[kaD];
-          if(!_colMatchesWAct(col4, _wActD)) continue;
+          var _matches = _colMatchesWAct(col4, _wActD);
+          if(_wActD._payType === 'Daywork' || (_wActD.esName && _wActD.esName.indexOf('Chofer')>=0)){
+            try { window._diagLog('TOTAL Daywork attempt', {worker:wks[wtsD].name, role:wks[wtsD].role, match:_matches, act:{esName:_wActD.esName,_payType:_wActD._payType,tipo:_wActD.tipo,finca:_wActD.finca,qty:_wActD.qty,qtyParsed:parseFloat(_wActD.qty)}}); } catch(_e){}
+          }
+          if(!_matches) continue;
           if(parseFloat(_wActD.qty)){ _totQUni+=parseFloat(_wActD.qty); _anyQtyUni=true; }
         }
       }
+      try { window._diagLog('TOTAL Daywork result', {colKey:col4.colKey, _totQUni, _anyQtyUni}); } catch(_e){}
       var _totLblD=_anyQtyUni?smartNum(_totQUni):'';
       trTotal+='<td colspan="'+_NS+'" style="text-align:center;border:1px solid #000;border-top:3px solid #1a2b8c;color:#1a2b8c;font-weight:700">'+_totLblD+'</td>';
     } else if(!col4.hr && _NS>1){
@@ -10996,6 +11036,10 @@ function buildPDFWindow(vals, wks, ep, hp, cp, ausArr, grpActsArr){
       // Bug previo: V20_26 distribuía qty en cada sub-shift "start" → si shifts NO contiguos (Bus Driver T1+T2),
       // _computeFrags emitía qty 2 veces ($135.28+$135.28=$270.56). Daywork debe mostrarse 1 sola vez.
       // Pieces/Caja/$ siguen con V20_26 abajo (qty distribuida por sub-shift como antes — funcionando bien).
+      // V20_189 DIAG: log para CADA worker en CADA columna Daywork
+      if(col2.payType === 'Daywork'){
+        try { window._diagLog('worker row Daywork', {worker:w.name, role:w.role, col_payType:col2.payType, col_esName:col2.esName, col_finca:col2.finca, found2:found2?{esName:found2.esName,_payType:found2._payType,payType:found2.payType,tipo:found2.tipo,finca:found2.finca,qty:found2.qty,qtyParsed:parseFloat(found2.qty)}:null}); } catch(_e){}
+      }
       if(found2 && col2.payType==='Daywork' && parseFloat(found2.qty)){
         if(_NW<=1){
           td+='<td style="text-align:center">'+smartNum(found2.qty)+'</td>';
