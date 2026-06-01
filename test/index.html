@@ -35,7 +35,7 @@
 </script>
 <script>
 // V20_21: check versión + ackedVersion para romper loop infinito cuando version.txt≠APP_VERSION
-window.APP_VERSION = 'V20_182';
+window.APP_VERSION = 'V20_183';
 (function(){
   // V20_77: AUTO-LIMPIEZA de _ackedVersion envenenado.
   // Bug detectado: surqueros tocaban "Actualizar ahora" pero el SW interceptaba el reload con HTML viejo.
@@ -10322,9 +10322,21 @@ function buildPDFWindow(vals, wks, ep, hp, cp, ausArr, grpActsArr){
   // Si workers tienen horarios distintos en la misma actividad+finca, la columna se
   // subdivide internamente (colspan) en sub-columnas con cada horario en el header.
   // V20_152: usar _colMatchesWAct para incluir payType en el match.
+  // V20_183: BYPASS para Daywork — pago FIJO del día, no subdividir header T1/T2 aunque haya multi-shift.
+  // La fila ya tenía colspan=N correcto desde V20_55, pero el header se subdividía visualmente
+  // generando confusión (PDF Tacc 2026-05-30 V20_91: "Gen Farm Daywork T1: 11:30-12 / T2: 12-1pm").
+  // Para Daywork: forzar 1 shift sintético → header rowspan=2 sin sub-cols, totales y filas con _NW=1.
+  // Entrada/Salida muestran rango global del día (min/max) como en PDF Tacc 2026-05-27 (que sí salía bien).
+  // Reportado por Serafín 2026-06-01.
   for(var ci2_=0;ci2_<actCols.length;ci2_++){
     var _col=actCols[ci2_];
     var _uShifts=[];
+    // V20_183: Daywork → 1 shift sintético, no acumular reales.
+    if(_col && _col.payType === 'Daywork'){
+      _uShifts.push({ini:'',fin:'',key:'|'});
+      _col.shifts=_uShifts;
+      continue;
+    }
     for(var wi3_=0;wi3_<wks.length;wi3_++){
       for(var ak3_=0;ak3_<wks[wi3_].acts.length;ak3_++){
         var _act=wks[wi3_].acts[ak3_];
