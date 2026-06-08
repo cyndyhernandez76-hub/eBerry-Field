@@ -24,7 +24,7 @@
 </script>
 <script>
 // V20_21: check versión + ackedVersion para romper loop infinito cuando version.txt≠APP_VERSION
-window.APP_VERSION = 'V20_92';
+window.APP_VERSION = 'V20_93';
 (function(){
   // V20_77: AUTO-LIMPIEZA de _ackedVersion envenenado.
   // Bug detectado: surqueros tocaban "Actualizar ahora" pero el SW interceptaba el reload con HTML viejo.
@@ -1118,6 +1118,57 @@ body.readOnly [onclick*="openNewDay"]{display:none !important}
     <div class="mbs">
       <button class="mok" style="background:var(--r)" id="delConfirmBtn" onclick="confirmDel()">✕ Sí, eliminar</button>
       <button class="mca" onclick="cancelDel()">No, cancelar</button>
+    </div>
+  </div>
+</div>
+
+<!-- V20_93: RECHAZO DE HORAS MODAL -->
+<div class="ov" id="recOv">
+  <div class="md" style="max-width:520px">
+    <div class="mt" id="recTitle">❌ Registrar rechazo de horas</div>
+    <div class="ms" id="recSubtitle">—</div>
+    <div class="mbox" style="background:#FFF7D6;border:1.5px solid #C8A415;padding:10px 12px">
+      <div style="display:flex;gap:12px;flex-wrap:wrap;font-size:12px;color:#5A4500">
+        <div><b>Fecha:</b> <span id="recFecha">—</span></div>
+        <div><b>Rancho:</b> <span id="recRancho">—</span></div>
+        <div><b>Finca:</b> <span id="recFinca">—</span></div>
+      </div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-top:10px">
+      <div>
+        <label style="display:block;font-size:11px;color:#666;font-weight:700;margin-bottom:3px">Horas ofrecidas</label>
+        <input id="recHoursOffered" type="number" inputmode="decimal" step="0.25" min="0" max="24" value="8" oninput="recRecalc()" style="width:100%;padding:8px 10px;border:1.5px solid #C8A415;border-radius:6px;font-size:15px;font-weight:700;color:#0F4C2E">
+      </div>
+      <div>
+        <label style="display:block;font-size:11px;color:#666;font-weight:700;margin-bottom:3px">Horas trabajadas</label>
+        <input id="recHoursWorked" type="number" inputmode="decimal" step="0.25" min="0" max="24" oninput="recRecalc()" style="width:100%;padding:8px 10px;border:1.5px solid #ccc;border-radius:6px;font-size:15px;color:#333;background:#fafafa">
+      </div>
+      <div>
+        <label style="display:block;font-size:11px;color:#666;font-weight:700;margin-bottom:3px">Horas rechazadas</label>
+        <input id="recHoursRefused" type="number" inputmode="decimal" step="0.25" min="0" max="24" readonly style="width:100%;padding:8px 10px;border:1.5px solid #c0392b;border-radius:6px;font-size:15px;font-weight:800;color:#c0392b;background:#fdf2f2">
+      </div>
+    </div>
+
+    <div style="margin-top:12px">
+      <label style="display:block;font-size:11px;color:#666;font-weight:700;margin-bottom:6px">Motivo</label>
+      <div id="recReasonList" style="max-height:220px;overflow-y:auto;border:1px solid #e6e6e6;border-radius:8px;padding:6px;background:#fafafa"></div>
+    </div>
+
+    <div style="margin-top:10px">
+      <label style="display:block;font-size:11px;color:#666;font-weight:700;margin-bottom:3px">Notas (opcional)</label>
+      <textarea id="recNotes" rows="2" placeholder="Detalle o aclaración…" style="width:100%;padding:8px 10px;border:1px solid #ccc;border-radius:6px;font-size:13px;font-family:'DM Sans',sans-serif;resize:vertical"></textarea>
+    </div>
+
+    <div style="margin-top:8px;display:flex;align-items:center;gap:6px">
+      <input type="checkbox" id="recCaptureGps" style="width:16px;height:16px">
+      <label for="recCaptureGps" style="font-size:12px;color:#555">Capturar ubicación GPS</label>
+      <span id="recGpsStatus" style="font-size:11px;color:#888;margin-left:auto"></span>
+    </div>
+
+    <div class="mbs" style="margin-top:14px">
+      <button class="mok" style="background:#C8A415" id="recSaveBtn" onclick="saveRechazoModal()">💾 Guardar rechazo</button>
+      <button class="mca" onclick="cancelRechazoModal()">Cancelar</button>
     </div>
   </div>
 </div>
@@ -4184,6 +4235,12 @@ function mkCard(w,wi){
   var rb=document.createElement('button'); rb.className='rmbtn'; rb.textContent='✕ Quitar';
   (function(id){ rb.addEventListener('click',function(){ askDelWorker(id); }); })(w.id);
   b.appendChild(rb);
+  // V20_92: Registrar rechazo de horas
+  var rj=document.createElement('button');
+  rj.style.cssText='background:#FFF7D6;color:#5A4500;border:1.5px solid #C8A415;border-radius:8px;padding:8px 12px;font-family:\'DM Sans\',sans-serif;font-size:13px;font-weight:700;cursor:pointer;margin-left:6px';
+  rj.textContent='❌ Rechazo de horas';
+  (function(id){ rj.addEventListener('click',function(e){ e.stopPropagation(); openRechazoModal(id); }); })(w.id);
+  b.appendChild(rj);
   b.appendChild(document.createElement('br'));
   c.appendChild(b);
   for(var i=0;i<w.acts.length;i++) mkActRow(w.id,i,ac);
@@ -8567,6 +8624,180 @@ function removeRefusal(id){
   saveRefusalsQueue();
   renderRechazos();
 }
+
+
+// V20_93: Rechazo de horas modal
+window._recModalState = { workerId: null, selectedReason: null, gpsLat: null, gpsLng: null };
+
+function _recWorkerHoursWorked(w){
+  if(!w || !w.acts || !w.acts.length) return 0;
+  var sum = 0;
+  for(var i=0;i<w.acts.length;i++){
+    var a = w.acts[i];
+    var h = (typeof totalShiftHours === 'function') ? totalShiftHours(a) : 0;
+    sum += (h || 0);
+  }
+  return Math.max(0, Math.min(24, +sum.toFixed(2)));
+}
+
+function recRecalc(){
+  var offEl = document.getElementById('recHoursOffered');
+  var wrkEl = document.getElementById('recHoursWorked');
+  var refEl = document.getElementById('recHoursRefused');
+  if(!offEl || !wrkEl || !refEl) return;
+  var off = parseFloat(offEl.value) || 0;
+  var wrk = parseFloat(wrkEl.value) || 0;
+  var ref = Math.max(0, +(off - wrk).toFixed(2));
+  refEl.value = ref.toFixed(2);
+}
+
+function _recRenderReasons(){
+  var box = document.getElementById('recReasonList');
+  if(!box) return;
+  var catalog = (window.REASON_CATALOG || []).slice().sort(function(a,b){ return (a.display_order||999)-(b.display_order||999); });
+  var html = '';
+  for(var i=0;i<catalog.length;i++){
+    var r = catalog[i];
+    var penal = r.counts_as_refused ? '<span style="font-size:10px;color:#c0392b;font-weight:700;margin-left:4px">penaliza 3/4</span>' : '';
+    html += '<label style="display:flex;align-items:center;gap:8px;padding:7px 8px;border-radius:6px;cursor:pointer;background:#fff;margin-bottom:4px;border:1px solid #eee">' +
+      '<input type="radio" name="recReason" value="' + esc(r.reason_code) + '" data-counts-offered="' + (r.counts_as_offered?'1':'0') + '" data-counts-refused="' + (r.counts_as_refused?'1':'0') + '" style="margin:0">' +
+      '<span style="font-size:16px">' + (r.emoji || '\u2022') + '</span>' +
+      '<span style="flex:1;font-size:13px;color:#0F4C2E;font-weight:600">' + esc(r.label_es || r.reason_code) + '</span>' + penal +
+      '</label>';
+  }
+  box.innerHTML = html;
+}
+
+function openRechazoModal(wid){
+  var ov = document.getElementById('recOv');
+  if(!ov) return;
+  var w = (typeof getW === 'function') ? getW(wid) : null;
+  if(!w){ if(typeof toast === 'function') toast('\u26a0\ufe0f Trabajador no encontrado'); return; }
+  window._recModalState = { workerId: wid, selectedReason: null, gpsLat: null, gpsLng: null };
+
+  var nm = w.name || '\u2014';
+  var en = w.empNum ? (' \u00b7 #' + w.empNum) : '';
+  var titleEl = document.getElementById('recTitle');
+  var subEl = document.getElementById('recSubtitle');
+  if(titleEl) titleEl.textContent = '\u274c Rechazo de horas \u2014 ' + nm;
+  if(subEl) subEl.innerHTML = '<b>' + esc(nm) + '</b>' + esc(en);
+
+  var fecha = (typeof gVal === 'function') ? (gVal('fecha') || '') : '';
+  var rancho = (typeof gVal === 'function') ? (gVal('rancho') || '') : '';
+  var finca = (typeof gVal === 'function') ? (gVal('finca') || '') : '';
+  var fEl = document.getElementById('recFecha'); if(fEl) fEl.textContent = fecha || '\u2014';
+  var rEl = document.getElementById('recRancho'); if(rEl) rEl.textContent = rancho || '\u2014';
+  var lEl = document.getElementById('recFinca'); if(lEl) lEl.textContent = finca || '\u2014';
+
+  var worked = _recWorkerHoursWorked(w);
+  var offEl = document.getElementById('recHoursOffered'); if(offEl) offEl.value = '8';
+  var wrkEl = document.getElementById('recHoursWorked'); if(wrkEl) wrkEl.value = worked > 0 ? worked.toFixed(2) : '0';
+  recRecalc();
+
+  var notesEl = document.getElementById('recNotes'); if(notesEl) notesEl.value = '';
+  var gpsCb = document.getElementById('recCaptureGps'); if(gpsCb) gpsCb.checked = false;
+  var gpsStat = document.getElementById('recGpsStatus'); if(gpsStat) gpsStat.textContent = '';
+
+  _recRenderReasons();
+  ov.classList.add('on');
+}
+
+function cancelRechazoModal(){
+  var ov = document.getElementById('recOv'); if(ov) ov.classList.remove('on');
+  window._recModalState = { workerId: null, selectedReason: null, gpsLat: null, gpsLng: null };
+}
+
+function _recCollectGpsIfRequested(cb){
+  var gpsCb = document.getElementById('recCaptureGps');
+  var statusEl = document.getElementById('recGpsStatus');
+  if(!gpsCb || !gpsCb.checked || !navigator.geolocation){ cb(null, null); return; }
+  if(statusEl) statusEl.textContent = 'Obteniendo GPS\u2026';
+  navigator.geolocation.getCurrentPosition(function(pos){
+    if(statusEl) statusEl.textContent = 'GPS \u2713';
+    cb(pos.coords.latitude, pos.coords.longitude);
+  }, function(){
+    if(statusEl) statusEl.textContent = 'GPS no disponible';
+    cb(null, null);
+  }, { enableHighAccuracy:false, timeout:6000, maximumAge:30000 });
+}
+
+function saveRechazoModal(){
+  var st = window._recModalState || {};
+  var w = (typeof getW === 'function' && st.workerId != null) ? getW(st.workerId) : null;
+  if(!w){ if(typeof toast === 'function') toast('\u26a0\ufe0f Sesi\u00f3n perdida, abre de nuevo'); cancelRechazoModal(); return; }
+
+  var off = parseFloat((document.getElementById('recHoursOffered')||{}).value) || 0;
+  var wrk = parseFloat((document.getElementById('recHoursWorked')||{}).value) || 0;
+  var ref = parseFloat((document.getElementById('recHoursRefused')||{}).value) || 0;
+  if(off <= 0){ if(typeof toast === 'function') toast('\u26a0\ufe0f Horas ofrecidas deben ser > 0'); return; }
+  if(wrk < 0 || wrk > off){ if(typeof toast === 'function') toast('\u26a0\ufe0f Horas trabajadas deben estar entre 0 y ofrecidas'); return; }
+
+  var radios = document.querySelectorAll('input[name="recReason"]');
+  var picked = null;
+  for(var i=0;i<radios.length;i++){ if(radios[i].checked){ picked = radios[i]; break; } }
+  if(!picked){ if(typeof toast === 'function') toast('\u26a0\ufe0f Selecciona un motivo'); return; }
+  var reasonCode = picked.value;
+  var countsOffered = picked.getAttribute('data-counts-offered') === '1';
+  var countsRefused = picked.getAttribute('data-counts-refused') === '1';
+
+  var notes = ((document.getElementById('recNotes')||{}).value || '').trim();
+  var fecha = (typeof gVal === 'function') ? (gVal('fecha') || '') : '';
+  var rancho = (typeof gVal === 'function') ? (gVal('rancho') || '') : '';
+  var finca = (typeof gVal === 'function') ? (gVal('finca') || '') : '';
+  var numBus = (typeof gVal === 'function') ? (gVal('numBus') || '') : '';
+  var surquero = (typeof gVal === 'function') ? (gVal('surquero') || '') : '';
+
+  var saveBtn = document.getElementById('recSaveBtn');
+  if(saveBtn){ saveBtn.disabled = true; saveBtn.textContent = 'Guardando\u2026'; }
+
+  _recCollectGpsIfRequested(function(lat, lng){
+    var rec = {
+      worker_id: w.id,
+      name: w.name || '',
+      empNum: w.empNum || '',
+      crew: w.crew || '',
+      work_date: fecha,
+      rancho: rancho,
+      finca: finca,
+      num_bus: numBus,
+      surquero: surquero,
+      hours_offered: off,
+      hours_worked: wrk,
+      hours_refused: ref,
+      reason_code: reasonCode,
+      reason_text: notes,
+      source_mode: 'realtime',
+      refused_at: new Date().toISOString(),
+      refused_lat: lat,
+      refused_lng: lng,
+      counts_as_offered: countsOffered,
+      counts_as_refused: countsRefused
+    };
+    try { addRefusal(rec); } catch(e){ console.error('[V20_93] addRefusal failed', e); }
+
+    // Repaint card: append red badge + nudge
+    try {
+      var card = document.getElementById('wc' + w.id);
+      if(card){
+        var existing = card.querySelector('.recBadge');
+        if(!existing){
+          var badge = document.createElement('span');
+          badge.className = 'recBadge';
+          badge.style.cssText = 'display:inline-block;margin-left:6px;padding:2px 7px;border-radius:10px;background:#fdecea;color:#c0392b;font-size:11px;font-weight:800;border:1px solid #f5c2bd';
+          badge.textContent = '\u274c rechazo';
+          var head = card.querySelector('.wn') || card.querySelector('.wh') || card.firstElementChild;
+          if(head) head.appendChild(badge);
+        }
+      }
+    } catch(e){ /* non-fatal */ }
+
+    if(saveBtn){ saveBtn.disabled = false; saveBtn.textContent = '\ud83d\udcbe Guardar rechazo'; }
+    if(typeof toast === 'function') toast('\u2705 Rechazo registrado para ' + (w.name || ''));
+    cancelRechazoModal();
+    if(typeof renderRechazos === 'function') renderRechazos();
+  });
+}
+
 
 function syncAusencias(){
   // 1) Limpiar ausencias que no pertenecen a la cuadrilla actual
