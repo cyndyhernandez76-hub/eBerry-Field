@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>FieldPay Time & Production — eBerry Harvest</title>
+<title>eBerry Time & Production</title>
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -14,7 +14,7 @@
 // V8-C2: Manifest PWA generado como Blob (sin href vacío)
 (function(){
   var manifest = {
-    name:'FieldPay Time & Production',short_name:'FieldPay',start_url:'./',display:'standalone',
+    name:'eBerry Time & Production',short_name:'eBerry T&P',start_url:'./',display:'standalone',
     background_color:'#1a3a5c',theme_color:'#1a3a5c',
     icons:[{src:'data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🫐</text></svg>',sizes:'any',type:'image/svg+xml'}]
   };
@@ -24,7 +24,7 @@
 </script>
 <script>
 // V20_21: check versión + ackedVersion para romper loop infinito cuando version.txt≠APP_VERSION
-window.APP_VERSION = 'V20_97';
+window.APP_VERSION = 'V20_98';
 (function(){
   // V20_77: AUTO-LIMPIEZA de _ackedVersion envenenado.
   // Bug detectado: surqueros tocaban "Actualizar ahora" pero el SW interceptaba el reload con HTML viejo.
@@ -700,8 +700,8 @@ html.login-locked{overflow:hidden!important;height:100%!important}
 <header>
   <div class="htop">
     <div>
-      <div class="logo">FieldPay <em>Time &amp; Production</em></div>
-      <div style="font-size:9px;color:rgba(255,255,255,.6);letter-spacing:.5px;margin-top:-2px;font-weight:600">by FIELDPAY SOLUTIONS · EBERRY HARVEST</div>
+      <div class="logo">eBerry <em>Time &amp; Production</em></div>
+      <div style="font-size:9px;color:rgba(255,255,255,.6);letter-spacing:.5px;margin-top:-2px;font-weight:600">by FIELDPAY SOLUTIONS</div>
     </div>
     <div id="adminBadge" style="display:none;background:var(--a);border-radius:20px;padding:4px 12px;font-size:12px;font-weight:700;color:#fff;letter-spacing:1px">🔐 ADMIN</div>
     <div style="display:flex;align-items:center;gap:4px;flex-wrap:wrap">
@@ -732,8 +732,8 @@ html.login-locked{overflow:hidden!important;height:100%!important}
 <!-- ── LOGIN SCREEN ── -->
 <div id="loginScreen">
   <img id="loginFpLogo" alt="FieldPay Solutions" style="height:80px;width:auto;margin-bottom:12px;filter:drop-shadow(0 2px 4px rgba(0,0,0,.3))">
-  <div class="login-logo">FieldPay <em>Time &amp; Production</em></div>
-  <div class="login-sub">by FIELDPAY SOLUTIONS · EBERRY HARVEST</div>
+  <div class="login-logo">eBerry <em>Time &amp; Production</em></div>
+  <div class="login-sub">by FIELDPAY SOLUTIONS</div>
   <div class="login-card">
     <div class="login-title">🔐 Acceso al Sistema</div>
     <div class="login-hint" id="loginHint">Ingresa tu PIN de 4 dígitos</div>
