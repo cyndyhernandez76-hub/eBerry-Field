@@ -24,7 +24,7 @@
 </script>
 <script>
 // V20_21: check versión + ackedVersion para romper loop infinito cuando version.txt≠APP_VERSION
-window.APP_VERSION = 'V20_93';
+window.APP_VERSION = 'V20_94';
 (function(){
   // V20_77: AUTO-LIMPIEZA de _ackedVersion envenenado.
   // Bug detectado: surqueros tocaban "Actualizar ahora" pero el SW interceptaba el reload con HTML viejo.
@@ -1118,6 +1118,30 @@ body.readOnly [onclick*="openNewDay"]{display:none !important}
     <div class="mbs">
       <button class="mok" style="background:var(--r)" id="delConfirmBtn" onclick="confirmDel()">✕ Sí, eliminar</button>
       <button class="mca" onclick="cancelDel()">No, cancelar</button>
+    </div>
+  </div>
+</div>
+
+<!-- V20_94: END-OF-DAY EXCEPTION PROMPT MODAL -->
+<div class="ov" id="excOv">
+  <div class="md" style="max-width:560px">
+    <div class="mt">⚠️ Trabajadores sin registro hoy</div>
+    <div class="ms" id="excSubtitle">Antes de enviar, indica qué pasó con estos trabajadores del contrato activo.</div>
+    <div class="mbox" style="background:#FFF7D6;border:1.5px solid #C8A415;padding:10px 12px">
+      <div style="display:flex;gap:12px;flex-wrap:wrap;font-size:12px;color:#5A4500">
+        <div><b>Fecha:</b> <span id="excFecha">—</span></div>
+        <div><b>Rancho:</b> <span id="excRancho">—</span></div>
+        <div><b>Pendientes:</b> <span id="excCount" style="font-weight:800;color:#c0392b">0</span></div>
+      </div>
+    </div>
+    <div id="excList" style="max-height:340px;overflow-y:auto;margin-top:10px;border:1px solid #e6e6e6;border-radius:8px;padding:6px;background:#fafafa"></div>
+    <div style="margin-top:10px;font-size:11px;color:#666;line-height:1.4">
+      • <b>Registrar rechazo</b>: el trabajador estuvo disponible pero no trabajó (rechazo, enfermedad, sin transporte, etc.)<br>
+      • <b>No se le ofreció</b>: no se le ofreció trabajo ese día (no cuenta contra el 3/4 guarantee)
+    </div>
+    <div class="mbs" style="margin-top:14px">
+      <button class="mok" style="background:#0F4C2E" id="excDoneBtn" onclick="excContinueIfClean()">▶️ Continuar al envío</button>
+      <button class="mca" onclick="excCancel()">Cancelar</button>
     </div>
   </div>
 </div>
@@ -7322,9 +7346,23 @@ function submitViaIframe(url, payload, onDone, timeoutMs, onTimeout, frameId){
   }
 }
 
-function sendToSheets() {
-  if (!workers.length && !ausencias.length) { toast('⚠️ No hay trabajadores ni ausencias'); return; }
-  if (!gVal('fecha'))  { toast('⚠️ Ingresa la fecha primero'); return; }
+// V20_94: public sendToSheets now runs the EOD exception precheck before sync.
+// Roster source for exceptions = active petition assignment on that date
+// (payroll.v_hours_offered_daily / public.list_hours_offered_daily).
+// If offline, the precheck is skipped (graceful — queued to offline anyway).
+function sendToSheets(){
+  if (!workers.length && !ausencias.length) { toast('\u26a0\ufe0f No hay trabajadores ni ausencias'); return; }
+  if (!gVal('fecha'))  { toast('\u26a0\ufe0f Ingresa la fecha primero'); return; }
+  // Skip precheck offline (no Supabase reachable) or if already cleared in this session
+  if(!navigator.onLine || window._exceptionsClearedFor === gVal('fecha')){
+    return _sendToSheetsCore();
+  }
+  checkExceptionsBeforeSend(function(ok){
+    if(ok){ window._exceptionsClearedFor = gVal('fecha'); _sendToSheetsCore(); }
+  });
+}
+
+function _sendToSheetsCore() {
   // V20_31: bloquear envío si algún worker tiene translapes de horarios
   for (var _wvi=0; _wvi<workers.length; _wvi++){
     var _wv=workers[_wvi];
@@ -8705,6 +8743,182 @@ function openRechazoModal(wid){
 function cancelRechazoModal(){
   var ov = document.getElementById('recOv'); if(ov) ov.classList.remove('on');
   window._recModalState = { workerId: null, selectedReason: null, gpsLat: null, gpsLng: null };
+  // V20_94: if user opened rechazo from exception modal, refresh that list on close
+  if(window._excPending && window._excPending.active){
+    setTimeout(function(){ checkExceptionsBeforeSend(null, /*reopen=*/true); }, 250);
+  }
+}
+
+// ===========================================================================
+// V20_94 — END-OF-DAY EXCEPTION PROMPT
+// Pre-sync check: any worker with active contract assignment on `fecha` who has
+// NO time_entry, NO hours_refused row, and NO baseline row is an "exception".
+// Supervisor must either (a) log a rechazo with reason, or (b) mark "no work
+// offered" (hours_offered=0) before sendToSheets() can proceed.
+// ===========================================================================
+window._excPending = { active:false, items:[], date:null };
+
+function _excNormalizeName(s){
+  return (s||'').toString().toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g,'')
+    .replace(/[^a-z0-9 ]/g,'').trim();
+}
+
+function _excFetchExceptions(workDate, cb){
+  if(!window.SUPABASE_URL || !window.SUPABASE_ANON){ cb(new Error('no supabase config'), null); return; }
+  var body = JSON.stringify({ p_from: workDate, p_to: workDate, p_filter: { only_exceptions: true, tenant_id: window.TENANT_ID } });
+  try {
+    fetch(window.SUPABASE_URL + '/rest/v1/rpc/list_hours_offered_daily', {
+      method:'POST',
+      headers:{ 'Content-Type':'application/json', 'apikey':window.SUPABASE_ANON, 'Authorization':'Bearer '+window.SUPABASE_ANON },
+      body: body
+    }).then(function(r){ return r.ok ? r.json() : r.text().then(function(t){ throw new Error(t||('HTTP '+r.status)); }); })
+      .then(function(data){ cb(null, Array.isArray(data) ? data : []); })
+      .catch(function(e){ cb(e, null); });
+  } catch(e){ cb(e, null); }
+}
+
+function _excFilterToCurrentCrew(rows){
+  if(!Array.isArray(rows) || !rows.length) return [];
+  var nameSet = {};
+  if(typeof NAMES !== 'undefined' && NAMES && NAMES.length){
+    for(var i=0;i<NAMES.length;i++){ nameSet[_excNormalizeName(NAMES[i])] = true; }
+  }
+  if(typeof workers !== 'undefined'){
+    for(var w=0;w<workers.length;w++){ nameSet[_excNormalizeName(workers[w].name)] = true; }
+  }
+  if(typeof ausencias !== 'undefined'){
+    for(var a=0;a<ausencias.length;a++){ nameSet[_excNormalizeName(ausencias[a].name)] = true; }
+  }
+  if(!Object.keys(nameSet).length) return rows.slice();
+  var out = [];
+  for(var k=0;k<rows.length;k++){
+    var r = rows[k];
+    var key = _excNormalizeName(r.full_name || r.preferred_name || ((r.first_name||'')+' '+(r.last_name||'')) || r.worker_name);
+    if(nameSet[key]) out.push(r);
+  }
+  return out;
+}
+
+function checkExceptionsBeforeSend(onReady, reopen){
+  var fecha = gVal('fecha');
+  if(!fecha){ if(onReady) onReady(true); return; }
+  _excFetchExceptions(fecha, function(err, rows){
+    if(err){
+      console.warn('[V20_94] exception check failed, allowing send:', err && err.message);
+      if(onReady) onReady(true);
+      return;
+    }
+    var filtered = _excFilterToCurrentCrew(rows);
+    if(!filtered.length){
+      var ov = document.getElementById('excOv'); if(ov) ov.classList.remove('on');
+      var cb0 = window._excPending && window._excPending.onReady;
+      window._excPending = { active:false, items:[], date:null };
+      if(typeof toast==='function' && reopen) toast('\u2705 Todos los trabajadores registrados');
+      if(onReady) onReady(true);
+      else if(cb0) cb0(true);
+      return;
+    }
+    window._excPending = { active:true, items:filtered, date:fecha, onReady: (onReady !== undefined ? onReady : (window._excPending && window._excPending.onReady) || null) };
+    excRender();
+    var ov2 = document.getElementById('excOv'); if(ov2) ov2.classList.add('on');
+  });
+}
+
+function excRender(){
+  var rancho = gVal('rancho') || '\u2014';
+  var fecha  = gVal('fecha')  || '\u2014';
+  var rEl = document.getElementById('excRancho'); if(rEl) rEl.textContent = rancho;
+  var fEl = document.getElementById('excFecha');  if(fEl) fEl.textContent = fecha;
+  var cEl = document.getElementById('excCount');  if(cEl) cEl.textContent = String((window._excPending.items||[]).length);
+  var box = document.getElementById('excList');
+  if(!box) return;
+  var items = window._excPending.items || [];
+  if(!items.length){
+    box.innerHTML = '<div style="padding:20px;text-align:center;color:#0F4C2E;font-weight:700">\u2705 No quedan pendientes</div>';
+    return;
+  }
+  var html = '';
+  for(var i=0;i<items.length;i++){
+    var it = items[i];
+    var nm = it.full_name || it.preferred_name || ((it.first_name||'')+' '+(it.last_name||'')) || it.worker_name || '\u2014';
+    var ec = it.employee_code || it.emp_code || '';
+    var pet = it.petition_display || it.petition_number || '';
+    var wid = it.worker_id || '';
+    var nmSafe = String(nm).replace(/'/g,"\\'");
+    html += '<div style="display:flex;align-items:center;gap:8px;padding:8px 10px;border:1px solid #eee;border-radius:7px;background:#fff;margin-bottom:6px">' +
+      '<div style="flex:1;min-width:0">' +
+        '<div style="font-weight:700;font-size:13px;color:#0F4C2E;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + esc(nm) + '</div>' +
+        '<div style="font-size:11px;color:#888">' + (ec ? ('#'+esc(ec)) : '') + (pet ? (' \u00b7 '+esc(pet)) : '') + '</div>' +
+      '</div>' +
+      '<button onclick="excOpenRechazoFor(\'' + esc(wid) + '\', \'' + esc(nmSafe) + '\', \'' + esc(ec) + '\')" style="padding:6px 10px;border:1px solid #c0392b;background:#fdecea;color:#c0392b;font-size:11px;font-weight:700;border-radius:6px;cursor:pointer">\u274c Registrar rechazo</button>' +
+      '<button onclick="excMarkNoWorkOffered(\'' + esc(wid) + '\')" style="padding:6px 10px;border:1px solid #C8A415;background:#FFF7D6;color:#5A4500;font-size:11px;font-weight:700;border-radius:6px;cursor:pointer;margin-left:6px">\u23F8 No se le ofreci\u00f3</button>' +
+    '</div>';
+  }
+  box.innerHTML = html;
+}
+
+function excContinueIfClean(){
+  checkExceptionsBeforeSend(function(ok){
+    if(ok){
+      var cb = window._excPending && window._excPending.onReady;
+      window._excPending = { active:false, items:[], date:null };
+      if(cb) cb(true);
+    } else {
+      if(typeof toast==='function') toast('\u26a0\ufe0f A\u00fan quedan pendientes');
+    }
+  }, /*reopen=*/true);
+}
+
+function excCancel(){
+  var ov = document.getElementById('excOv'); if(ov) ov.classList.remove('on');
+  var cb = window._excPending && window._excPending.onReady;
+  window._excPending = { active:false, items:[], date:null };
+  if(cb) cb(false);
+}
+
+// Adapter: open the existing Rechazo modal for a worker shown in the exception
+// list. Adds a transient worker entry when the worker isn't in the local crew
+// arrays so openRechazoModal / getW can find them.
+function excOpenRechazoFor(workerId, nm, empCode){
+  if(!workerId){ if(typeof toast==='function') toast('\u26a0\ufe0f worker_id faltante'); return; }
+  var w = (typeof getW === 'function') ? getW(workerId) : null;
+  if(!w && typeof workers !== 'undefined'){
+    workers.push({ id: workerId, name: nm || '', empNum: empCode || '', open:false, acts:[], totalPay:0, _excTransient:true });
+  }
+  var ov = document.getElementById('excOv'); if(ov) ov.classList.remove('on');
+  if(typeof openRechazoModal === 'function'){ openRechazoModal(workerId); }
+  else { if(typeof toast==='function') toast('\u26a0\ufe0f openRechazoModal no disponible'); }
+}
+
+function excMarkNoWorkOffered(workerId){
+  if(!workerId){ if(typeof toast==='function') toast('\u26a0\ufe0f worker_id faltante'); return; }
+  var fecha = (window._excPending && window._excPending.date) || gVal('fecha');
+  if(!fecha){ if(typeof toast==='function') toast('\u26a0\ufe0f Fecha faltante'); return; }
+  if(!window.SUPABASE_URL || !window.SUPABASE_ANON){
+    if(typeof toast==='function') toast('\u26a0\ufe0f Sin conexi\u00f3n a Supabase');
+    return;
+  }
+  var note = 'No work offered \u2014 supervisor EOD \u00b7 ' + (gVal('surquero')||'') + ' \u00b7 ' + (gVal('rancho')||'');
+  var body = JSON.stringify({ p_worker_id: workerId, p_work_date: fecha, p_note: note });
+  fetch(window.SUPABASE_URL + '/rest/v1/rpc/mark_no_work_offered', {
+    method:'POST',
+    headers:{ 'Content-Type':'application/json', 'apikey':window.SUPABASE_ANON, 'Authorization':'Bearer '+window.SUPABASE_ANON },
+    body: body
+  }).then(function(r){ return r.ok ? r.json() : r.text().then(function(t){ throw new Error(t||('HTTP '+r.status)); }); })
+    .then(function(){
+      try{
+        if(window._excPending && Array.isArray(window._excPending.items)){
+          window._excPending.items = window._excPending.items.filter(function(it){ return (it.worker_id||'') !== workerId; });
+          excRender();
+        }
+      }catch(_){}
+      if(typeof toast==='function') toast('\u2713 Marcado: sin trabajo ofrecido');
+    })
+    .catch(function(e){
+      console.error('[V20_94] mark_no_work_offered failed:', e);
+      if(typeof toast==='function') toast('\u26a0\ufe0f No se pudo guardar: ' + (e && e.message ? e.message.substring(0,80) : ''));
+    });
 }
 
 function _recCollectGpsIfRequested(cb){
