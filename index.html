@@ -24,7 +24,7 @@
 </script>
 <script>
 // V20_21: check versión + ackedVersion para romper loop infinito cuando version.txt≠APP_VERSION
-window.APP_VERSION = 'V20_95';
+window.APP_VERSION = 'V20_96';
 (function(){
   // V20_77: AUTO-LIMPIEZA de _ackedVersion envenenado.
   // Bug detectado: surqueros tocaban "Actualizar ahora" pero el SW interceptaba el reload con HTML viejo.
@@ -8616,7 +8616,7 @@ function submitRechazoToSupabase(rec, cb){
   };
   fetch(window.SUPABASE_URL + '/rest/v1/rpc/submit_rechazo', {
     method:'POST',
-    headers:{ 'Content-Type':'application/json', 'apikey':window.SUPABASE_ANON, 'Authorization':'Bearer '+window.SUPABASE_ANON },
+    headers:{ 'Content-Type':'application/json', 'Content-Profile':'public', 'Accept-Profile':'public', 'apikey':window.SUPABASE_ANON, 'Authorization':'Bearer '+window.SUPABASE_ANON },
     body: JSON.stringify(payload)
   }).then(function(r){ return r.ok ? r.json() : r.text().then(function(t){ throw new Error(t || ('HTTP '+r.status)); }); })
     .then(function(data){ rec._synced = true; rec._synced_at = new Date().toISOString(); saveRefusalsQueue(); cb(null, data); })
