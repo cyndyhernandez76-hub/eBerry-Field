@@ -24,7 +24,7 @@
 </script>
 <script>
 // V20_21: check versión + ackedVersion para romper loop infinito cuando version.txt≠APP_VERSION
-window.APP_VERSION = 'V20_99_1';
+window.APP_VERSION = 'V20_99_2';
 (function(){
   // V20_77: AUTO-LIMPIEZA de _ackedVersion envenenado.
   // Bug detectado: surqueros tocaban "Actualizar ahora" pero el SW interceptaba el reload con HTML viejo.
@@ -12656,7 +12656,10 @@ var _checkSendTimer = setInterval(checkDaysWithoutSend, 30 * 60 * 1000);
     if(C.state.vehicles){
       for(var i=0;i<C.state.vehicles.length;i++){
         var v = C.state.vehicles[i];
-        var lbl = (v.vehicle_number||'') + (v.year_make_model? ' — '+v.year_make_model : '') + (v.plate? ' ['+v.plate+']':'');
+        var code = v.vehicle_code || v.vehicle_number || '';
+        var ymm = [v.year, v.make, v.model].filter(function(x){return x;}).join(' ');
+        var plate = v.license_plate || v.plate || '';
+        var lbl = code + (ymm? ' — '+ymm : '') + (plate? ' ['+plate+']':'');
         opts += '<option value="'+esc(v.vehicle_id)+'"'+(v.vehicle_id===C.state.vehicleId?' selected':'')+'>'+esc(lbl)+'</option>';
       }
     }
@@ -12703,7 +12706,7 @@ var _checkSendTimer = setInterval(checkDaysWithoutSend, 30 * 60 * 1000);
     if(sel) sel.onchange = function(){
       C.state.vehicleId = sel.value;
       var v = (C.state.vehicles||[]).filter(function(x){ return x.vehicle_id===sel.value; })[0];
-      C.state.vehicleLabel = v ? (v.vehicle_number||'') : '';
+      C.state.vehicleLabel = v ? (v.vehicle_code || v.vehicle_number || '') : '';
       C.state.lastOdometer = v && v.last_odometer!=null ? v.last_odometer : null;
       var odo = $('choferDvirOdo'); if(odo && C.state.lastOdometer!=null && !odo.value) odo.value = C.state.lastOdometer;
       loadCarryDefects();
