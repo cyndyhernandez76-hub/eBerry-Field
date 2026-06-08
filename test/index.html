@@ -35,7 +35,7 @@
 </script>
 <script>
 // V20_21: check versión + ackedVersion para romper loop infinito cuando version.txt≠APP_VERSION
-window.APP_VERSION = 'V20_192';
+window.APP_VERSION = 'V20_193';
 (function(){
   // V20_77: AUTO-LIMPIEZA de _ackedVersion envenenado.
   // Bug detectado: surqueros tocaban "Actualizar ahora" pero el SW interceptaba el reload con HTML viejo.
@@ -10447,8 +10447,35 @@ function buildPDFWindow(vals, wks, ep, hp, cp, ausArr, grpActsArr){
   for(var ci2_=0;ci2_<actCols.length;ci2_++){
     var _col=actCols[ci2_];
     var _uShifts=[];
-    // V20_183: Daywork → 1 shift sintético, no acumular reales.
+    // V20_183: Daywork → 1 shift sintético, no acumular reales (la columna NO se subdivide en T1/T2).
+    // V20_193: PERO recolectar los turnos reales en _col._dwShifts para mostrarlos APILADOS en la
+    // celda Entrada/Salida (antes quedaba VACÍA). Reportado por Serafín 2026-06-08: busero Juan Yepez
+    // Gadsden Tomato 2026-06-05 con 2 turnos Daywork (08:00-12:30 y 19:00-20:00) que SÍ salían en el
+    // Resumen y FIELD_DROP pero NO en el PDF. El comentario V20_183 decía "rango global" pero el código
+    // nunca lo implementó (solo blanqueaba). col.shifts se queda en 1 → header sin subdividir; los turnos
+    // van a una celda apilada (decisión Serafín: mostrar los 2 turnos reales, no el rango global).
     if(_col && _col.payType === 'Daywork'){
+      var _dwReal=[];
+      for(var _dwi=0;_dwi<wks.length;_dwi++){
+        for(var _dwj=0;_dwj<wks[_dwi].acts.length;_dwj++){
+          var _dwa=wks[_dwi].acts[_dwj];
+          if(!_colMatchesWAct(_col,_dwa)) continue;
+          var _dwSh=[];
+          if(_dwa.shifts&&_dwa.shifts.length){
+            for(var _dwk=0;_dwk<_dwa.shifts.length;_dwk++){
+              if(_dwa.shifts[_dwk].ini||_dwa.shifts[_dwk].fin) _dwSh.push({ini:_dwa.shifts[_dwk].ini||'',fin:_dwa.shifts[_dwk].fin||''});
+            }
+          } else if(_dwa.ini||_dwa.fin){ _dwSh.push({ini:_dwa.ini||'',fin:_dwa.fin||''}); }
+          for(var _dws=0;_dws<_dwSh.length;_dws++){
+            var _dwKey=_dwSh[_dws].ini+'|'+_dwSh[_dws].fin;
+            var _dwDup=false;
+            for(var _dwu=0;_dwu<_dwReal.length;_dwu++){ if(_dwReal[_dwu].key===_dwKey){ _dwDup=true; break; } }
+            if(!_dwDup) _dwReal.push({ini:_dwSh[_dws].ini,fin:_dwSh[_dws].fin,key:_dwKey});
+          }
+        }
+      }
+      _dwReal.sort(function(a,b){ return (a.ini||'99:99')<(b.ini||'99:99')?-1:1; });
+      _col._dwShifts=_dwReal;
       _uShifts.push({ini:'',fin:'',key:'|'});
       _col.shifts=_uShifts;
       continue;
@@ -10896,10 +10923,23 @@ function buildPDFWindow(vals, wks, ep, hp, cp, ausArr, grpActsArr){
     trPrice+='<td'+_csp+' style="text-align:center;border:1px solid #000;color:#c0392b;font-weight:700">'+unitPr+'</td>';
     trLabor+='<td'+_csp+' style="text-align:center;border:1px solid #000;color:#3a7fd4;font-size:9px">'+laborLbl+'</td>';
     // Entrada/Salida: N celdas con horario de cada sub-shift
-    for(var sm_=0;sm_<_NS;sm_++){
-      var _sm=col4.shifts[sm_]||{ini:'',fin:''};
-      trEntry+='<td style="text-align:center;border:1px solid #000;color:#000">'+to12h(_sm.ini||'')+'</td>';
-      trExit +='<td style="text-align:center;border:1px solid #000;color:#000">'+to12h(_sm.fin||'')+'</td>';
+    // V20_193: Daywork con turnos reales → 1 celda con los turnos APILADOS (la columna no se subdivide,
+    // _NS=1). Antes la celda salía vacía porque col.shifts[0]={ini:'',fin:''} (bypass V20_183).
+    if(col4.payType==='Daywork' && col4._dwShifts && col4._dwShifts.length){
+      var _dwEnt='', _dwExt='';
+      for(var _dwm=0;_dwm<col4._dwShifts.length;_dwm++){
+        var _dwS=col4._dwShifts[_dwm];
+        _dwEnt+=(_dwm?'<br>':'')+to12h(_dwS.ini||'');
+        _dwExt+=(_dwm?'<br>':'')+to12h(_dwS.fin||'');
+      }
+      trEntry+='<td colspan="'+_NS+'" style="text-align:center;border:1px solid #000;color:#000;line-height:1.4">'+_dwEnt+'</td>';
+      trExit +='<td colspan="'+_NS+'" style="text-align:center;border:1px solid #000;color:#000;line-height:1.4">'+_dwExt+'</td>';
+    } else {
+      for(var sm_=0;sm_<_NS;sm_++){
+        var _sm=col4.shifts[sm_]||{ini:'',fin:''};
+        trEntry+='<td style="text-align:center;border:1px solid #000;color:#000">'+to12h(_sm.ini||'')+'</td>';
+        trExit +='<td style="text-align:center;border:1px solid #000;color:#000">'+to12h(_sm.fin||'')+'</td>';
+      }
     }
   }
   if(cp&&cp.length&&cajasT){ trTotal+='<td style="border-top:3px solid #1a2b8c"></td>'; trPrice+='<td></td>'; trLabor+='<td></td>'; trEntry+='<td></td>'; trExit+='<td></td>'; }
