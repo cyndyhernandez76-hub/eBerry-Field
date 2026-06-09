@@ -24,7 +24,7 @@
 </script>
 <script>
 // V20_21: check versión + ackedVersion para romper loop infinito cuando version.txt≠APP_VERSION
-window.APP_VERSION = 'V21_00_2';
+window.APP_VERSION = 'V21_00_4'; // V21_00_4: RPC signature fixes for submit_maintenance_event + trip_driver_view rancho_origin
 (function(){
   // V20_77: AUTO-LIMPIEZA de _ackedVersion envenenado.
   // Bug detectado: surqueros tocaban "Actualizar ahora" pero el SW interceptaba el reload con HTML viejo.
@@ -37,8 +37,8 @@ window.APP_VERSION = 'V21_00_2';
       console.log('[eBerry] V20_77: Ack stale limpiado — ya estamos en '+_ack0);
     }
   } catch(e){}
-// V21_00_2: marker de versión — hauler + multi-rancho + stacked-Daywork merged
-console.log('[V21_00_2] hauler + multi-rancho + stacked-Daywork merged');
+// V21_00_3: marker de versión — 9-tab Trip Detail + rancho_origin integration
+console.log('[V21_00_3] 9-tab Trip Detail + rancho_origin ported from V21_01_0'); // V21_00_3:
   // Toast persistente de "versión antigua detectada" — NO se puede cerrar, obliga a actualizar
   function showVersionMismatch(remoteV){
     if(document.getElementById('ver-mismatch')) return;
@@ -805,6 +805,8 @@ html.login-locked{overflow:hidden!important;height:100%!important}
     <button onclick="window.Chofer.navBack()" style="background:#2a4a7a;border:none;color:#fff;border-radius:8px;padding:8px 12px;font-size:14px;font-weight:700" id="choferTripBackBtn">← Volver</button>
     <div style="flex:1;font-weight:700;font-size:15px" id="choferTripTitle">Detalle del viaje</div>
   </div>
+  <!-- V21_00_3: Hauler trip tab bar (9 tabs: Overview/Time/DVIR/BOL/Load/Fuel/Odometer/Maint/Events) -->
+  <div id="choferTripTabs" style="display:none;flex:0 0 auto;overflow-x:auto;-webkit-overflow-scrolling:touch;white-space:nowrap;background:#0b1c34;border-bottom:1px solid #1f3a66;padding:6px 8px"></div>
   <div id="choferTripBody" style="flex:1 1 auto;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:14px"></div>
   <!-- Bottom action bar -->
   <div style="flex:0 0 auto;display:flex;gap:8px;padding:10px 12px;background:#0b1c34;border-top:1px solid #1f3a66">
@@ -852,6 +854,63 @@ html.login-locked{overflow:hidden!important;height:100%!important}
     <div style="display:flex;gap:8px;margin-top:14px">
       <button id="choferTripCompleteCancel" style="flex:1;padding:13px;border:none;border-radius:10px;background:#3a3f4a;color:#fff;font-weight:700">Cancelar</button>
       <button id="choferTripCompleteOk" style="flex:2;padding:13px;border:none;border-radius:10px;background:#1f6b3a;color:#fff;font-weight:800">✓</button>
+    </div>
+  </div>
+</div>
+
+<!-- V21_00_3: Hauler load-item add/edit modal (ported from V21_01_0) -->
+<div class="ov" id="haulerLoadItemOv" role="dialog" aria-modal="true" style="z-index:10100">
+  <div class="md" style="max-width:460px">
+    <div class="mt" id="haulerLiTit" style="font-size:16px">Artículo de carga</div>
+    <label style="display:block;margin:10px 0 3px;font-size:13px;font-weight:600;opacity:.85" id="haulerLiDescLbl">Descripción</label>
+    <input id="haulerLiDesc" type="text" style="width:100%;box-sizing:border-box;padding:12px;font-size:16px;border:none;border-radius:10px;background:#1d3357;color:#fff">
+    <div style="display:flex;gap:8px;margin-top:10px">
+      <div style="flex:1">
+        <label style="display:block;margin:0 0 3px;font-size:13px;font-weight:600;opacity:.85" id="haulerLiQtyLbl">Cantidad</label>
+        <input id="haulerLiQty" type="number" inputmode="decimal" style="width:100%;box-sizing:border-box;padding:12px;font-size:16px;border:none;border-radius:10px;background:#1d3357;color:#fff">
+      </div>
+      <div style="flex:1">
+        <label style="display:block;margin:0 0 3px;font-size:13px;font-weight:600;opacity:.85" id="haulerLiUnitLbl">Unidad</label>
+        <input id="haulerLiUnit" type="text" style="width:100%;box-sizing:border-box;padding:12px;font-size:16px;border:none;border-radius:10px;background:#1d3357;color:#fff">
+      </div>
+    </div>
+    <div style="display:flex;gap:8px;margin-top:10px">
+      <div style="flex:1">
+        <label style="display:block;margin:0 0 3px;font-size:13px;font-weight:600;opacity:.85" id="haulerLiWeightLbl">Peso (lb)</label>
+        <input id="haulerLiWeight" type="number" inputmode="decimal" style="width:100%;box-sizing:border-box;padding:12px;font-size:16px;border:none;border-radius:10px;background:#1d3357;color:#fff">
+      </div>
+      <div style="flex:1">
+        <label style="display:block;margin:0 0 3px;font-size:13px;font-weight:600;opacity:.85" id="haulerLiPiecesLbl">Piezas</label>
+        <input id="haulerLiPieces" type="number" inputmode="numeric" style="width:100%;box-sizing:border-box;padding:12px;font-size:16px;border:none;border-radius:10px;background:#1d3357;color:#fff">
+      </div>
+    </div>
+    <div style="display:flex;gap:8px;margin-top:14px">
+      <button id="haulerLiCancel" style="flex:1;padding:13px;border:none;border-radius:10px;background:#3a3f4a;color:#fff;font-weight:700">Cancelar</button>
+      <button id="haulerLiSave" style="flex:2;padding:13px;border:none;border-radius:10px;background:#1f6b3a;color:#fff;font-weight:800">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<!-- V21_00_3: Hauler trip-event add modal (ported from V21_01_0) -->
+<div class="ov" id="haulerEventOv" role="dialog" aria-modal="true" style="z-index:10100">
+  <div class="md" style="max-width:440px">
+    <div class="mt" id="haulerEvTit" style="font-size:16px">Evento</div>
+    <label style="display:block;margin:10px 0 3px;font-size:13px;font-weight:600;opacity:.85" id="haulerEvTypeLbl">Tipo</label>
+    <select id="haulerEvType" style="width:100%;box-sizing:border-box;padding:12px;font-size:16px;border:none;border-radius:10px;background:#1d3357;color:#fff">
+      <option value="rest">Descanso / Rest</option>
+      <option value="fuel_stop">Combustible / Fuel stop</option>
+      <option value="weigh">Báscula / Weigh</option>
+      <option value="toll">Peaje / Toll</option>
+      <option value="arrival">Llegada / Arrival</option>
+      <option value="dropoff">Entrega / Dropoff</option>
+      <option value="idle">Inactivo / Idle</option>
+      <option value="other">Otro / Other</option>
+    </select>
+    <label style="display:block;margin:10px 0 3px;font-size:13px;font-weight:600;opacity:.85" id="haulerEvNotesLbl">Notas</label>
+    <textarea id="haulerEvNotes" rows="3" style="width:100%;box-sizing:border-box;padding:12px;font-size:16px;border:none;border-radius:10px;background:#1d3357;color:#fff;resize:vertical"></textarea>
+    <div style="display:flex;gap:8px;margin-top:14px">
+      <button id="haulerEvCancel" style="flex:1;padding:13px;border:none;border-radius:10px;background:#3a3f4a;color:#fff;font-weight:700">Cancelar</button>
+      <button id="haulerEvSave" style="flex:2;padding:13px;border:none;border-radius:10px;background:#1f6b3a;color:#fff;font-weight:800">Guardar</button>
     </div>
   </div>
 </div>
@@ -13168,7 +13227,68 @@ var _checkSendTimer = setInterval(checkDaysWithoutSend, 30 * 60 * 1000);
     // V21_00_2: hauler-rancho linkage
     ranchoOrigen:   {es:'Rancho de origen',             en:'Ranch of origin'},
     selRancho:      {es:'— Selecciona un rancho —',     en:'— Select a ranch —'},
-    ranchoRequired: {es:'Selecciona el rancho de origen antes de iniciar.', en:'Please select the ranch of origin before starting.'}
+    ranchoRequired: {es:'Selecciona el rancho de origen antes de iniciar.', en:'Please select the ranch of origin before starting.'},
+    // V21_00_3: 9-tab Trip Detail strings (ported from V21_01_0)
+    tabOverview:    {es:'Resumen',                  en:'Overview'},
+    tabTime:        {es:'Tiempo',                   en:'Time'},
+    tabDvir:        {es:'DVIR',                     en:'DVIR'},
+    tabBol:         {es:'BOL',                      en:'BOL'},
+    tabLoad:        {es:'Carga',                    en:'Load'},
+    tabFuelT:       {es:'Gasolina',                 en:'Fuel'},
+    tabOdo:         {es:'Od\u00f3metro',                 en:'Odometer'},
+    tabMaintT:      {es:'Manten.',                  en:'Maint'},
+    tabEvents:      {es:'Eventos',                  en:'Events'},
+    preTrip:        {es:'Pre-Viaje',                en:'Pre-Trip'},
+    postTrip:       {es:'Post-Viaje',               en:'Post-Trip'},
+    crop:           {es:'Cultivo',                  en:'Crop'},
+    farm:           {es:'Rancho',                   en:'Farm'},
+    helpers:        {es:'Ayudantes',                en:'Helpers'},
+    noHelpers:      {es:'Sin ayudantes',            en:'No helpers'},
+    loadRef:        {es:'Referencia de carga',      en:'Load reference'},
+    loadType:       {es:'Tipo de carga',            en:'Load type'},
+    timeIn2:        {es:'Marcar entrada',           en:'Time In'},
+    timeOut2:       {es:'Marcar salida',            en:'Time Out'},
+    currentEntry:   {es:'Entrada actual',           en:'Current entry'},
+    totalToday:     {es:'Total hoy',                en:'Total today'},
+    notClocked:     {es:'Sin marcar',               en:'Not clocked in'},
+    dvirReqInProg:  {es:'Pre-Viaje requerido antes de iniciar el viaje', en:'Pre-Trip required before starting the trip'},
+    dvirReqComplete:{es:'Post-Viaje requerido antes de completar',       en:'Post-Trip required before completing'},
+    dvirDoneToday:  {es:'\u2713 Completado hoy',        en:'\u2713 Done today'},
+    dvirNotDone:    {es:'Pendiente hoy',             en:'Not done today'},
+    startDvir:      {es:'Iniciar inspecci\u00f3n',     en:'Start inspection'},
+    addBol:         {es:'+ Agregar BOL',            en:'+ Add BOL'},
+    attachedBols:   {es:'BOLs adjuntos',            en:'Attached BOLs'},
+    noBols:         {es:'Sin BOLs adjuntos',        en:'No BOLs attached'},
+    addItem:        {es:'+ Agregar art\u00edculo',     en:'+ Add item'},
+    noLoadItems:    {es:'Sin art\u00edculos de carga', en:'No load items'},
+    fromBol:        {es:'de BOL',                   en:'from BOL'},
+    manual:         {es:'manual',                   en:'manual'},
+    logReading:     {es:'Registrar lectura',        en:'Log reading'},
+    odoStart:       {es:'Od\u00f3metro inicial',        en:'Start odometer'},
+    odoEnd2:        {es:'Od\u00f3metro final',          en:'End odometer'},
+    addEvent:       {es:'+ Agregar evento',         en:'+ Add event'},
+    noEvents:       {es:'Sin eventos',              en:'No events'},
+    evtRest:        {es:'Descanso',                 en:'Rest'},
+    evtFuelStop:    {es:'Parada de combustible',    en:'Fuel stop'},
+    evtWeigh:       {es:'Pesaje',                   en:'Weigh'},
+    evtToll:        {es:'Peaje',                    en:'Toll'},
+    evtArrival:     {es:'Llegada',                  en:'Arrival'},
+    evtDropoff:     {es:'Entrega',                  en:'Dropoff'},
+    evtIdle:        {es:'Inactivo',                 en:'Idle'},
+    evtOther2:      {es:'Otro',                     en:'Other'},
+    assignedTrips:  {es:'\ud83d\udccb Viajes asignados',       en:'\ud83d\udccb Assigned trips'},
+    recentTrips:    {es:'\ud83d\udcdc Viajes recientes',       en:'\ud83d\udcdc Recent trips'},
+    noRecentTrips:  {es:'Sin viajes recientes',     en:'No recent trips'},
+    startThisTrip:  {es:'Iniciar este viaje',       en:'Start this trip'},
+    staleTrip:      {es:'\u00bfOlvidaste cerrar el viaje', en:'Did you forget to close trip'},
+    completeNow:    {es:'Completar ahora',          en:'Complete now'},
+    hosOk:          {es:'Jornada',                  en:'Workday'},
+    saved2:         {es:'\u2713 Guardado',              en:'\u2713 Saved'},
+    add:            {es:'Agregar',                  en:'Add'},
+    cancel2:        {es:'Cancelar',                 en:'Cancel'},
+    qtyShort:       {es:'Cant.',                    en:'Qty'},
+    recentReceipts: {es:'Recibos de este viaje',    en:'Receipts for this trip'},
+    noReceipts:     {es:'Sin recibos en este viaje',en:'No receipts for this trip'} // V21_00_3:
   };
   function t(key){
     var lang = window.CHOFER_LANG || 'es';
@@ -13194,6 +13314,8 @@ var _checkSendTimer = setInterval(checkDaysWithoutSend, 30 * 60 * 1000);
 
   var TENANT_ID = '00000000-0000-0000-0000-000000000001';
   C.TENANT_ID = TENANT_ID;
+  // V21_00_3: Driver UI reads ONLY from trip_driver_view (omits ar_rate, ar_amount, driver_pay_*, legal_entity_id)
+  var TRIP_DRIVER_VIEW = 'trip_driver_view'; // V21_00_3: symbolic constant — enforces audit rule
 
   // ── Per-driver state ──
   C.state = {
@@ -13430,33 +13552,107 @@ var _checkSendTimer = setInterval(checkDaysWithoutSend, 30 * 60 * 1000);
     renderHaulerStart();
   };
 
+  function tripRouteLine(trip){ // V21_00_3:
+    return esc(trip.origin_label||trip.origin_name||'\u2014') + ' \u2192 ' + esc(trip.destination_label||trip.dest_name||'\u2014');
+  }
+
+  // V21_00_3: dispatcher hand-off — show planned trips assigned to this driver (hauler_my_assigned_trips)
+  function loadAssignedTrips(){
+    var box = $('haulerAssigned'); if(!box || !C.state.driver) return;
+    rpc('hauler_my_assigned_trips', { p_tenant_id: TENANT_ID, p_driver_id: C.state.driver.driver_id }).then(function(rows){
+      if(!rows || !rows.length){ box.innerHTML = ''; return; }
+      var h = '<div style="background:#1a3553;border:1px solid #2f5680;border-radius:12px;padding:12px;margin-bottom:16px">';
+      h += '<div style="font-size:13px;font-weight:800;margin-bottom:10px">'+esc(t('assignedTrips'))+'</div>';
+      for(var i=0;i<rows.length;i++){
+        var r = rows[i];
+        var when = r.planned_start ? new Date(r.planned_start).toLocaleString([], {month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}) : '';
+        h += '<div class="haulerAssignedRow" data-trip="'+esc(r.trip_id)+'" style="background:#13294d;border-radius:10px;padding:10px;margin-bottom:8px;cursor:pointer">';
+        h += '<div style="display:flex;justify-content:space-between;align-items:center"><span style="font-weight:700;font-size:14px">'+esc(r.trip_code||'\u2014')+'</span><span style="opacity:.7;font-size:12px">'+esc(when)+'</span></div>';
+        h += '<div style="font-size:13px;opacity:.9;margin-top:4px">'+tripRouteLine(r)+'</div>';
+        h += '<div style="margin-top:8px;font-size:13px;font-weight:700;color:#7fe3a0">'+esc(t('startThisTrip'))+' \u2192</div></div>';
+      }
+      h += '</div>';
+      box.innerHTML = h;
+      var rowsEl = box.querySelectorAll('.haulerAssignedRow');
+      for(var k=0;k<rowsEl.length;k++){
+        rowsEl[k].onclick = (function(id){ return function(){ C.startPlannedTrip(id); }; })(rowsEl[k].getAttribute('data-trip'));
+      }
+    }).catch(function(e){ console.warn('[Hauler] assigned', e && e.message); box.innerHTML=''; });
+  }
+
+  // V21_00_3: last 5 completed/cancelled trips (read-only). No AR / no pay shown.
+  function loadRecentTrips(){
+    var box = $('haulerRecent'); if(!box || !C.state.driver) return;
+    rpc('hauler_my_trip_history', { p_tenant_id: TENANT_ID, p_driver_id: C.state.driver.driver_id, p_days: 30 }).then(function(rows){
+      var h = '<div style="font-size:13px;font-weight:800;opacity:.8;text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px">'+esc(t('recentTrips'))+'</div>';
+      if(!rows || !rows.length){
+        h += '<div style="opacity:.5;font-size:13px;font-style:italic">'+esc(t('noRecentTrips'))+'</div>';
+        box.innerHTML = h; return;
+      }
+      for(var i=0;i<Math.min(rows.length,5);i++){
+        var r = rows[i];
+        var when = r.actual_start ? new Date(r.actual_start).toLocaleDateString([], {month:'short',day:'numeric'}) : '';
+        var miles = r.actual_miles!=null ? (Number(r.actual_miles).toLocaleString()+' mi') : '';
+        h += '<div class="haulerRecentRow" data-trip="'+esc(r.trip_id)+'" style="background:#13294d;border-radius:10px;padding:10px;margin-bottom:8px;cursor:pointer">';
+        h += '<div style="display:flex;justify-content:space-between;align-items:center"><span style="font-weight:700;font-size:14px">'+esc(r.trip_code||'\u2014')+'</span>'+statusPill(r.status)+'</div>';
+        h += '<div style="font-size:13px;opacity:.9;margin-top:4px">'+tripRouteLine(r)+'</div>';
+        h += '<div style="font-size:12px;opacity:.7;margin-top:4px">'+esc(when)+(miles?' \u00b7 '+esc(miles):'')+'</div></div>';
+      }
+      box.innerHTML = h;
+      var rowsEl = box.querySelectorAll('.haulerRecentRow');
+      for(var k=0;k<rowsEl.length;k++){
+        rowsEl[k].onclick = (function(id){ return function(){ C.navTrip(id); }; })(rowsEl[k].getAttribute('data-trip'));
+      }
+    }).catch(function(e){ console.warn('[Hauler] recent', e && e.message); box.innerHTML=''; });
+  }
+
+  // V21_00_3: start a dispatcher-planned trip: flip status, stamp actual_start, open detail
+  C.startPlannedTrip = function(tripId){
+    if(!tripId) return;
+    rpc('trip_update_field', { p_tenant_id: TENANT_ID, p_trip_id: tripId, p_field:'status', p_value:'in_progress' })
+      .then(function(){
+        C.state.activeTripId = tripId;
+        if(!C.isClockedIn()){ C.clockIn({ trip_id: tripId }); }
+        C.navTrip(tripId);
+      }).catch(function(e){ console.warn('[Hauler] startPlanned', e && e.message); note(t('error')); });
+  };
+
   function renderHaulerStart(){
     var body = $('haulerStartBody'); if(!body) return;
     body.innerHTML =
+      '<div id="haulerAssigned"></div>'+ // V21_00_3: assigned trips section
       vehiclePickerHtml()+
-      // V21_00_2: hauler-rancho linkage — selector de rancho de origen (obligatorio)
+      // V21_00_3: rancho_origin selector — populated from active surquero's _ranchos[]; falls back to free-text if empty
       field(t('ranchoOrigen'), (function(){
-        var opts = '<option value="">'+esc(t('selRancho'))+'</option>';
-        // V21_00_2: hauler-rancho linkage — poblar con _ranchos del surquero activo
-        try {
-          if(typeof _ranchos !== 'undefined' && _ranchos && _ranchos.length){
+        var hasRanchos = false;
+        try { hasRanchos = (typeof _ranchos !== 'undefined' && _ranchos && _ranchos.length > 0); } catch(e){}
+        if(hasRanchos){
+          // V21_00_3: show dropdown of active surquero's ranchos
+          var opts = '<option value="">'+esc(t('selRancho'))+'</option>';
+          try {
             for(var _ri=0;_ri<_ranchos.length;_ri++){
               var _rn = (_ranchos[_ri] && _ranchos[_ri].rancho) ? _ranchos[_ri].rancho : '';
               if(_rn) opts += '<option value="'+esc(_rn)+'">'+esc(_rn)+'</option>';
             }
-          }
-        } catch(e){}
-        return '<select id="haulerStartRancho" style="'+inputStyle()+';appearance:none;-webkit-appearance:none">'+opts+'</select>';
+          } catch(e){}
+          return '<select id="haulerStartRancho" style="'+inputStyle()+';appearance:none;-webkit-appearance:none">'+opts+'</select>';
+        } else {
+          // V21_00_3: _ranchos[] empty — free-text fallback so driver can still start
+          return '<input id="haulerStartRancho" type="text" autocomplete="off" placeholder="'+esc(t('ranchoOrigen'))+'" style="'+inputStyle()+'">';
+        }
       })())+
       field(t('origin')+' '+t('optional'),      '<input id="haulerOrigin" autocomplete="off" style="'+inputStyle()+'">')+
       field(t('destination')+' '+t('optional'), '<input id="haulerDest" autocomplete="off" style="'+inputStyle()+'">')+
       field(t('customer')+' '+t('optional'),    '<input id="haulerCustomer" autocomplete="off" style="'+inputStyle()+'">')+
       '<button id="haulerStartBtn" '+bigBtn(t('startTrip'),'#1f6b3a')+'>'+esc(t('startTrip'))+'</button>'+
-      '<div id="haulerStartErr" style="margin-top:10px;color:#ff9a9a;font-size:13px;font-weight:600"></div>';
+      '<div id="haulerStartErr" style="margin-top:10px;color:#ff9a9a;font-size:13px;font-weight:600"></div>'+ // V21_00_3:
+      '<div id="haulerRecent" style="margin-top:22px"></div>'; // V21_00_3: recent trips section
     wireVehicleInput(null);
+    loadAssignedTrips(); // V21_00_3: dispatcher hand-off
+    loadRecentTrips();   // V21_00_3: trip history (hauler_my_trip_history)
     var btn = $('haulerStartBtn');
     if(btn) btn.onclick = function(){
-      // V21_00_2: hauler-rancho linkage — validar rancho de origen
+      // V21_00_3: validate rancho_origin (required — from dropdown or free-text fallback)
       var _rOrig = $('haulerStartRancho') ? $('haulerStartRancho').value.trim() : '';
       if(!_rOrig){
         var _errEl = $('haulerStartErr');
@@ -13467,7 +13663,7 @@ var _checkSendTimer = setInterval(checkDaysWithoutSend, 30 * 60 * 1000);
         origin:        ($('haulerOrigin')   && $('haulerOrigin').value.trim())   || null,
         dest:          ($('haulerDest')     && $('haulerDest').value.trim())     || null,
         customer:      ($('haulerCustomer') && $('haulerCustomer').value.trim()) || null,
-        rancho_origin: _rOrig  // V21_00_2: hauler-rancho linkage
+        rancho_origin: _rOrig  // V21_00_3: pass rancho_origin as last param to start_hauling_trip
       });
     };
   }
@@ -14145,11 +14341,19 @@ var _checkSendTimer = setInterval(checkDaysWithoutSend, 30 * 60 * 1000);
       if(!C.state.vehicleId){ note(t('needVehicle')); return; }
       var type = ($('choferMaintType')||{}).value || 'other';
       var notes = ($('choferMaintNotes')||{}).value || '';
-      var pendingId = uuid();
+      var pendingId = uuid(); // V21_00_4: kept for offline queue id; passed as p_maintenance_id
       sub.disabled=true; sub.textContent=t('saving');
-      rpc('submit_maintenance_event', {
-        p_pending_id: pendingId, p_driver_id: C.state.driver.driver_id, p_vehicle_id: C.state.vehicleId,
-        p_event_type: type, p_notes: notes || null, p_occurred_at: new Date().toISOString()
+      rpc('submit_maintenance_event', { // V21_00_4: fixed signature to match DB (p_maintenance_id + p_event_date + p_service_category + p_description ...)
+        p_maintenance_id: pendingId,
+        p_driver_id: C.state.driver.driver_id,
+        p_vehicle_id: C.state.vehicleId,
+        p_event_date: new Date().toISOString().slice(0,10),
+        p_service_category: type,
+        p_description: notes || null,
+        p_odometer_reading: null,
+        p_parts_cost: null,
+        p_photo_url: null,
+        p_notes: notes || null
       }).then(function(){ note(t('saved')); C.showTab('maint'); })
         .catch(function(e){
           queueEvent('maintenance', { pending_id:pendingId, vehicle_id:C.state.vehicleId, event_type:type, notes:notes });
@@ -14212,9 +14416,17 @@ var _checkSendTimer = setInterval(checkDaysWithoutSend, 30 * 60 * 1000);
     if(eq.length){
       var ev = eq[0];
       if(ev.kind === 'maintenance' && ev.payload && ev.payload.pending_id){
-        rpc('submit_maintenance_event', {
-          p_pending_id: ev.payload.pending_id, p_driver_id: C.state.driver.driver_id, p_vehicle_id: ev.payload.vehicle_id,
-          p_event_type: ev.payload.event_type, p_notes: ev.payload.notes || null, p_occurred_at: ev.at
+        rpc('submit_maintenance_event', { // V21_00_4: fixed signature to match DB
+          p_maintenance_id: ev.payload.pending_id,
+          p_driver_id: C.state.driver.driver_id,
+          p_vehicle_id: ev.payload.vehicle_id,
+          p_event_date: (ev.at || new Date().toISOString()).slice(0,10),
+          p_service_category: ev.payload.event_type,
+          p_description: ev.payload.notes || null,
+          p_odometer_reading: null,
+          p_parts_cost: null,
+          p_photo_url: null,
+          p_notes: ev.payload.notes || null
         }).then(function(){
           var cur = ljson('eventQueue', []); cur.shift(); lset('eventQueue', JSON.stringify(cur));
           if(cur.length) setTimeout(flushQueue, 400);
@@ -14230,19 +14442,24 @@ var _checkSendTimer = setInterval(checkDaysWithoutSend, 30 * 60 * 1000);
   setInterval(function(){ if(C.state.driver){ flushQueue(); renderHosBanner(); } }, 60000);
 
   // ════════════════════════════════════════════════════════════════
-  // V21_00 — Fix #3 (BOL OCR) + Fix #4 (Hauling Trip Detail screen)
+  // V21_00_3: Tabbed Hauler Trip Detail (ported from V21_01_0)
   // Hash route #/hauling/trip/:trip_id renders a full-screen detail view
   // over the chofer shell. BOL OCR confirmation form is reused for both
   // the initial capture and the "Edit BOL" action.
+  // 9 tabs: Overview / Time / DVIR / BOL / Load / Fuel / Odometer / Maint / Events
+  // NO Pricing/Pay tab. All trip data comes from the driver-safe view; AR + pay
+  // are never queried or rendered here.
   // ════════════════════════════════════════════════════════════════
 
   // Local working copy of the BOL being edited (OCR result → editable form).
   C.bolDraft = null;
 
-  function statusPill(status){
+  function statusPill(status){ // V21_00_3:
     var map = {
       scheduled:   {label:t('statusScheduled'),   bg:'#446'},
+      planned:     {label:t('statusScheduled'),   bg:'#446'},
       in_progress: {label:t('statusInProgress'),  bg:'#1f6b3a'},
+      arrived:     {label:'arrived',               bg:'#2a6a8a'},
       paused:      {label:t('statusPaused'),       bg:'#8a6d1a'},
       completed:   {label:t('statusCompleted'),    bg:'#2a4a7a'},
       cancelled:   {label:status,                  bg:'#7a2a2a'}
@@ -14251,7 +14468,7 @@ var _checkSendTimer = setInterval(checkDaysWithoutSend, 30 * 60 * 1000);
     return '<span style="display:inline-block;background:'+m.bg+';color:#fff;font-size:12px;font-weight:700;padding:3px 10px;border-radius:10px">'+esc(m.label)+'</span>';
   }
 
-  // ── Hash router ──
+  // ── Hash router ── // V21_00_3:
   function parseHash(){
     var h = location.hash || '';
     var m = h.match(/^#\/hauling\/trip\/([^/?#]+)/);
@@ -14260,7 +14477,7 @@ var _checkSendTimer = setInterval(checkDaysWithoutSend, 30 * 60 * 1000);
   C.navTrip = function(tripId){ location.hash = '#/hauling/trip/' + encodeURIComponent(tripId); };
   C.navBack = function(){ if(location.hash){ history.back(); } location.hash = ''; renderRoute(); };
 
-  function renderRoute(){
+  function renderRoute(){ // V21_00_3:
     var ov = $('choferTripScreen');
     var r = parseHash();
     if(r.route === 'tripDetail' && C.state.driver){
@@ -14270,6 +14487,7 @@ var _checkSendTimer = setInterval(checkDaysWithoutSend, 30 * 60 * 1000);
       renderTripDetail(r.tripId);
     } else {
       if(ov) ov.style.display = 'none';
+      stopGpsPing();  // V21_00_3: leaving trip detail: stop background position pings
       // Hauler has no chofer shell behind the trip screen — send them back to the
       // start screen instead of a blank view. Chofer-mode users keep their tabs.
       if(window.currentMode === 'hauler' && C.state.driver){ C.showHaulerStart(); }
@@ -14277,183 +14495,558 @@ var _checkSendTimer = setInterval(checkDaysWithoutSend, 30 * 60 * 1000);
   }
   window.addEventListener('hashchange', renderRoute);
 
+  // V21_00_3: C.startHaulingTrip — captures GPS, passes rancho_origin as last param
   C.startHaulingTrip = function(opts){
     if(!C.state.driver) return;
     opts = opts || {};
     var errEl = $('haulerStartErr'); if(errEl) errEl.textContent = '';
     var btn = $('haulerStartBtn'); if(btn){ btn.disabled = true; btn.textContent = t('startingTrip'); }
-    rpc('start_hauling_trip', {
-      p_tenant_id:    TENANT_ID,
-      p_driver_id:    C.state.driver.driver_id,
-      p_vehicle_id:   C.state.vehicleId || null,
-      p_origin:       opts.origin        || null,
-      p_dest:         opts.dest          || null,
-      p_customer:     opts.customer      || null,
-      p_rancho_origin: opts.rancho_origin || null  // V21_00_2: hauler-rancho linkage
-    })
-      .then(function(res){
-        // Accept string, {start_hauling_trip:uuid}, or [{start_hauling_trip:uuid}] shapes.
-        var tripId = res;
-        if(Array.isArray(res)) tripId = res[0];
-        if(tripId && typeof tripId === 'object') tripId = tripId.start_hauling_trip || tripId.trip_id || null;
-        if(!tripId || typeof tripId !== 'string'){ throw new Error('no trip id'); }
-        C.state.activeTripId = tripId;
-        // Auto clock-in tied to this trip if not already on the clock.
-        if(!C.isClockedIn()){ C.clockIn({ trip_id: tripId }); }
-        var scr = $('haulerStartScreen'); if(scr) scr.style.display = 'none';
-        C.navTrip(tripId);
+    // V21_00_3: capture device GPS once at start → origin lat/lng (best-effort, non-blocking)
+    captureGps(function(pos){
+      rpc('start_hauling_trip', {
+        p_tenant_id:     TENANT_ID,
+        p_driver_id:     C.state.driver.driver_id,
+        p_vehicle_id:    C.state.vehicleId || null,
+        p_origin:        opts.origin        || null,
+        p_dest:          opts.dest          || null,
+        p_customer:      opts.customer      || null,
+        p_odometer_start:(C.state.lastOdometer!=null ? C.state.lastOdometer : null),
+        p_rancho_origin: opts.rancho_origin || null  // V21_00_3: rancho_origin as LAST PARAM
       })
-      .catch(function(e){
-        console.warn('[Hauler] startHaulingTrip failed:', e && e.message);
-        if(btn){ btn.disabled = false; btn.textContent = t('startTrip'); }
-        if(errEl) errEl.textContent = t('haulStartErr');
-        else note(t('haulStartErr'));
-      });
+        .then(function(res){
+          // Accept string, {start_hauling_trip:uuid}, or [{start_hauling_trip:uuid}] shapes.
+          var tripId = res;
+          if(Array.isArray(res)) tripId = res[0];
+          if(tripId && typeof tripId === 'object') tripId = tripId.start_hauling_trip || tripId.trip_id || null;
+          if(!tripId || typeof tripId !== 'string'){ throw new Error('no trip id'); }
+          C.state.activeTripId = tripId;
+          if(!C.isClockedIn()){ C.clockIn({ trip_id: tripId }); }
+          // V21_00_3: stamp origin GPS if we got a fix
+          if(pos){ rpc('trip_log_position', { p_tenant_id: TENANT_ID, p_trip_id: tripId, p_lat: pos.coords.latitude, p_lng: pos.coords.longitude, p_speed:null, p_heading:null }).catch(function(){}); }
+          var scr = $('haulerStartScreen'); if(scr) scr.style.display = 'none';
+          C.navTrip(tripId);
+        })
+        .catch(function(e){
+          console.warn('[Hauler] startHaulingTrip failed:', e && e.message);
+          if(btn){ btn.disabled = false; btn.textContent = t('startTrip'); }
+          if(errEl) errEl.textContent = t('haulStartErr');
+          else note(t('haulStartErr'));
+        });
+    });
   };
 
-  // ══ Trip Detail screen ══
+  // V21_00_3: 9-tab constants
+  var HTABS = ['overview','time','dvir','bol','load','fuel','odometer','maint','events']; // V21_00_3:
+  var HTAB_LABEL = { overview:'tabOverview', time:'tabTime', dvir:'tabDvir', bol:'tabBol', // V21_00_3:
+                     load:'tabLoad', fuel:'tabFuelT', odometer:'tabOdo', maint:'tabMaintT', events:'tabEvents' };
+
+  function captureGps(cb){ // V21_00_3:
+    if(!navigator.geolocation){ cb(null); return; }
+    var done = false;
+    var timer = setTimeout(function(){ if(!done){ done=true; cb(null); } }, 8000);
+    navigator.geolocation.getCurrentPosition(
+      function(pos){ if(!done){ done=true; clearTimeout(timer); cb(pos); } },
+      function(){ if(!done){ done=true; clearTimeout(timer); cb(null); } },
+      { enableHighAccuracy:false, maximumAge:60000, timeout:8000 }
+    );
+  }
+
+  // V21_00_3: GPS background ping (every 5 min while in_progress; only if moved >0.5 mi haversine gate)
+  var _gpsPingTimer = null, _lastPing = null;
+  function milesBetween(a, b){ // V21_00_3:
+    if(!a || !b) return Infinity;
+    var R = 3958.8, toRad = function(d){ return d*Math.PI/180; };
+    var dLat = toRad(b.lat-a.lat), dLng = toRad(b.lng-a.lng);
+    var s = Math.sin(dLat/2)*Math.sin(dLat/2) +
+            Math.cos(toRad(a.lat))*Math.cos(toRad(b.lat))*Math.sin(dLng/2)*Math.sin(dLng/2);
+    return R * 2 * Math.atan2(Math.sqrt(s), Math.sqrt(1-s));
+  }
+  function startGpsPing(tripId){ // V21_00_3:
+    stopGpsPing();
+    _gpsPingTimer = setInterval(function(){
+      if(C.state.activeTripId !== tripId) { stopGpsPing(); return; }
+      captureGps(function(pos){
+        if(!pos) return;
+        var cur = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+        if(_lastPing && milesBetween(_lastPing, cur) <= 0.5) return; // V21_00_3: battery-friendly gate
+        _lastPing = cur;
+        rpc('trip_log_position', { p_tenant_id: TENANT_ID, p_trip_id: tripId, // V21_00_3:
+          p_lat: cur.lat, p_lng: cur.lng,
+          p_speed: pos.coords.speed!=null ? pos.coords.speed*2.237 : null,
+          p_heading: pos.coords.heading!=null ? pos.coords.heading : null }).catch(function(){});
+      });
+    }, 5*60*1000);
+  }
+  function stopGpsPing(){ if(_gpsPingTimer){ clearInterval(_gpsPingTimer); _gpsPingTimer=null; } } // V21_00_3:
+  C.stopGpsPing = stopGpsPing;
+
+  // V21_00_3: Trip Detail entry — fetch via trip_driver_view (driver-safe; NO ar_/driver_pay fields)
   function renderTripDetail(tripId){
     var body = $('choferTripBody');
     if(!body) return;
     body.innerHTML = '<div style="opacity:.6;padding:20px;text-align:center">'+esc(t('loading'))+'</div>';
-    // Refresh persistent clock footer header line.
     var hd = $('choferTripClock'); if(hd) hd.textContent = C.state.clockInAt ? fmtClockLine() : '';
+    var bk=$('choferTripBackBtn'); if(bk) bk.textContent = t('back');
+    var tt=$('choferTripTitle'); if(tt) tt.textContent = t('tripDetail');
 
+    // V21_00_3: Read driver-facing trip ONLY from trip_driver_view (never from fleet.trip directly)
     Promise.all([
-      rpc('trip_detail', { p_tenant_id: TENANT_ID, p_trip_id: tripId }).catch(function(){ return []; }),
-      rpc('trip_bol',    { p_tenant_id: TENANT_ID, p_trip_id: tripId }).catch(function(){ return []; })
+      rpc('hauler_my_active_trip', { p_tenant_id: TENANT_ID, p_driver_id: C.state.driver.driver_id }).catch(function(){ return []; }),
+      rpc('trip_detail',           { p_tenant_id: TENANT_ID, p_trip_id: tripId }).catch(function(){ return []; })
     ]).then(function(out){
-      var trip = (out[0] && out[0][0]) || { trip_id: tripId, status:'in_progress', trip_code: tripId.slice(0,8) };
-      var bol  = (out[1] && out[1][0]) || null;
-      C.state.tripDetail = trip;
-      C.state.tripBol = bol;
-      drawTripDetail(trip, bol);
+      var activeRows = out[0] || [];
+      var trip = null;
+      for(var i=0;i<activeRows.length;i++){ if(activeRows[i].trip_id === tripId){ trip = activeRows[i]; break; } }
+      // If not the active trip (history view), fetch from history
+      var ensure = trip ? Promise.resolve(trip) :
+        rpc('hauler_my_trip_history', { p_tenant_id: TENANT_ID, p_driver_id: C.state.driver.driver_id, p_days: 365 })
+          .then(function(rows){ for(var j=0;(rows||[]).length>j;j++){ if(rows[j].trip_id===tripId) return rows[j]; } return { trip_id: tripId, status:'in_progress', trip_code: tripId.slice(0,8) }; })
+          .catch(function(){ return { trip_id: tripId, status:'in_progress', trip_code: tripId.slice(0,8) }; });
+      ensure.then(function(tr){
+        C.state.tripDetail = tr;
+        var det = (out[1] && out[1][0]) || {};
+        C.state.tripEvents = det.events || [];
+        // V21_00_3: manage GPS ping lifecycle: ping only while in_progress
+        if(tr.status === 'in_progress'){ startGpsPing(tripId); } else { stopGpsPing(); }
+        // V21_00_3: hide legacy bottom action bar; tabbed UI owns its own buttons
+        ['choferTripPause','choferTripResume','choferTripComplete'].forEach(function(id){ var el=$(id); if(el && el.parentElement) el.parentElement.style.display='none'; });
+        // V21_00_3: show tab bar
+        var tabBar = $('choferTripTabs'); if(tabBar) tabBar.style.display = '';
+        if(!C.state.haulerTab || HTABS.indexOf(C.state.haulerTab)<0) C.state.haulerTab = 'overview';
+        drawHaulerTabs();
+        showHaulerTab(C.state.haulerTab);
+        maybeStaleBanner(tr);
+      });
     });
   }
 
-  function infoRow(label, value){
+  function maybeStaleBanner(trip){ // V21_00_3:
+    var body = $('choferTripBody');
+    if(!body || trip.status !== 'in_progress' || !trip.actual_start) return;
+    var startMs = new Date(trip.actual_start).getTime();
+    if(isNaN(startMs) || (Date.now()-startMs) < 24*3600*1000) return;
+    var evts = C.state.tripEvents || [];
+    var recent = false;
+    for(var i=0;i<evts.length;i++){
+      var ts = evts[i].occurred_at ? new Date(evts[i].occurred_at).getTime() : 0;
+      if(ts && (Date.now()-ts) < 12*3600*1000){ recent = true; break; }
+    }
+    if(recent) return;
+    var banner = document.createElement('div');
+    banner.style.cssText = 'background:#3a2a12;border:1px solid #d9a441;border-radius:12px;padding:12px;margin-bottom:12px;color:#ffe2a8';
+    banner.innerHTML = '<div style="font-weight:700;font-size:14px;margin-bottom:8px">⚠️ '+esc(t('staleTrip'))+' '+esc(trip.trip_code||'')+'?</div>'+
+      '<button id="haulerStaleComplete" style="width:100%;padding:12px;border:none;border-radius:10px;background:#1f6b3a;color:#fff;font-weight:800">'+esc(t('completeNow'))+'</button>';
+    body.insertBefore(banner, body.firstChild);
+    var b = $('haulerStaleComplete'); if(b) b.onclick = function(){ openCompleteModal(trip.trip_id); };
+  }
+
+  function drawHaulerTabs(){ // V21_00_3:
+    var bar = $('choferTripTabs'); if(!bar) return;
+    var html = '';
+    for(var i=0;i<HTABS.length;i++){
+      var id = HTABS[i], active = id === C.state.haulerTab;
+      html += '<button data-htab="'+id+'" style="flex:0 0 auto;background:'+(active?'#2a4a7a':'transparent')+
+        ';border:none;border-bottom:3px solid '+(active?'#5b8dd9':'transparent')+
+        ';color:#fff;padding:11px 13px;font-size:13px;font-weight:'+(active?'700':'500')+';white-space:nowrap">'+
+        esc(t(HTAB_LABEL[id]))+'</button>';
+    }
+    bar.innerHTML = html;
+    var btns = bar.querySelectorAll('button');
+    for(var j=0;j<btns.length;j++){
+      btns[j].onclick = (function(tab){ return function(){ showHaulerTab(tab); }; })(btns[j].getAttribute('data-htab'));
+    }
+  }
+
+  function showHaulerTab(tab){ // V21_00_3:
+    C.state.haulerTab = tab;
+    drawHaulerTabs();
+    var body = $('choferTripBody');
+    var trip = C.state.tripDetail || {};
+    var fn = HRENDER[tab];
+    body.innerHTML = fn ? fn(trip) : '';
+    if(HWIRE[tab]) HWIRE[tab](trip);
+    if(tab !== 'overview') maybeStaleBanner(trip);
+  }
+
+  function hCard(inner){ return '<div style="background:#13294d;border-radius:12px;padding:12px;margin-bottom:12px">'+inner+'</div>'; } // V21_00_3:
+  function hLabel(txt){ return '<div style="font-size:12px;opacity:.7;font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">'+esc(txt)+'</div>'; } // V21_00_3:
+  function infoRow(label, value){ // V21_00_3:
     return '<div style="display:flex;justify-content:space-between;gap:12px;padding:6px 0;border-bottom:1px solid #1c3252">'+
       '<span style="opacity:.7;font-size:13px">'+esc(label)+'</span>'+
       '<span style="font-weight:700;font-size:14px;text-align:right">'+esc(value==null||value===''?'—':value)+'</span></div>';
   }
 
-  function drawTripDetail(trip, bol){
-    var body = $('choferTripBody');
+  var HRENDER = {}, HWIRE = {}; // V21_00_3:
+
+  // V21_00_3: Overview tab — includes rancho_origin (V21_00_3-specific new field)
+  HRENDER.overview = function(trip){
     var h = '';
-
-    // Header: code + status
-    h += '<div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">'+
-      '<div style="font-size:18px;font-weight:800">'+esc(trip.trip_code||'—')+'</div>'+
-      statusPill(trip.status)+'</div>';
-
-    // Origin → Destination
-    h += '<div style="background:#13294d;border-radius:12px;padding:12px;margin-bottom:12px">'+
-      '<div style="font-size:12px;opacity:.7;font-weight:700;text-transform:uppercase;letter-spacing:.5px">'+esc(t('origin'))+'</div>'+
-      '<div style="font-weight:700">'+esc(trip.origin_name||'—')+'</div>'+
-      '<div style="font-size:13px;opacity:.8">'+esc(trip.origin_address||'')+'</div>'+
+    // Header
+    h += '<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">'+
+      '<div style="font-size:18px;font-weight:800">'+esc(trip.trip_code||'—')+'</div>'+statusPill(trip.status)+'</div>';
+    // V21_00_3: HOS pills — §395.1(k) 150 air-mile exemption + 14h soft cap
+    h += '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">'+
+      '<span style="display:inline-block;background:#15324e;color:#bcd4f5;font-size:12px;font-weight:700;padding:4px 10px;border-radius:10px">ℹ️ 150 air-mi §395.1(k)</span>'+
+      hosSoftCapPill()+'</div>';
+    // Route
+    h += hCard(
+      hLabel(t('origin'))+'<div style="font-weight:700">'+esc(trip.origin_label||trip.origin_name||'—')+'</div>'+
       '<div style="text-align:center;opacity:.5;margin:6px 0">↓</div>'+
-      '<div style="font-size:12px;opacity:.7;font-weight:700;text-transform:uppercase;letter-spacing:.5px">'+esc(t('destination'))+'</div>'+
-      '<div style="font-weight:700">'+esc(trip.dest_name||'—')+'</div>'+
-      '<div style="font-size:13px;opacity:.8">'+esc(trip.dest_address||'')+'</div>'+
-    '</div>';
-
-    // Miles
+      hLabel(t('destination'))+'<div style="font-weight:700">'+esc(trip.destination_label||trip.dest_name||'—')+'</div>');
+    // V21_00_3: rancho_origin displayed in Overview tab
+    var vehLabel = '—';
+    if(trip.vehicle_id && C.state.vehicles){ for(var i=0;i<C.state.vehicles.length;i++){ if(C.state.vehicles[i].vehicle_id===trip.vehicle_id){ vehLabel = vehicleLabel(C.state.vehicles[i]); break; } } }
     h += '<div style="background:#13294d;border-radius:12px;padding:6px 12px;margin-bottom:12px">'+
+      infoRow(t('ranchoOrigen'), trip.rancho_origin || null)+ // V21_00_3: rancho_origin field
+      infoRow(t('vehicle'),      vehLabel)+
+      infoRow(t('customer'),     trip.customer_name || trip.bill_to_name)+
+      infoRow(t('crop'),         trip.crop)+
       infoRow(t('plannedMiles'), trip.planned_miles!=null ? Number(trip.planned_miles).toLocaleString()+' mi' : null)+
       infoRow(t('actualMiles'),  trip.actual_miles!=null ? Number(trip.actual_miles).toLocaleString()+' mi' : null)+
     '</div>';
-
-    // Load info (from BOL)
-    h += '<div style="background:#13294d;border-radius:12px;padding:6px 12px;margin-bottom:12px">'+
-      '<div style="font-size:12px;opacity:.7;font-weight:700;text-transform:uppercase;letter-spacing:.5px;padding:6px 0">'+esc(t('loadInfo'))+'</div>'+
-      // V21_00_2: hauler-rancho linkage — mostrar rancho de origen en detalle del viaje
-      infoRow(t('ranchoOrigen'), trip.rancho_origin || null)+
-      infoRow(t('commodity'),   bol && bol.commodity_summary)+
-      infoRow(t('totalPieces'), bol && bol.total_pieces)+
-      infoRow(t('totalWeight'), bol && bol.total_weight_lbs)+
-    '</div>';
-
-    // Bill-to + related party chip
-    var btName = (bol && bol.bill_to_name) || trip.bill_to_name || '—';
-    var rp = trip.is_related_party_use ? ' <span style="display:inline-block;background:#8a4a1a;color:#fff;font-size:11px;font-weight:700;padding:2px 8px;border-radius:8px;margin-left:6px">'+esc(t('relatedParty'))+'</span>' : '';
-    h += '<div style="background:#13294d;border-radius:12px;padding:6px 12px;margin-bottom:12px">'+
-      '<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0">'+
-        '<span style="opacity:.7;font-size:13px">'+esc(t('billTo'))+'</span>'+
-        '<span style="font-weight:700;font-size:14px;text-align:right">'+esc(btName)+rp+'</span>'+
-      '</div></div>';
-
-    // BOL section — preview + edit
-    h += '<div style="background:#13294d;border-radius:12px;padding:12px;margin-bottom:12px">'+
-      '<div style="font-size:12px;opacity:.7;font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">BOL</div>';
-    if(bol && bol.source_image_url){
-      h += '<img src="'+esc(bol.source_image_url)+'" style="max-width:100%;border-radius:10px;margin-bottom:8px" onerror="this.style.display=\'none\'">';
-      h += '<div style="font-size:13px;opacity:.8;margin-bottom:8px">'+esc(t('bolNumber'))+': '+esc(bol.bol_number||'—')+'</div>';
-      h += '<button id="choferEditBolBtn" style="width:100%;padding:12px;border:none;border-radius:10px;background:#2a4a7a;color:#fff;font-weight:700">'+esc(t('editBol'))+'</button>';
-    } else {
-      h += '<div style="opacity:.7;font-size:13px;margin-bottom:8px">'+esc(t('noBol'))+'</div>';
-      h += '<label for="choferBolFile" style="display:block;width:100%;padding:14px;border:none;border-radius:10px;background:#2a4a7a;color:#fff;font-weight:800;text-align:center;box-sizing:border-box;cursor:pointer">'+esc(t('takeBolPhoto'))+'</label>'+
-           '<input id="choferBolFile" type="file" accept="image/*" capture="environment" style="position:absolute;left:-9999px;width:1px;height:1px;opacity:0">'+
-           '<div id="choferBolOcrStatus" style="margin-top:8px;font-size:13px;opacity:.8"></div>';
+    // Helpers
+    var helpers = (trip.helper_driver_ids && trip.helper_driver_ids.length) ? trip.helper_driver_ids.length+' '+t('helpers') : t('noHelpers');
+    h += '<div style="background:#13294d;border-radius:12px;padding:6px 12px;margin-bottom:12px">'+infoRow(t('helpers'), helpers)+'</div>';
+    // Complete button
+    if(trip.status !== 'completed' && trip.status !== 'cancelled'){
+      h += '<button id="haulerCompleteBtn" style="width:100%;padding:14px;border:none;border-radius:12px;background:#1f6b3a;color:#fff;font-size:15px;font-weight:800;margin-bottom:10px">✓ '+esc(t('completeTrip'))+'</button>';
     }
-    h += '</div>';
+    h += '<div style="height:40px"></div>';
+    return h;
+  };
+  HWIRE.overview = function(trip){ // V21_00_3:
+    var b = $('haulerCompleteBtn');
+    if(b) b.onclick = function(){
+      // V21_00_3: require Post-Trip DVIR before completing
+      ensurePostTripThen(trip, function(){ openCompleteModal(trip.trip_id); });
+    };
+  };
 
-    // Segment log
-    h += '<div style="background:#13294d;border-radius:12px;padding:12px;margin-bottom:90px">'+
-      '<div style="font-size:12px;opacity:.7;font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">'+esc(t('segments'))+'</div>';
-    var evts = trip.events || [];
-    if(!evts.length){
-      h += '<div style="opacity:.6;font-size:13px;font-style:italic">'+esc(t('noSegments'))+'</div>';
-    } else {
-      for(var i=0;i<evts.length;i++){
-        var e = evts[i];
-        var when = e.occurred_at ? new Date(e.occurred_at).toLocaleString([], {month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}) : '';
-        h += '<div style="display:flex;justify-content:space-between;gap:10px;padding:5px 0;border-bottom:1px solid #1c3252;font-size:13px">'+
-          '<span style="font-weight:700">'+esc(e.event_type)+(e.notes?' <span style="opacity:.6;font-weight:400">'+esc(e.notes)+'</span>':'')+'</span>'+
-          '<span style="opacity:.7;white-space:nowrap">'+esc(when)+'</span></div>';
-      }
-    }
-    h += '</div>';
-
-    body.innerHTML = h;
-    // Localize static chrome (back button, title, action bar).
-    var bk=$('choferTripBackBtn'); if(bk) bk.textContent = t('back');
-    var tt=$('choferTripTitle'); if(tt) tt.textContent = t('tripDetail');
-    var pb=$('choferTripPause'); if(pb) pb.textContent = '⏸ '+t('pause');
-    var rb=$('choferTripResume'); if(rb) rb.textContent = '▶ '+t('resume');
-    var cpb=$('choferTripComplete'); if(cpb) cpb.textContent = '✓ '+t('completeTrip');
-    wireTripDetail(trip);
+  function hosSoftCapPill(){ // V21_00_3: §395.1(k) 14h soft cap informational pill
+    var startMs = C.state.clockInAt ? new Date(C.state.clockInAt).getTime() : 0;
+    if(!startMs){ return '<span style="display:inline-block;background:#15324e;color:#bcd4f5;font-size:12px;font-weight:700;padding:4px 10px;border-radius:10px">'+esc(t('hosOk'))+' —</span>'; }
+    var hrs = (Date.now()-startMs)/3600000;
+    var bg = hrs > 14 ? '#7a2a2a' : (hrs >= 12 ? '#8a6d1a' : '#1f6b3a');
+    return '<span style="display:inline-block;background:'+bg+';color:#fff;font-size:12px;font-weight:700;padding:4px 10px;border-radius:10px">'+esc(t('hosOk'))+' '+hrs.toFixed(1)+'h</span>';
   }
 
-  function wireTripDetail(trip){
-    var tripId = trip.trip_id;
-    var editBtn = $('choferEditBolBtn');
-    if(editBtn) editBtn.onclick = function(){
-      // Seed the editable form from the saved OCR JSON (or a flat shape).
-      var bol = C.state.tripBol;
-      C.bolDraft = bolFromSaved(bol);
-      openBolForm(tripId);
-    };
+  // V21_00_3: Time tab
+  HRENDER.time = function(trip){
+    var h = '';
+    if(C.state.clockInAt){
+      h += '<div style="text-align:center;margin-top:10px">'+
+        '<div style="font-size:42px">🟢</div>'+
+        '<div style="font-size:18px;font-weight:800;margin-top:8px">'+esc(t('onTheClock'))+'</div>'+
+        '<div id="haulerClockLive" style="opacity:.85;margin-top:6px;font-size:15px;font-weight:700">'+esc(fmtClockLine())+'</div>'+
+        '<button id="haulerClockOut" style="width:100%;padding:14px;border:none;border-radius:12px;background:#7a2a2a;color:#fff;font-size:15px;font-weight:800;margin-top:14px">'+esc(t('timeOut2'))+'</button>'+
+      '</div>';
+    } else {
+      h += '<div style="text-align:center;margin-top:10px">'+
+        '<div style="opacity:.7;margin-bottom:10px">'+esc(t('notClocked'))+'</div>'+
+        '<button id="haulerClockIn" style="width:100%;padding:14px;border:none;border-radius:12px;background:#1f6b3a;color:#fff;font-size:15px;font-weight:800">'+esc(t('timeIn2'))+'</button>'+
+      '</div>';
+    }
+    h += '<div id="haulerTimeTotal" style="margin-top:18px;text-align:center;opacity:.8;font-size:14px"></div>';
+    return h;
+  };
+  HWIRE.time = function(trip){ // V21_00_3:
+    var bi = $('haulerClockIn');
+    if(bi) bi.onclick = function(){ bi.disabled=true; C.clockIn({ trip_id: trip.trip_id }).then(function(){ showHaulerTab('time'); }).catch(function(){ bi.disabled=false; }); };
+    var bo = $('haulerClockOut');
+    if(bo) bo.onclick = function(){ bo.disabled=true; C.clockOut().then(function(){ showHaulerTab('time'); }).catch(function(){ bo.disabled=false; }); };
+  };
+
+  // V21_00_3: DVIR tab (reuses chofer DVIR handlers)
+  HRENDER.dvir = function(trip){
+    return '<div id="haulerDvirSection">'+
+      hCard('<div style="font-weight:800;font-size:14px;margin-bottom:8px">'+esc(t('preTrip'))+'</div>'+
+            '<div id="haulerPretripStatus" style="font-size:13px;opacity:.8;margin-bottom:8px">…</div>'+
+            '<button id="haulerStartPretrip" style="width:100%;padding:12px;border:none;border-radius:10px;background:#2a4a7a;color:#fff;font-weight:700">'+esc(t('startDvir'))+' — '+esc(t('preTrip'))+'</button>')+
+      hCard('<div style="font-weight:800;font-size:14px;margin-bottom:8px">'+esc(t('postTrip'))+'</div>'+
+            '<div id="haulerPosttripStatus" style="font-size:13px;opacity:.8;margin-bottom:8px">…</div>'+
+            '<button id="haulerStartPosttrip" style="width:100%;padding:12px;border:none;border-radius:10px;background:#2a4a7a;color:#fff;font-weight:700">'+esc(t('startDvir'))+' — '+esc(t('postTrip'))+'</button>')+
+      '<div id="haulerDvirInline" style="margin-top:8px"></div>';
+  };
+  HWIRE.dvir = function(trip){ // V21_00_3:
+    if(trip.vehicle_id){ C.state.vehicleId = trip.vehicle_id; }
+    refreshDvirStatus('pretrip', 'haulerPretripStatus');
+    refreshDvirStatus('posttrip', 'haulerPosttripStatus');
+    var p = $('haulerStartPretrip'); if(p) p.onclick = function(){ runInlineDvir('pretrip'); };
+    var q = $('haulerStartPosttrip'); if(q) q.onclick = function(){ runInlineDvir('posttrip'); };
+  };
+  function refreshDvirStatus(type, elId){ // V21_00_3:
+    var el = $(elId); if(!el || !C.state.vehicleId) return;
+    rpc('driver_check_inspection_today', { p_vehicle_id: C.state.vehicleId, p_inspection_type: type }).then(function(rows){
+      var row = (rows && rows.length) ? rows[0] : null;
+      el.textContent = row ? t('dvirDoneToday') : t('dvirNotDone');
+      el.style.color = row ? '#7fe3a0' : '#ffd27f';
+    }).catch(function(){ el.textContent = t('dvirNotDone'); });
+  }
+  function runInlineDvir(type){ // V21_00_3: run existing chofer DVIR checklist inline
+    var box = $('haulerDvirInline'); if(!box) return;
+    C.state.inspectionType = type; C.state.inspectionId = null; C.state.items = null; C.state.results = {};
+    box.innerHTML = dvirHtml(type);
+    wireDvirControls(type);
+  }
+
+  // V21_00_3: BOL tab
+  HRENDER.bol = function(trip){
+    return '<label for="choferBolFile" style="display:block;width:100%;padding:14px;border:none;border-radius:10px;background:#2a4a7a;color:#fff;font-weight:800;text-align:center;box-sizing:border-box;cursor:pointer;margin-bottom:6px">'+esc(t('addBol'))+'</label>'+
+      '<input id="choferBolFile" type="file" accept="image/*" capture="environment" style="position:absolute;left:-9999px;width:1px;height:1px;opacity:0">'+
+      '<div id="choferBolOcrStatus" style="margin-top:4px;font-size:13px;opacity:.8"></div>'+
+      hLabel(t('attachedBols'))+
+      '<div id="haulerBolList"><div style="opacity:.5;font-size:13px">'+esc(t('loading'))+'</div></div>';
+  };
+  HWIRE.bol = function(trip){ // V21_00_3:
     var file = $('choferBolFile');
-    if(file) file.onchange = function(){
-      var f = file.files && file.files[0]; if(!f) return;
-      runBolOcr(f, tripId);
-    };
-    // Bottom action bar buttons
-    var pb = $('choferTripPause');
-    if(pb) pb.onclick = function(){
-      rpc('trip_add_event', { p_tenant_id: TENANT_ID, p_trip_id: tripId, p_event_type:'paused', p_notes:null })
-        .then(function(){ note(t('tripPaused')); renderTripDetail(tripId); }).catch(function(){ note(t('error')); });
-    };
-    var rb = $('choferTripResume');
-    if(rb) rb.onclick = function(){
-      rpc('trip_add_event', { p_tenant_id: TENANT_ID, p_trip_id: tripId, p_event_type:'resumed', p_notes:null })
-        .then(function(){ note(t('tripResumed')); renderTripDetail(tripId); }).catch(function(){ note(t('error')); });
-    };
-    var cb = $('choferTripComplete');
-    if(cb) cb.onclick = function(){ openCompleteModal(tripId); };
+    if(file) file.onchange = function(){ var f=file.files&&file.files[0]; if(!f) return; runBolOcr(f, trip.trip_id); };
+    loadTripBols(trip.trip_id);
+  };
+  function loadTripBols(tripId){ // V21_00_3:
+    var box = $('haulerBolList'); if(!box) return;
+    rpc('trip_bol', { p_tenant_id: TENANT_ID, p_trip_id: tripId }).then(function(rows){
+      if(!rows || !rows.length){ box.innerHTML = '<div style="opacity:.5;font-size:13px;font-style:italic">'+esc(t('noBols'))+'</div>'; return; }
+      var h = '';
+      for(var i=0;i<rows.length;i++){
+        var b = rows[i];
+        var nLines = (b.line_items && b.line_items.length) || 0;
+        h += '<div style="background:#16294a;border-radius:10px;padding:10px;margin-bottom:8px">'+
+          (b.source_image_url ? '<img src="'+esc(b.source_image_url)+'" style="max-width:100%;border-radius:8px;margin-bottom:6px" onerror="this.style.display=\'none\'">' : '')+
+          '<div style="font-size:13px;font-weight:700">'+esc(t('bolNumber'))+': '+esc(b.bol_number||'—')+'</div>'+
+          '<div style="font-size:12px;opacity:.8;margin-top:2px">'+esc(b.commodity_summary||'')+'</div>'+
+          '<div style="font-size:12px;opacity:.6;margin-top:2px">'+nLines+' '+esc(t('lineItems'))+'</div>'+
+        '</div>';
+      }
+      box.innerHTML = h;
+    }).catch(function(){ box.innerHTML = '<div style="opacity:.5;font-size:13px">'+esc(t('noBols'))+'</div>'; });
   }
 
-  // ── BOL OCR ──
+  // V21_00_3: Load tab
+  HRENDER.load = function(trip){
+    return '<button id="haulerAddLoadItem" style="width:100%;padding:12px;border:1px dashed #3a5a8a;border-radius:10px;background:transparent;color:#9cc0f0;font-weight:700;margin-bottom:10px">'+esc(t('addItem'))+'</button>'+
+      '<div id="haulerLoadList"><div style="opacity:.5;font-size:13px">'+esc(t('loading'))+'</div></div>';
+  };
+  HWIRE.load = function(trip){ // V21_00_3:
+    loadTripLoadItems(trip.trip_id);
+    var add = $('haulerAddLoadItem');
+    if(add) add.onclick = function(){ openLoadItemForm(trip.trip_id); };
+  };
+  function loadTripLoadItems(tripId){ // V21_00_3:
+    var box = $('haulerLoadList'); if(!box) return;
+    rpc('trip_list_load_items', { p_trip_id: tripId }).then(function(rows){
+      if(!rows || !rows.length){ box.innerHTML = '<div style="opacity:.5;font-size:13px;font-style:italic">'+esc(t('noLoadItems'))+'</div>'; return; }
+      var h = '';
+      for(var i=0;i<rows.length;i++){
+        var r = rows[i];
+        var meta = [];
+        if(r.quantity!=null) meta.push(Number(r.quantity)+(r.unit?(' '+r.unit):''));
+        if(r.pieces!=null) meta.push(Number(r.pieces)+' '+t('pieces'));
+        if(r.weight_lb!=null) meta.push(Number(r.weight_lb)+' lb');
+        var srcTag = r.source==='bol_ocr' ? t('fromBol') : t('manual');
+        h += '<div style="background:#16294a;border-radius:10px;padding:10px;margin-bottom:8px;display:flex;justify-content:space-between;gap:10px;align-items:flex-start">'+
+          '<div style="flex:1;min-width:0">'+
+            '<div style="font-size:14px;font-weight:700">#'+esc(r.line_no||(i+1))+' '+esc(r.description||'—')+'</div>'+
+            '<div style="font-size:12px;opacity:.7;margin-top:3px">'+esc(meta.join(' · '))+'</div>'+
+            '<div style="font-size:11px;opacity:.5;margin-top:2px">'+esc(srcTag)+'</div>'+
+          '</div>'+
+          '<button class="haulerRemoveItem" data-id="'+esc(r.item_id)+'" style="background:#7a2a2a;border:none;color:#fff;font-size:11px;font-weight:700;padding:6px 10px;border-radius:6px">'+esc(t('remove'))+'</button>'+
+        '</div>';
+      }
+      box.innerHTML = h;
+      var rm = box.querySelectorAll('.haulerRemoveItem');
+      for(var k=0;k<rm.length;k++){
+        rm[k].onclick = (function(id){ return function(){
+          rpc('trip_remove_load_item', { p_load_item_id: id }).then(function(){ loadTripLoadItems(tripId); }).catch(function(){ note(t('error')); });
+        }; })(rm[k].getAttribute('data-id'));
+      }
+    }).catch(function(){ box.innerHTML = '<div style="opacity:.5;font-size:13px">'+esc(t('noLoadItems'))+'</div>'; });
+  }
+  function openLoadItemForm(tripId){ // V21_00_3:
+    var ov = $('haulerLoadItemOv'); if(!ov) return;
+    ov.classList.add('on');
+    $('haulerLiDesc').value=''; $('haulerLiQty').value=''; $('haulerLiUnit').value=''; $('haulerLiWeight').value=''; $('haulerLiPieces').value='';
+    var save = $('haulerLiSave'), cancel = $('haulerLiCancel');
+    if(cancel) cancel.onclick = function(){ ov.classList.remove('on'); };
+    if(save) save.onclick = function(){
+      save.disabled=true;
+      rpc('trip_add_load_item', {
+        p_tenant_id: TENANT_ID, p_trip_id: tripId,
+        p_description: ($('haulerLiDesc').value||'').trim() || null,
+        p_qty: parseFloat($('haulerLiQty').value)||null,
+        p_unit: ($('haulerLiUnit').value||'').trim() || null,
+        p_weight_lb: parseFloat($('haulerLiWeight').value)||null,
+        p_pieces: parseFloat($('haulerLiPieces').value)||null,
+        p_source: 'manual', p_bol_doc_id: null
+      }).then(function(){ ov.classList.remove('on'); save.disabled=false; loadTripLoadItems(tripId); note(t('saved2')); })
+        .catch(function(){ save.disabled=false; note(t('error')); });
+    };
+  }
+
+  // V21_00_3: Fuel tab (reuses chofer fuel flow; filters receipts to THIS trip via trip_fuel_receipts)
+  HRENDER.fuel = function(trip){
+    return '<label for="choferFuelFile" id="choferFuelPhotoBtn" style="display:block;width:100%;padding:16px;border:none;border-radius:14px;background:#2a4a7a;color:#fff;font-size:16px;font-weight:800;text-align:center;cursor:pointer;box-sizing:border-box">'+esc(t('takePhoto'))+'</label>'+
+      '<input id="choferFuelFile" type="file" accept="image/*" capture="environment" style="position:absolute;left:-9999px;width:1px;height:1px;opacity:0">'+
+      '<div id="choferFuelThumb" style="margin-top:10px"></div>'+
+      '<label style="display:block;margin:8px 0 3px;font-size:12px;font-weight:600;opacity:.85">'+esc(t('gallons'))+'</label><input id="choferFuelGal" type="number" inputmode="decimal" style="width:100%;box-sizing:border-box;padding:10px;font-size:15px;border:none;border-radius:8px;background:#1d3357;color:#fff">'+
+      '<label style="display:block;margin:8px 0 3px;font-size:12px;font-weight:600;opacity:.85">'+esc(t('total'))+'</label><input id="choferFuelTot" type="number" inputmode="decimal" style="width:100%;box-sizing:border-box;padding:10px;font-size:15px;border:none;border-radius:8px;background:#1d3357;color:#fff">'+
+      '<label style="display:block;margin:8px 0 3px;font-size:12px;font-weight:600;opacity:.85">'+esc(t('odoReading'))+'</label><input id="choferFuelOdo" type="number" inputmode="numeric" style="width:100%;box-sizing:border-box;padding:10px;font-size:15px;border:none;border-radius:8px;background:#1d3357;color:#fff">'+
+      '<button id="choferFuelSubmit" style="width:100%;padding:14px;border:none;border-radius:12px;background:#1f6b3a;color:#fff;font-size:15px;font-weight:800;margin-top:12px">'+esc(t('submit'))+'</button>'+
+      '<div style="margin-top:22px;border-top:1px solid #2a3e5c;padding-top:14px">'+
+        hLabel(t('recentReceipts'))+
+        '<div id="haulerFuelHistory" style="margin-top:8px"></div>'+
+      '</div>';
+  };
+  HWIRE.fuel = function(trip){ // V21_00_3:
+    if(trip.vehicle_id){ C.state.vehicleId = trip.vehicle_id; }
+    C.state.haulerFuelTripId = trip.trip_id;  // V21_00_3: submitFuel reads this to stamp trip_id via fuel_pending_set_trip
+    wireFuelControls();
+    loadTripFuel(trip.trip_id);
+  };
+  function loadTripFuel(tripId){ // V21_00_3: uses trip_fuel_receipts RPC
+    var box = $('haulerFuelHistory'); if(!box) return;
+    rpc('trip_fuel_receipts', { p_tenant_id: TENANT_ID, p_trip_id: tripId }).then(function(rows){
+      var list = rows||[];
+      if(!list.length){ box.innerHTML = '<div style="opacity:.5;font-size:13px;font-style:italic">'+esc(t('noReceipts'))+'</div>'; return; }
+      var h = '';
+      for(var i=0;i<list.length;i++){
+        var r = list[i];
+        var galTot = '';
+        if(r.out_gallons!=null) galTot += Number(r.out_gallons).toFixed(2)+' gal';
+        if(r.out_total_amount!=null) galTot += (galTot?' · ':'')+'$'+Number(r.out_total_amount).toFixed(2);
+        if(r.out_odometer!=null) galTot += (galTot?' · ':'')+Number(r.out_odometer).toLocaleString()+' mi';
+        var st = r.out_station_name ? esc(r.out_station_name)+' · ' : '';
+        h += '<div style="background:#16294a;border-radius:10px;padding:10px;margin-bottom:8px;font-size:13px">'+st+esc(galTot||'—')+'</div>';
+      }
+      box.innerHTML = h;
+    }).catch(function(){ box.innerHTML=''; });
+  }
+
+  // V21_00_3: Odometer tab
+  HRENDER.odometer = function(trip){
+    return '<div style="background:#13294d;border-radius:12px;padding:6px 12px;margin-bottom:12px">'+
+      infoRow(t('odoStart'), trip.odometer_start!=null ? Number(trip.odometer_start).toLocaleString() : null)+
+      infoRow(t('odoEnd2'),  trip.odometer_end!=null ? Number(trip.odometer_end).toLocaleString() : null)+
+    '</div>'+
+    '<label style="display:block;margin:8px 0 3px;font-size:12px;font-weight:600;opacity:.85">'+esc(t('odoReading'))+'</label><input id="haulerOdoVal" type="number" inputmode="numeric" style="width:100%;box-sizing:border-box;padding:10px;font-size:15px;border:none;border-radius:8px;background:#1d3357;color:#fff">'+
+    '<button id="haulerOdoSubmit" style="width:100%;padding:14px;border:none;border-radius:12px;background:#1f6b3a;color:#fff;font-size:15px;font-weight:800;margin-top:12px">'+esc(t('logReading'))+'</button>';
+  };
+  HWIRE.odometer = function(trip){ // V21_00_3:
+    var sub = $('haulerOdoSubmit');
+    if(sub) sub.onclick = function(){
+      var val = parseFloat(($('haulerOdoVal')||{}).value);
+      if(!val){ note(t('error')); return; }
+      sub.disabled=true;
+      rpc('trip_add_event', { p_tenant_id: TENANT_ID, p_trip_id: trip.trip_id, p_event_type:'odometer', p_notes:'odo='+val })
+        .then(function(){ note(t('odoSaved')); var v=$('haulerOdoVal'); if(v) v.value=''; sub.disabled=false; })
+        .catch(function(){ sub.disabled=false; note(t('error')); });
+    };
+  };
+
+  // V21_00_3: Maint tab (reuses chofer maintenance flow, vehicle-scoped)
+  HRENDER.maint = function(trip){
+    return '<label style="display:block;margin:8px 0 3px;font-size:12px;font-weight:600;opacity:.85">'+esc(t('eventType'))+'</label>'+
+      '<select id="haulerMaintType" style="width:100%;box-sizing:border-box;padding:10px;font-size:15px;border:none;border-radius:8px;background:#1d3357;color:#fff">'+
+        '<option value="bulb">'+esc(t('evtBulb'))+'</option>'+
+        '<option value="fluids">'+esc(t('evtFluids'))+'</option>'+
+        '<option value="other">'+esc(t('evtOther'))+'</option>'+
+      '</select>'+
+      '<label style="display:block;margin:8px 0 3px;font-size:12px;font-weight:600;opacity:.85">'+esc(t('notes'))+'</label>'+
+      '<textarea id="haulerMaintNotes" rows="3" style="width:100%;box-sizing:border-box;padding:10px;font-size:15px;border:none;border-radius:8px;background:#1d3357;color:#fff;resize:vertical"></textarea>'+
+      '<button id="haulerMaintSubmit" style="width:100%;padding:14px;border:none;border-radius:12px;background:#1f6b3a;color:#fff;font-size:15px;font-weight:800;margin-top:12px">'+esc(t('submit'))+'</button>';
+  };
+  HWIRE.maint = function(trip){ // V21_00_3: (V21_00_4: RPC signature fixed)
+    if(trip.vehicle_id){ C.state.vehicleId = trip.vehicle_id; }
+    var sub = $('haulerMaintSubmit');
+    if(sub) sub.onclick = function(){
+      if(!C.state.vehicleId){ note(t('needVehicle')); return; }
+      var type = ($('haulerMaintType')||{}).value || 'other';
+      var notes = ($('haulerMaintNotes')||{}).value || '';
+      sub.disabled=true;
+      rpc('submit_maintenance_event', { // V21_00_4: fixed signature to match DB
+        p_maintenance_id: uuid(),
+        p_driver_id: C.state.driver.driver_id,
+        p_vehicle_id: C.state.vehicleId,
+        p_event_date: new Date().toISOString().slice(0,10),
+        p_service_category: type,
+        p_description: notes || null,
+        p_odometer_reading: null,
+        p_parts_cost: null,
+        p_photo_url: null,
+        p_notes: notes || null
+      }).then(function(){ note(t('saved2')); showHaulerTab('maint'); })
+        .catch(function(){ sub.disabled=false; note(t('error')); });
+    };
+  };
+
+  // V21_00_3: Events tab
+  HRENDER.events = function(trip){
+    var h = '<button id="haulerAddEvent" style="width:100%;padding:12px;border:1px dashed #3a5a8a;border-radius:10px;background:transparent;color:#9cc0f0;font-weight:700;margin-bottom:10px">'+esc(t('addEvent'))+'</button>';
+    var evts = C.state.tripEvents || [];
+    if(!evts.length){ h += '<div style="opacity:.6;font-size:13px;font-style:italic">'+esc(t('noEvents'))+'</div>'; return h; }
+    for(var i=evts.length-1;i>=0;i--){
+      var e = evts[i];
+      var when = e.occurred_at ? new Date(e.occurred_at).toLocaleString([], {month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}) : '';
+      h += '<div style="display:flex;justify-content:space-between;gap:10px;padding:7px 0;border-bottom:1px solid #1c3252;font-size:13px">'+
+        '<span style="font-weight:700">'+esc(e.event_type)+(e.notes?' <span style="opacity:.6;font-weight:400">'+esc(e.notes)+'</span>':'')+'</span>'+
+        '<span style="opacity:.7;white-space:nowrap">'+esc(when)+'</span></div>';
+    }
+    return h;
+  };
+  HWIRE.events = function(trip){ // V21_00_3:
+    var add = $('haulerAddEvent');
+    if(add) add.onclick = function(){ openEventForm(trip.trip_id); };
+  };
+  function openEventForm(tripId){ // V21_00_3:
+    var ov = $('haulerEventOv'); if(!ov) return;
+    ov.classList.add('on');
+    $('haulerEvNotes').value='';
+    var save = $('haulerEvSave'), cancel = $('haulerEvCancel');
+    if(cancel) cancel.onclick = function(){ ov.classList.remove('on'); };
+    if(save) save.onclick = function(){
+      save.disabled=true;
+      var type = ($('haulerEvType')||{}).value || 'other';
+      var notes = ($('haulerEvNotes')||{}).value || '';
+      captureGps(function(pos){
+        rpc('trip_add_event', { p_tenant_id: TENANT_ID, p_trip_id: tripId, p_event_type: type, p_notes: notes || null })
+          .then(function(){
+            if(pos){ rpc('trip_log_position', { p_tenant_id: TENANT_ID, p_trip_id: tripId, p_lat: pos.coords.latitude, p_lng: pos.coords.longitude, p_speed:null, p_heading:null }).catch(function(){}); } // V21_00_3:
+            ov.classList.remove('on'); save.disabled=false; note(t('saved2')); renderTripDetail(tripId);
+          }).catch(function(){ save.disabled=false; note(t('error')); });
+      });
+    };
+  }
+
+  // V21_00_3: DVIR gate before Complete Trip — require a Post-Trip done today
+  function ensurePostTripThen(trip, proceed){
+    if(!trip.vehicle_id){ proceed(); return; }
+    rpc('driver_check_inspection_today', { p_vehicle_id: trip.vehicle_id, p_inspection_type: 'posttrip' }).then(function(rows){
+      if(rows && rows.length){ proceed(); }
+      else { note(t('dvirReqComplete')); C.state.vehicleId = trip.vehicle_id; showHaulerTab('dvir'); }
+    }).catch(function(){ proceed(); });
+  }
+
+  // V21_00_3: Dispatcher hand-off — show assigned trips list (hauler_my_assigned_trips)
+  C._renderAssignedTrips = function(box){
+    if(!box || !C.state.driver) return;
+    rpc('hauler_my_assigned_trips', { p_tenant_id: TENANT_ID, p_driver_id: C.state.driver.driver_id }).then(function(rows){
+      if(!rows || !rows.length){ box.innerHTML += '<div style="opacity:.6;font-size:13px;margin-bottom:12px">'+esc(t('noRecentTrips'))+'</div>'; return; }
+      var h = '<div style="font-weight:800;font-size:13px;margin-bottom:8px">'+esc(t('assignedTrips'))+'</div>';
+      for(var i=0;i<rows.length;i++){
+        var r = rows[i];
+        h += '<div class="haulerAssignedRow" data-trip="'+esc(r.trip_id)+'" style="background:#13294d;border-radius:10px;padding:10px;margin-bottom:8px;cursor:pointer">'+
+          '<div style="font-weight:700">'+esc(r.trip_code||r.trip_id.slice(0,8))+'</div>'+
+          '<div style="font-size:12px;opacity:.7">'+esc(r.origin_label||'')+(r.destination_label?' → '+esc(r.destination_label):'')+'</div>'+
+        '</div>';
+      }
+      box.innerHTML = h + (box.innerHTML||'');
+      var rows2 = box.querySelectorAll('.haulerAssignedRow');
+      for(var j=0;j<rows2.length;j++){
+        rows2[j].onclick = (function(tid){ return function(){ C.navTrip(tid); }; })(rows2[j].getAttribute('data-trip'));
+      }
+    }).catch(function(){});
+  };
+
+  // ── BOL OCR ── // V21_00_3:
   function bolFromSaved(bol){
     if(!bol) return blankBol();
     var j = bol.ocr_json || {};
@@ -14527,7 +15120,6 @@ var _checkSendTimer = setInterval(checkDaysWithoutSend, 30 * 60 * 1000);
     }).then(function(r){ return r.json(); }).then(function(res){
       if(!res || !res.ok || !res.analysis){
         status(t('bolFailed') + (res && res.error ? ' ('+res.error+')':''));
-        // Still let the driver fill it in manually.
         C.bolDraft = blankBol();
         C.bolDraft.source_image_url = window.SUPABASE_URL + '/storage/v1/object/public/bol-documents/' + path;
         openBolForm(tripId);
@@ -14583,7 +15175,6 @@ var _checkSendTimer = setInterval(checkDaysWithoutSend, 30 * 60 * 1000);
       '<div style="flex:1">'+bolInput('bolF_tpieces', t('totalPieces'), d.total_pieces, 'number')+'</div>'+
       '<div style="flex:1">'+bolInput('bolF_tweight', t('totalWeight'), d.total_weight_lbs, 'number')+'</div></div>';
 
-    // Line items
     h += '<div style="margin-top:14px;font-size:13px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;opacity:.8">'+esc(t('lineItems'))+'</div>';
     h += '<div id="bolF_lines">'+d.line_items.map(lineItemHtml).join('')+'</div>';
     h += '<button id="bolF_addLine" style="width:100%;padding:10px;margin-top:8px;border:1px dashed #3a5a8a;border-radius:8px;background:transparent;color:#9cc0f0;font-weight:700">'+esc(t('addLine'))+'</button>';
@@ -14625,7 +15216,6 @@ var _checkSendTimer = setInterval(checkDaysWithoutSend, 30 * 60 * 1000);
     d.freight_terms = v('bolF_terms');
     d.total_pieces = v('bolF_tpieces');
     d.total_weight_lbs = v('bolF_tweight');
-    // Line items
     var rows = document.querySelectorAll('#bolF_lines .bolLineRow');
     var items = [];
     for(var i=0;i<rows.length;i++){
@@ -14689,7 +15279,7 @@ var _checkSendTimer = setInterval(checkDaysWithoutSend, 30 * 60 * 1000);
     };
   }
 
-  // ── Complete-trip modal (odometer end + actual gallons) ──
+  // V21_00_3: Complete-trip modal — calls trip_complete with GPS capture
   function openCompleteModal(tripId){
     var ov = $('choferTripCompleteOv'); if(!ov) return;
     var tit=$('choferTripCompleteTit'); if(tit) tit.textContent=t('completeTrip');
@@ -14704,23 +15294,34 @@ var _checkSendTimer = setInterval(checkDaysWithoutSend, 30 * 60 * 1000);
       var odo = parseFloat(($('choferTripOdoEnd')||{}).value) || null;
       var gal = parseFloat(($('choferTripGallons')||{}).value) || null;
       ok.disabled = true; ok.textContent = t('saving');
-      rpc('trip_complete', { p_tenant_id: TENANT_ID, p_trip_id: tripId, p_odometer_end: odo, p_actual_gallons: gal })
-        .then(function(){
-          // Completing the trip also clocks the driver out of the trip-bound entry.
-          if(C.state.clockTripId === tripId && C.isClockedIn()){ C.clockOut('trip_complete'); }
-          note(t('tripCompleted'));
-          ov.classList.remove('on');
-          renderTripDetail(tripId);
-        }).catch(function(e){
-          console.warn('[Chofer] complete trip', e && e.message);
-          note(t('error'));
-          ok.disabled = false; ok.textContent = t('completeTrip');
-        });
+      // V21_00_3: trip_complete auto-computes GPS/miles/hours
+      captureGps(function(pos){
+        rpc('trip_complete', {
+          p_tenant_id: TENANT_ID, p_trip_id: tripId,
+          p_odometer_end: odo, p_actual_gallons: gal,
+          p_dest_lat: pos ? pos.coords.latitude : null,
+          p_dest_lng: pos ? pos.coords.longitude : null
+        })
+          .then(function(){
+            if(C.state.clockTripId === tripId && C.isClockedIn()){ C.clockOut('trip_complete'); }
+            note(t('tripCompleted'));
+            ov.classList.remove('on');
+            renderTripDetail(tripId);
+          }).catch(function(e){
+            console.warn('[Chofer] complete trip', e && e.message);
+            note(t('error'));
+            ok.disabled = false; ok.textContent = t('completeTrip');
+          });
+      });
     };
   }
 
+  // V21_00_3: Also expose showHaulerTab for use by existing start-screen code
+  C.showHaulerTab = showHaulerTab;
+
   // Render the route on first load too (deep-link / refresh on a trip URL).
   C.renderRoute = renderRoute;
+
 
 })();
 </script>
