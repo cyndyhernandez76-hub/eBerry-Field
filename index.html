@@ -696,7 +696,7 @@ html.login-locked{overflow:hidden!important;height:100%!important}
 
 </style>
 </head>
-<body>
+<body data-hos-mode="short_haul_150_air">
 <header>
   <div class="htop">
     <div>
@@ -775,6 +775,58 @@ html.login-locked{overflow:hidden!important;height:100%!important}
   <div id="choferHosBanner" style="display:none;flex:0 0 auto;padding:8px 12px;font-size:13px;font-weight:700;text-align:center"></div>
   <div id="choferTabs" style="flex:0 0 auto;display:flex;overflow-x:auto;background:#13294d;border-top:1px solid #1f3a66"></div>
   <div id="choferBody" style="flex:1 1 auto;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:14px"></div>
+  <!-- V21_00: persistent Clock In timer footer (visible whenever clocked in) -->
+  <div id="choferClockFooter" style="display:none;flex:0 0 auto;align-items:center;gap:10px;padding:10px 14px;background:#0b1c34;border-top:1px solid #1f3a66;font-size:14px">
+    <span style="font-size:18px">🟢</span>
+    <div id="choferClockFooterText" style="flex:1;min-width:0;font-weight:700"></div>
+  </div>
+</div>
+
+<!-- V21_00: Hauling Trip Detail screen (#/hauling/trip/:trip_id) -->
+<div id="choferTripScreen" style="display:none;position:fixed;top:0;right:0;bottom:0;left:0;background:#0f1f3a;z-index:9100;flex-direction:column;overflow:hidden;color:#fff;font-family:inherit">
+  <div style="flex:0 0 auto;display:flex;align-items:center;gap:8px;padding:12px 14px;background:#13294d;box-shadow:0 2px 6px rgba(0,0,0,.4)">
+    <button onclick="window.Chofer.navBack()" style="background:#2a4a7a;border:none;color:#fff;border-radius:8px;padding:8px 12px;font-size:14px;font-weight:700" id="choferTripBackBtn">← Volver</button>
+    <div style="flex:1;font-weight:700;font-size:15px" id="choferTripTitle">Detalle del viaje</div>
+  </div>
+  <div id="choferTripBody" style="flex:1 1 auto;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:14px"></div>
+  <!-- Bottom action bar -->
+  <div style="flex:0 0 auto;display:flex;gap:8px;padding:10px 12px;background:#0b1c34;border-top:1px solid #1f3a66">
+    <button id="choferTripPause" style="flex:1;padding:13px;border:none;border-radius:10px;background:#8a6d1a;color:#fff;font-weight:800;font-size:14px">⏸</button>
+    <button id="choferTripResume" style="flex:1;padding:13px;border:none;border-radius:10px;background:#1f6b3a;color:#fff;font-weight:800;font-size:14px">▶</button>
+    <button id="choferTripComplete" style="flex:2;padding:13px;border:none;border-radius:10px;background:#2a4a7a;color:#fff;font-weight:800;font-size:14px">✓</button>
+  </div>
+  <!-- Persistent Clock In timer footer (mirrors the chofer shell footer) -->
+  <div style="flex:0 0 auto;display:flex;align-items:center;gap:10px;padding:9px 14px;background:#0b1c34;border-top:1px solid #1f3a66;font-size:14px">
+    <span style="font-size:18px">🟢</span>
+    <div id="choferTripClock" style="flex:1;min-width:0;font-weight:700"></div>
+  </div>
+</div>
+
+<!-- V21_00: BOL OCR confirmation form (editable) -->
+<div class="ov" id="choferBolOv" role="dialog" aria-modal="true" style="z-index:10100">
+  <div class="md" style="max-width:520px;max-height:90vh;display:flex;flex-direction:column">
+    <div class="mt" id="choferBolTit" style="font-size:16px">BOL</div>
+    <div id="choferBolFormBody" style="overflow-y:auto;-webkit-overflow-scrolling:touch;flex:1;margin:6px 0"></div>
+    <div style="display:flex;gap:8px;margin-top:8px">
+      <button onclick="window.Chofer.closeBolForm()" style="flex:1;padding:13px;border:none;border-radius:10px;background:#3a3f4a;color:#fff;font-weight:700" id="choferBolCancelBtn">Cancelar</button>
+      <button id="choferBolSaveBtn" style="flex:2;padding:13px;border:none;border-radius:10px;background:#1f6b3a;color:#fff;font-weight:800">Guardar BOL</button>
+    </div>
+  </div>
+</div>
+
+<!-- V21_00: Complete-trip modal -->
+<div class="ov" id="choferTripCompleteOv" role="dialog" aria-modal="true" style="z-index:10100">
+  <div class="md" style="max-width:420px">
+    <div class="mt" id="choferTripCompleteTit" style="font-size:16px">Completar viaje</div>
+    <label style="display:block;margin:10px 0 3px;font-size:13px;font-weight:600;opacity:.85" id="choferTripOdoLbl">Odómetro final</label>
+    <input id="choferTripOdoEnd" type="number" inputmode="numeric" style="width:100%;box-sizing:border-box;padding:12px;font-size:16px;border:none;border-radius:10px;background:#1d3357;color:#fff">
+    <label style="display:block;margin:10px 0 3px;font-size:13px;font-weight:600;opacity:.85" id="choferTripGalLbl">Galones reales</label>
+    <input id="choferTripGallons" type="number" inputmode="decimal" style="width:100%;box-sizing:border-box;padding:12px;font-size:16px;border:none;border-radius:10px;background:#1d3357;color:#fff">
+    <div style="display:flex;gap:8px;margin-top:14px">
+      <button id="choferTripCompleteCancel" style="flex:1;padding:13px;border:none;border-radius:10px;background:#3a3f4a;color:#fff;font-weight:700">Cancelar</button>
+      <button id="choferTripCompleteOk" style="flex:2;padding:13px;border:none;border-radius:10px;background:#1f6b3a;color:#fff;font-weight:800">✓</button>
+    </div>
+  </div>
 </div>
 
 <!-- V20_99: Role picker modal (dual-mode drivers) -->
@@ -12461,12 +12513,72 @@ var _checkSendTimer = setInterval(checkDaysWithoutSend, 30 * 60 * 1000);
     blockedCritical:{es:'⛔ Defecto crítico sin reparar — no es seguro operar', en:'⛔ Unresolved critical defect — not safe to operate'},
     loading:        {es:'Cargando…',                en:'Loading…'},
     noItems:        {es:'Sin elementos',            en:'No items'},
-    hosDrive:       {es:'⚠️ Has manejado 10h — considera descansar', en:'⚠️ 10h driving — consider a break'},
-    hosOnDuty:      {es:'⛔ 14h on-duty — DOT 395 requiere parar',    en:'⛔ 14h on-duty — DOT 395 requires stopping'},
+    hosExempt:      {es:'Excepción aire-150 millas — registro de horas para nómina', en:'150 air-mile exemption — hours tracked for payroll'},
     saving:         {es:'Guardando…',               en:'Saving…'},
     saved:          {es:'✓ Guardado',               en:'✓ Saved'},
     error:          {es:'⚠️ Error, intenta de nuevo', en:'⚠️ Error, try again'},
-    odoSaved:       {es:'✓ Odómetro guardado',      en:'✓ Odometer saved'}
+    odoSaved:       {es:'✓ Odómetro guardado',      en:'✓ Odometer saved'},
+    // ── V21_00 Clock In/Out ──
+    clockIn:        {es:'MARCAR ENTRADA',           en:'CLOCK IN'},
+    clockOut:       {es:'MARCAR SALIDA',            en:'CLOCK OUT'},
+    clockedInAt:    {es:'Entrada',                  en:'Clocked in'},
+    elapsed:        {es:'Transcurrido',             en:'Elapsed'},
+    clockingIn:     {es:'Marcando entrada…',        en:'Clocking in…'},
+    clockingOut:    {es:'Marcando salida…',         en:'Clocking out…'},
+    clockInDone:    {es:'✓ Entrada marcada',        en:'✓ Clocked in'},
+    clockOutDone:   {es:'✓ Salida marcada',         en:'✓ Clocked out'},
+    // ── V21_00 BOL OCR ──
+    takeBolPhoto:   {es:'📷 Tomar foto del BOL',    en:'📷 Take BOL photo'},
+    bolReading:     {es:'Leyendo BOL…',             en:'Reading BOL…'},
+    bolFailed:      {es:'No se pudo leer el BOL — ingresa manualmente', en:'Could not read BOL — enter manually'},
+    bolNumber:      {es:'Número de BOL',            en:'BOL number'},
+    billTo:         {es:'Facturar a',               en:'Bill to'},
+    shipper:        {es:'Remitente',                en:'Shipper'},
+    consignee:      {es:'Destinatario',             en:'Consignee'},
+    carrier:        {es:'Transportista',            en:'Carrier'},
+    pickupDate:     {es:'Fecha de recolección',     en:'Pickup date'},
+    deliveryDate:   {es:'Fecha de entrega',         en:'Delivery date'},
+    commodity:      {es:'Mercancía',                en:'Commodity'},
+    freightTerms:   {es:'Términos de flete',        en:'Freight terms'},
+    lineItems:      {es:'Artículos',                en:'Line items'},
+    addLine:        {es:'+ Agregar línea',          en:'+ Add line'},
+    remove:         {es:'Quitar',                   en:'Remove'},
+    description:    {es:'Descripción',              en:'Description'},
+    qty:            {es:'Cant.',                    en:'Qty'},
+    unit:           {es:'Unidad',                   en:'Unit'},
+    pieces:         {es:'Piezas',                   en:'Pieces'},
+    weightLbs:      {es:'Peso (lb)',                en:'Weight (lb)'},
+    lotNumber:      {es:'Lote',                     en:'Lot #'},
+    totalPieces:    {es:'Piezas totales',           en:'Total pieces'},
+    totalWeight:    {es:'Peso total (lb)',          en:'Total weight (lb)'},
+    saveBol:        {es:'Guardar BOL',              en:'Save BOL'},
+    bolSaved:       {es:'✓ BOL guardado',           en:'✓ BOL saved'},
+    editBol:        {es:'Editar BOL',               en:'Edit BOL'},
+    confirmBol:     {es:'Confirma los datos del BOL antes de guardar', en:'Confirm BOL details before saving'},
+    // ── V21_00 Hauling Trip Detail ──
+    tripDetail:     {es:'Detalle del viaje',        en:'Trip detail'},
+    origin:         {es:'Origen',                   en:'Origin'},
+    destination:    {es:'Destino',                  en:'Destination'},
+    plannedMiles:   {es:'Millas planeadas',         en:'Planned miles'},
+    actualMiles:    {es:'Millas reales',            en:'Actual miles'},
+    loadInfo:       {es:'Información de carga',      en:'Load info'},
+    relatedParty:   {es:'Parte relacionada',        en:'Related party'},
+    segments:       {es:'Registro de paradas',      en:'Stop log'},
+    noSegments:     {es:'Sin paradas registradas',  en:'No stops logged'},
+    pause:          {es:'Pausar',                   en:'Pause'},
+    resume:         {es:'Reanudar',                 en:'Resume'},
+    completeTrip:   {es:'Completar viaje',          en:'Complete trip'},
+    odoEnd:         {es:'Odómetro final',           en:'Ending odometer'},
+    actualGallons:  {es:'Galones reales',           en:'Actual gallons'},
+    tripCompleted:  {es:'✓ Viaje completado',       en:'✓ Trip completed'},
+    tripPaused:     {es:'⏸ Viaje pausado',          en:'⏸ Trip paused'},
+    tripResumed:    {es:'▶ Viaje reanudado',        en:'▶ Trip resumed'},
+    back:           {es:'← Volver',                 en:'← Back'},
+    statusScheduled:{es:'programado',               en:'scheduled'},
+    statusInProgress:{es:'en progreso',             en:'in progress'},
+    statusPaused:   {es:'pausado',                  en:'paused'},
+    statusCompleted:{es:'completado',               en:'completed'},
+    noBol:          {es:'Sin BOL — toma una foto',  en:'No BOL — take a photo'}
   };
   function t(key){
     var lang = window.CHOFER_LANG || 'es';
@@ -12490,6 +12602,9 @@ var _checkSendTimer = setInterval(checkDaysWithoutSend, 30 * 60 * 1000);
   }
   C.rpc = rpc;
 
+  var TENANT_ID = '00000000-0000-0000-0000-000000000001';
+  C.TENANT_ID = TENANT_ID;
+
   // ── Per-driver state ──
   C.state = {
     driver: null,
@@ -12497,7 +12612,10 @@ var _checkSendTimer = setInterval(checkDaysWithoutSend, 30 * 60 * 1000);
     vehicles: null,
     inspectionId: null, inspectionType: null, items: null, results: {},
     activeTab: 'pretrip',
-    pretripDone: false
+    pretripDone: false,
+    // V21_00 clock state (restored from DB on load via driver_current_time_entry)
+    timeEntryId: null, clockInAt: null, clockTripId: null,
+    activeTripId: null
   };
 
   // localStorage keys are per-driver so two drivers on one device don't collide.
@@ -12506,21 +12624,120 @@ var _checkSendTimer = setInterval(checkDaysWithoutSend, 30 * 60 * 1000);
   function lset(suffix, val){ try{ localStorage.setItem(k(suffix), val); }catch(e){} }
   function ljson(suffix, fallback){ var v = lget(suffix); if(!v) return fallback; try{ return JSON.parse(v); }catch(e){ return fallback; } }
 
-  // ── HOS soft-cap tracking ──
+  // ── HOS: 150 air-mile short-haul exemption (49 CFR §395.1(k)) ──
+  // These ag drivers stay within 150 air-miles of their work-reporting location,
+  // so no federal §395 driving/on-duty caps apply. Hours are tracked for PAYROLL
+  // only. Non-blocking info pill replaces the old 10h/14h soft-cap banner — it
+  // must never gate Clock In or pop a soft-cap modal.
   function shiftStartMs(){ var v = lget('shiftStart'); return v ? +v : 0; }
   function renderHosBanner(){
     var el = $('choferHosBanner'); if(!el) return;
-    var start = shiftStartMs();
-    if(!start){ el.style.display='none'; return; }
-    var hrs = (Date.now() - start) / 3600000;
-    if(hrs >= 14){
-      el.style.display='block'; el.style.background='#7a1212'; el.style.color='#fff'; el.textContent = t('hosOnDuty');
-    } else if(hrs >= 10){
-      el.style.display='block'; el.style.background='#8a6d1a'; el.style.color='#fff'; el.textContent = t('hosDrive');
-    } else {
-      el.style.display='none';
-    }
+    el.style.display='block';
+    el.style.background='#15324e';
+    el.style.color='#bcd4f5';
+    el.style.fontWeight='600';
+    el.textContent = 'ℹ️ ' + t('hosExempt');
   }
+
+  // ══ V21_00 — Clock In/Out (DB-backed via clock_in/clock_out RPCs) ══
+  function fmtElapsed(ms){
+    if(ms < 0) ms = 0;
+    var totalMin = Math.floor(ms / 60000);
+    var h = Math.floor(totalMin / 60), m = totalMin % 60;
+    return (h>0 ? (h+'h ') : '') + m + 'min';
+  }
+  function fmtClockLine(){
+    if(!C.state.clockInAt) return '';
+    var d = new Date(C.state.clockInAt);
+    var tm = d.toLocaleTimeString([], {hour:'numeric', minute:'2-digit'});
+    return t('clockedInAt') + ': ' + tm + ' · ' + fmtElapsed(Date.now() - d.getTime());
+  }
+  var _clockTick = null;
+  function startClockTick(){
+    if(_clockTick) return;
+    _clockTick = setInterval(updateClockUi, 1000);
+  }
+  function stopClockTick(){ if(_clockTick){ clearInterval(_clockTick); _clockTick = null; } }
+  function updateClockUi(){
+    var foot = $('choferClockFooter'), ftxt = $('choferClockFooterText');
+    if(foot && ftxt){
+      if(C.state.clockInAt){ foot.style.display='flex'; ftxt.textContent = fmtClockLine(); }
+      else { foot.style.display='none'; }
+    }
+    // Live-refresh the timeIn tab line if it's showing.
+    var liveEl = $('choferClockLive');
+    if(liveEl && C.state.clockInAt) liveEl.textContent = fmtClockLine();
+    var hd = $('choferTripClock');
+    if(hd && C.state.clockInAt) hd.textContent = fmtClockLine();
+  }
+  C.isClockedIn = function(){ return !!C.state.clockInAt; };
+
+  // Restore open entry on load / after refresh so the timer keeps ticking.
+  C.restoreClock = function(){
+    if(!C.state.driver) return Promise.resolve();
+    return rpc('driver_current_time_entry', { p_tenant_id: TENANT_ID, p_driver_id: C.state.driver.driver_id })
+      .then(function(rows){
+        var row = rows && rows[0];
+        if(row){
+          C.state.timeEntryId = row.time_entry_id;
+          C.state.clockInAt = row.clock_in_at;
+          C.state.clockTripId = row.trip_id || null;
+          if(row.trip_id) C.state.activeTripId = row.trip_id;
+          startClockTick();
+        } else {
+          C.state.timeEntryId = null; C.state.clockInAt = null; C.state.clockTripId = null;
+        }
+        updateClockUi();
+      })
+      .catch(function(e){ console.warn('[Chofer] restoreClock', e && e.message); });
+  };
+
+  C.clockIn = function(opts){
+    opts = opts || {};
+    if(!C.state.driver) return Promise.reject(new Error('no driver'));
+    note(t('clockingIn'));
+    return rpc('clock_in', {
+      p_tenant_id: TENANT_ID,
+      p_driver_id: C.state.driver.driver_id,
+      p_vehicle_id: opts.vehicle_id || C.state.vehicleId || null,
+      p_trip_id: opts.trip_id || C.state.activeTripId || null,
+      p_entry_type: opts.entry_type || 'driving'
+    }).then(function(res){
+      // RPC returns the time_entry_id (scalar uuid).
+      var id = (typeof res === 'string') ? res : (res && (res.clock_in || res));
+      C.state.timeEntryId = id;
+      C.state.clockInAt = new Date().toISOString();
+      C.state.clockTripId = opts.trip_id || C.state.activeTripId || null;
+      lset('shiftStart', String(Date.now())); // keep legacy marker in sync
+      startClockTick();
+      updateClockUi();
+      note(t('clockInDone'));
+      // Refresh from server for the authoritative clock_in_at.
+      C.restoreClock();
+    }).catch(function(e){
+      console.warn('[Chofer] clockIn', e && e.message);
+      note(t('error'));
+      throw e;
+    });
+  };
+
+  C.clockOut = function(notes){
+    if(!C.state.timeEntryId){ return Promise.resolve(); }
+    note(t('clockingOut'));
+    var id = C.state.timeEntryId;
+    return rpc('clock_out', { p_tenant_id: TENANT_ID, p_time_entry_id: id, p_notes: notes || null })
+      .then(function(){
+        C.state.timeEntryId = null; C.state.clockInAt = null; C.state.clockTripId = null;
+        stopClockTick();
+        lset('shiftEnd', String(Date.now()));
+        updateClockUi();
+        note(t('clockOutDone'));
+      }).catch(function(e){
+        console.warn('[Chofer] clockOut', e && e.message);
+        note(t('error'));
+        throw e;
+      });
+  };
 
   // ═══ Login-path entry points (called from checkPin) ═══
   C.showDriverBlocked = function(drv){
@@ -12562,9 +12779,9 @@ var _checkSendTimer = setInterval(checkDaysWithoutSend, 30 * 60 * 1000);
     };
     if(bH) bH.onclick = function(){
       $('choferRoleOv').classList.remove('on');
-      // Hauler UI not yet built — enter chofer mode and toast a notice.
+      // V21_00: Hauler → enter chofer shell, start a hauling trip, land on Trip Detail.
       C.enterChoferMode(drv);
-      if(typeof window.toast==='function') window.toast('🚛 Hauler UI pendiente — usando Chofer por ahora');
+      C.startHaulingTrip();
     };
     $('choferRoleCrew').onclick = function(){
       $('choferRoleOv').classList.remove('on');
@@ -12589,12 +12806,15 @@ var _checkSendTimer = setInterval(checkDaysWithoutSend, 30 * 60 * 1000);
     renderTabs();
     C.showTab('pretrip');
     flushQueue();
+    C.restoreClock().then(function(){ if(C.renderRoute) C.renderRoute(); });  // V21_00: re-arm clock + deep-link route
   };
 
   C.logout = function(){
     $('choferScreen').style.display = 'none';
     window.currentMode = 'surquero';
     window.CURRENT_DRIVER = null;
+    stopClockTick();
+    var foot = $('choferClockFooter'); if(foot) foot.style.display='none';
     C.state.driver = null;
     var ls = $('loginScreen'); if(ls) ls.classList.remove('hide');
     document.body.classList.add('login-locked');
@@ -12971,23 +13191,33 @@ var _checkSendTimer = setInterval(checkDaysWithoutSend, 30 * 60 * 1000);
   WIRE.pretrip  = wireDvir('pretrip');
   WIRE.posttrip = wireDvir('posttrip');
 
-  // Tab 2: Time In
+  // Tab 2: Time In — DB-backed Clock In/Out with a live ticking timer.
   RENDER.timeIn = function(){
-    var start = shiftStartMs();
-    if(start){
-      return '<div style="text-align:center;margin-top:30px">'+
+    if(C.state.clockInAt){
+      return '<div style="text-align:center;margin-top:24px">'+
         '<div style="font-size:48px">🟢</div>'+
         '<div style="font-size:20px;font-weight:800;margin-top:10px">'+esc(t('onTheClock'))+'</div>'+
-        '<div style="opacity:.7;margin-top:6px">'+esc(t('startedAt'))+': '+esc(new Date(start).toLocaleTimeString())+'</div>'+
+        '<div id="choferClockLive" style="opacity:.85;margin-top:6px;font-size:16px;font-weight:700">'+esc(fmtClockLine())+'</div>'+
+        '<button id="choferClockOutBtn" '+bigBtn(t('clockOut'),'#7a2a2a')+'>'+esc(t('clockOut'))+'</button>'+
       '</div>';
     }
     return '<div style="text-align:center;margin-top:20px">'+
-      '<button id="choferTimeInBtn" '+bigBtn(t('startShift'),'#1f6b3a')+'>'+esc(t('startShift'))+'</button>'+
+      '<button id="choferClockInBtn" '+bigBtn(t('clockIn'),'#1f6b3a')+'>'+esc(t('clockIn'))+'</button>'+
     '</div>';
   };
   WIRE.timeIn = function(){
-    var b = $('choferTimeInBtn');
-    if(b) b.onclick = function(){ lset('shiftStart', String(Date.now())); queueEvent('time_in', {}); C.showTab('timeIn'); };
+    var bi = $('choferClockInBtn');
+    if(bi) bi.onclick = function(){
+      bi.disabled = true;
+      C.clockIn({}).then(function(){ if(C.state.activeTab==='timeIn') C.showTab('timeIn'); })
+        .catch(function(){ bi.disabled = false; });
+    };
+    var bo = $('choferClockOutBtn');
+    if(bo) bo.onclick = function(){
+      bo.disabled = true;
+      C.clockOut().then(function(){ if(C.state.activeTab==='timeIn') C.showTab('timeIn'); /* re-arm Clock In */ })
+        .catch(function(){ bo.disabled = false; });
+    };
   };
 
   // Tab 3: Fuel
@@ -13260,11 +13490,6 @@ var _checkSendTimer = setInterval(checkDaysWithoutSend, 30 * 60 * 1000);
 
   // Tab 7: Time Out
   RENDER.timeOut = function(){
-    var start = shiftStartMs();
-    var hrs = start ? ((Date.now()-start)/3600000) : 0;
-    var hosHtml = '';
-    if(hrs >= 14) hosHtml = '<div style="background:#7a1212;border-radius:10px;padding:12px;margin-top:14px;font-weight:700">'+esc(t('hosOnDuty'))+'</div>';
-    else if(hrs >= 10) hosHtml = '<div style="background:#8a6d1a;border-radius:10px;padding:12px;margin-top:14px;font-weight:700">'+esc(t('hosDrive'))+'</div>';
     var endV = lget('shiftEnd');
     var body = '<div style="text-align:center;margin-top:20px">';
     if(endV){
@@ -13272,7 +13497,7 @@ var _checkSendTimer = setInterval(checkDaysWithoutSend, 30 * 60 * 1000);
     } else {
       body += '<button id="choferTimeOutBtn" '+bigBtn(t('endShift'),'#7a2a2a')+'>'+esc(t('endShift'))+'</button>';
     }
-    body += hosHtml + '</div>';
+    body += '</div>';
     return body;
   };
   WIRE.timeOut = function(){
@@ -13331,6 +13556,474 @@ var _checkSendTimer = setInterval(checkDaysWithoutSend, 30 * 60 * 1000);
   }
   window.addEventListener('online', function(){ setTimeout(flushQueue, 1500); });
   setInterval(function(){ if(C.state.driver){ flushQueue(); renderHosBanner(); } }, 60000);
+
+  // ════════════════════════════════════════════════════════════════
+  // V21_00 — Fix #3 (BOL OCR) + Fix #4 (Hauling Trip Detail screen)
+  // Hash route #/hauling/trip/:trip_id renders a full-screen detail view
+  // over the chofer shell. BOL OCR confirmation form is reused for both
+  // the initial capture and the "Edit BOL" action.
+  // ════════════════════════════════════════════════════════════════
+
+  // Local working copy of the BOL being edited (OCR result → editable form).
+  C.bolDraft = null;
+
+  function statusPill(status){
+    var map = {
+      scheduled:   {label:t('statusScheduled'),   bg:'#446'},
+      in_progress: {label:t('statusInProgress'),  bg:'#1f6b3a'},
+      paused:      {label:t('statusPaused'),       bg:'#8a6d1a'},
+      completed:   {label:t('statusCompleted'),    bg:'#2a4a7a'},
+      cancelled:   {label:status,                  bg:'#7a2a2a'}
+    };
+    var m = map[status] || {label:status||'—', bg:'#446'};
+    return '<span style="display:inline-block;background:'+m.bg+';color:#fff;font-size:12px;font-weight:700;padding:3px 10px;border-radius:10px">'+esc(m.label)+'</span>';
+  }
+
+  // ── Hash router ──
+  function parseHash(){
+    var h = location.hash || '';
+    var m = h.match(/^#\/hauling\/trip\/([^/?#]+)/);
+    return m ? { route:'tripDetail', tripId: decodeURIComponent(m[1]) } : { route:null };
+  }
+  C.navTrip = function(tripId){ location.hash = '#/hauling/trip/' + encodeURIComponent(tripId); };
+  C.navBack = function(){ if(location.hash){ history.back(); } location.hash = ''; renderRoute(); };
+
+  function renderRoute(){
+    var ov = $('choferTripScreen');
+    var r = parseHash();
+    if(r.route === 'tripDetail' && C.state.driver){
+      if(ov) ov.style.display = 'flex';
+      C.state.activeTripId = r.tripId;
+      renderTripDetail(r.tripId);
+    } else {
+      if(ov) ov.style.display = 'none';
+    }
+  }
+  window.addEventListener('hashchange', renderRoute);
+
+  C.startHaulingTrip = function(){
+    if(!C.state.driver) return;
+    note(t('loading'));
+    rpc('start_hauling_trip', { p_tenant_id: TENANT_ID, p_driver_id: C.state.driver.driver_id, p_vehicle_id: C.state.vehicleId || null })
+      .then(function(res){
+        var tripId = (typeof res === 'string') ? res : (res && (res.start_hauling_trip || res));
+        if(!tripId){ note(t('error')); return; }
+        C.state.activeTripId = tripId;
+        // Auto clock-in tied to this trip if not already on the clock.
+        if(!C.isClockedIn()){ C.clockIn({ trip_id: tripId }); }
+        C.navTrip(tripId);
+      })
+      .catch(function(e){ console.warn('[Chofer] startHaulingTrip', e && e.message); note(t('error')); });
+  };
+
+  // ══ Trip Detail screen ══
+  function renderTripDetail(tripId){
+    var body = $('choferTripBody');
+    if(!body) return;
+    body.innerHTML = '<div style="opacity:.6;padding:20px;text-align:center">'+esc(t('loading'))+'</div>';
+    // Refresh persistent clock footer header line.
+    var hd = $('choferTripClock'); if(hd) hd.textContent = C.state.clockInAt ? fmtClockLine() : '';
+
+    Promise.all([
+      rpc('trip_detail', { p_tenant_id: TENANT_ID, p_trip_id: tripId }).catch(function(){ return []; }),
+      rpc('trip_bol',    { p_tenant_id: TENANT_ID, p_trip_id: tripId }).catch(function(){ return []; })
+    ]).then(function(out){
+      var trip = (out[0] && out[0][0]) || { trip_id: tripId, status:'in_progress', trip_code: tripId.slice(0,8) };
+      var bol  = (out[1] && out[1][0]) || null;
+      C.state.tripDetail = trip;
+      C.state.tripBol = bol;
+      drawTripDetail(trip, bol);
+    });
+  }
+
+  function infoRow(label, value){
+    return '<div style="display:flex;justify-content:space-between;gap:12px;padding:6px 0;border-bottom:1px solid #1c3252">'+
+      '<span style="opacity:.7;font-size:13px">'+esc(label)+'</span>'+
+      '<span style="font-weight:700;font-size:14px;text-align:right">'+esc(value==null||value===''?'—':value)+'</span></div>';
+  }
+
+  function drawTripDetail(trip, bol){
+    var body = $('choferTripBody');
+    var h = '';
+
+    // Header: code + status
+    h += '<div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">'+
+      '<div style="font-size:18px;font-weight:800">'+esc(trip.trip_code||'—')+'</div>'+
+      statusPill(trip.status)+'</div>';
+
+    // Origin → Destination
+    h += '<div style="background:#13294d;border-radius:12px;padding:12px;margin-bottom:12px">'+
+      '<div style="font-size:12px;opacity:.7;font-weight:700;text-transform:uppercase;letter-spacing:.5px">'+esc(t('origin'))+'</div>'+
+      '<div style="font-weight:700">'+esc(trip.origin_name||'—')+'</div>'+
+      '<div style="font-size:13px;opacity:.8">'+esc(trip.origin_address||'')+'</div>'+
+      '<div style="text-align:center;opacity:.5;margin:6px 0">↓</div>'+
+      '<div style="font-size:12px;opacity:.7;font-weight:700;text-transform:uppercase;letter-spacing:.5px">'+esc(t('destination'))+'</div>'+
+      '<div style="font-weight:700">'+esc(trip.dest_name||'—')+'</div>'+
+      '<div style="font-size:13px;opacity:.8">'+esc(trip.dest_address||'')+'</div>'+
+    '</div>';
+
+    // Miles
+    h += '<div style="background:#13294d;border-radius:12px;padding:6px 12px;margin-bottom:12px">'+
+      infoRow(t('plannedMiles'), trip.planned_miles!=null ? Number(trip.planned_miles).toLocaleString()+' mi' : null)+
+      infoRow(t('actualMiles'),  trip.actual_miles!=null ? Number(trip.actual_miles).toLocaleString()+' mi' : null)+
+    '</div>';
+
+    // Load info (from BOL)
+    h += '<div style="background:#13294d;border-radius:12px;padding:6px 12px;margin-bottom:12px">'+
+      '<div style="font-size:12px;opacity:.7;font-weight:700;text-transform:uppercase;letter-spacing:.5px;padding:6px 0">'+esc(t('loadInfo'))+'</div>'+
+      infoRow(t('commodity'),   bol && bol.commodity_summary)+
+      infoRow(t('totalPieces'), bol && bol.total_pieces)+
+      infoRow(t('totalWeight'), bol && bol.total_weight_lbs)+
+    '</div>';
+
+    // Bill-to + related party chip
+    var btName = (bol && bol.bill_to_name) || trip.bill_to_name || '—';
+    var rp = trip.is_related_party_use ? ' <span style="display:inline-block;background:#8a4a1a;color:#fff;font-size:11px;font-weight:700;padding:2px 8px;border-radius:8px;margin-left:6px">'+esc(t('relatedParty'))+'</span>' : '';
+    h += '<div style="background:#13294d;border-radius:12px;padding:6px 12px;margin-bottom:12px">'+
+      '<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0">'+
+        '<span style="opacity:.7;font-size:13px">'+esc(t('billTo'))+'</span>'+
+        '<span style="font-weight:700;font-size:14px;text-align:right">'+esc(btName)+rp+'</span>'+
+      '</div></div>';
+
+    // BOL section — preview + edit
+    h += '<div style="background:#13294d;border-radius:12px;padding:12px;margin-bottom:12px">'+
+      '<div style="font-size:12px;opacity:.7;font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">BOL</div>';
+    if(bol && bol.source_image_url){
+      h += '<img src="'+esc(bol.source_image_url)+'" style="max-width:100%;border-radius:10px;margin-bottom:8px" onerror="this.style.display=\'none\'">';
+      h += '<div style="font-size:13px;opacity:.8;margin-bottom:8px">'+esc(t('bolNumber'))+': '+esc(bol.bol_number||'—')+'</div>';
+      h += '<button id="choferEditBolBtn" style="width:100%;padding:12px;border:none;border-radius:10px;background:#2a4a7a;color:#fff;font-weight:700">'+esc(t('editBol'))+'</button>';
+    } else {
+      h += '<div style="opacity:.7;font-size:13px;margin-bottom:8px">'+esc(t('noBol'))+'</div>';
+      h += '<label for="choferBolFile" style="display:block;width:100%;padding:14px;border:none;border-radius:10px;background:#2a4a7a;color:#fff;font-weight:800;text-align:center;box-sizing:border-box;cursor:pointer">'+esc(t('takeBolPhoto'))+'</label>'+
+           '<input id="choferBolFile" type="file" accept="image/*" capture="environment" style="position:absolute;left:-9999px;width:1px;height:1px;opacity:0">'+
+           '<div id="choferBolOcrStatus" style="margin-top:8px;font-size:13px;opacity:.8"></div>';
+    }
+    h += '</div>';
+
+    // Segment log
+    h += '<div style="background:#13294d;border-radius:12px;padding:12px;margin-bottom:90px">'+
+      '<div style="font-size:12px;opacity:.7;font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">'+esc(t('segments'))+'</div>';
+    var evts = trip.events || [];
+    if(!evts.length){
+      h += '<div style="opacity:.6;font-size:13px;font-style:italic">'+esc(t('noSegments'))+'</div>';
+    } else {
+      for(var i=0;i<evts.length;i++){
+        var e = evts[i];
+        var when = e.occurred_at ? new Date(e.occurred_at).toLocaleString([], {month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}) : '';
+        h += '<div style="display:flex;justify-content:space-between;gap:10px;padding:5px 0;border-bottom:1px solid #1c3252;font-size:13px">'+
+          '<span style="font-weight:700">'+esc(e.event_type)+(e.notes?' <span style="opacity:.6;font-weight:400">'+esc(e.notes)+'</span>':'')+'</span>'+
+          '<span style="opacity:.7;white-space:nowrap">'+esc(when)+'</span></div>';
+      }
+    }
+    h += '</div>';
+
+    body.innerHTML = h;
+    // Localize static chrome (back button, title, action bar).
+    var bk=$('choferTripBackBtn'); if(bk) bk.textContent = t('back');
+    var tt=$('choferTripTitle'); if(tt) tt.textContent = t('tripDetail');
+    var pb=$('choferTripPause'); if(pb) pb.textContent = '⏸ '+t('pause');
+    var rb=$('choferTripResume'); if(rb) rb.textContent = '▶ '+t('resume');
+    var cpb=$('choferTripComplete'); if(cpb) cpb.textContent = '✓ '+t('completeTrip');
+    wireTripDetail(trip);
+  }
+
+  function wireTripDetail(trip){
+    var tripId = trip.trip_id;
+    var editBtn = $('choferEditBolBtn');
+    if(editBtn) editBtn.onclick = function(){
+      // Seed the editable form from the saved OCR JSON (or a flat shape).
+      var bol = C.state.tripBol;
+      C.bolDraft = bolFromSaved(bol);
+      openBolForm(tripId);
+    };
+    var file = $('choferBolFile');
+    if(file) file.onchange = function(){
+      var f = file.files && file.files[0]; if(!f) return;
+      runBolOcr(f, tripId);
+    };
+    // Bottom action bar buttons
+    var pb = $('choferTripPause');
+    if(pb) pb.onclick = function(){
+      rpc('trip_add_event', { p_tenant_id: TENANT_ID, p_trip_id: tripId, p_event_type:'paused', p_notes:null })
+        .then(function(){ note(t('tripPaused')); renderTripDetail(tripId); }).catch(function(){ note(t('error')); });
+    };
+    var rb = $('choferTripResume');
+    if(rb) rb.onclick = function(){
+      rpc('trip_add_event', { p_tenant_id: TENANT_ID, p_trip_id: tripId, p_event_type:'resumed', p_notes:null })
+        .then(function(){ note(t('tripResumed')); renderTripDetail(tripId); }).catch(function(){ note(t('error')); });
+    };
+    var cb = $('choferTripComplete');
+    if(cb) cb.onclick = function(){ openCompleteModal(tripId); };
+  }
+
+  // ── BOL OCR ──
+  function bolFromSaved(bol){
+    if(!bol) return blankBol();
+    var j = bol.ocr_json || {};
+    var items = (bol.line_items && bol.line_items.length) ? bol.line_items
+              : (j.line_items || []);
+    return {
+      bol_number: bol.bol_number || j.bol_number || '',
+      bill_to_name: bol.bill_to_name || (j.bill_to && j.bill_to.name) || '',
+      shipper_name: bol.shipper_name || (j.shipper && j.shipper.name) || '',
+      consignee_name: bol.consignee_name || (j.consignee && j.consignee.name) || '',
+      carrier_name: bol.carrier_name || (j.carrier && j.carrier.name) || '',
+      pickup_date: bol.pickup_date || j.pickup_date || '',
+      delivery_date: bol.delivery_date || j.delivery_date || '',
+      commodity_summary: bol.commodity_summary || j.commodity_summary || '',
+      freight_terms: bol.freight_terms || j.freight_terms || '',
+      total_pieces: bol.total_pieces!=null ? bol.total_pieces : (j.total_pieces!=null?j.total_pieces:''),
+      total_weight_lbs: bol.total_weight_lbs!=null ? bol.total_weight_lbs : (j.total_weight_lbs!=null?j.total_weight_lbs:''),
+      ocr_confidence: j.confidence!=null ? j.confidence : null,
+      source_image_url: bol.source_image_url || null,
+      line_items: items.map(normLine)
+    };
+  }
+  function blankBol(){
+    return { bol_number:'', bill_to_name:'', shipper_name:'', consignee_name:'', carrier_name:'',
+      pickup_date:'', delivery_date:'', commodity_summary:'', freight_terms:'',
+      total_pieces:'', total_weight_lbs:'', ocr_confidence:null, source_image_url:null, line_items:[] };
+  }
+  function normLine(li, i){
+    return {
+      line_no: li.line_no!=null ? li.line_no : (i!=null?i+1:1),
+      description: li.description||'', qty: li.qty!=null?li.qty:'', unit: li.unit||'',
+      piece_count: li.piece_count!=null?li.piece_count:'', weight_lbs: li.weight_lbs!=null?li.weight_lbs:'',
+      lot_number: li.lot_number||''
+    };
+  }
+  function bolFromAnalysis(a){
+    var d = blankBol();
+    d.bol_number = a.bol_number||'';
+    d.bill_to_name = (a.bill_to && a.bill_to.name)||'';
+    d.shipper_name = (a.shipper && a.shipper.name)||'';
+    d.consignee_name = (a.consignee && a.consignee.name)||'';
+    d.carrier_name = (a.carrier && a.carrier.name)||'';
+    d.pickup_date = a.pickup_date||'';
+    d.delivery_date = a.delivery_date||'';
+    d.commodity_summary = a.commodity_summary||'';
+    d.freight_terms = a.freight_terms||'';
+    d.total_pieces = a.total_pieces!=null?a.total_pieces:'';
+    d.total_weight_lbs = a.total_weight_lbs!=null?a.total_weight_lbs:'';
+    d.ocr_confidence = a.confidence!=null?a.confidence:null;
+    d.line_items = (a.line_items||[]).map(normLine);
+    return d;
+  }
+
+  function runBolOcr(file, tripId){
+    var status = function(msg){ var el = $('choferBolOcrStatus'); if(el) el.textContent = msg; };
+    status(t('bolReading'));
+    var datePart = new Date().toISOString().slice(0,10);
+    var path = C.state.driver.driver_id + '/' + datePart + '/' + uuid() + '.jpg';
+    C.state.bolOcrPath = path;
+    fetch(window.SUPABASE_URL + '/storage/v1/object/bol-documents/' + path, {
+      method:'POST',
+      headers:{ 'apikey':window.SUPABASE_ANON, 'Authorization':'Bearer '+window.SUPABASE_ANON, 'Content-Type': file.type || 'image/jpeg', 'x-upsert':'true' },
+      body: file
+    }).then(function(r){
+      if(!r.ok) throw new Error('upload '+r.status);
+      return fetch(window.SUPABASE_URL + '/functions/v1/analyze-bol', {
+        method:'POST',
+        headers:{ 'Content-Type':'application/json', 'apikey':window.SUPABASE_ANON, 'Authorization':'Bearer '+window.SUPABASE_ANON },
+        body: JSON.stringify({ storage_path: path, bucket: 'bol-documents' })
+      });
+    }).then(function(r){ return r.json(); }).then(function(res){
+      if(!res || !res.ok || !res.analysis){
+        status(t('bolFailed') + (res && res.error ? ' ('+res.error+')':''));
+        // Still let the driver fill it in manually.
+        C.bolDraft = blankBol();
+        C.bolDraft.source_image_url = window.SUPABASE_URL + '/storage/v1/object/public/bol-documents/' + path;
+        openBolForm(tripId);
+        return;
+      }
+      C.bolDraft = bolFromAnalysis(res.analysis);
+      C.bolDraft.source_image_url = window.SUPABASE_URL + '/storage/v1/object/public/bol-documents/' + path;
+      openBolForm(tripId);
+    }).catch(function(e){
+      console.warn('[Chofer] bol ocr', e && e.message);
+      status(t('bolFailed'));
+      C.bolDraft = blankBol();
+      C.bolDraft.source_image_url = window.SUPABASE_URL + '/storage/v1/object/public/bol-documents/' + path;
+      openBolForm(tripId);
+    });
+  }
+
+  // ── BOL editable confirmation form (modal overlay) ──
+  function openBolForm(tripId){
+    var ov = $('choferBolOv'); if(!ov) return;
+    var tit=$('choferBolTit'); if(tit) tit.textContent='BOL — '+t('editBol');
+    var sv=$('choferBolSaveBtn'); if(sv) sv.textContent=t('saveBol');
+    ov.classList.add('on');
+    drawBolForm(tripId);
+  }
+  function closeBolForm(){ var ov=$('choferBolOv'); if(ov) ov.classList.remove('on'); }
+  C.closeBolForm = closeBolForm;
+
+  function bolInput(id, label, val, type){
+    return '<label style="display:block;margin:8px 0 3px;font-size:12px;font-weight:600;opacity:.85">'+esc(label)+'</label>'+
+      '<input id="'+id+'" type="'+(type||'text')+'" value="'+esc(val==null?'':val)+'" style="width:100%;box-sizing:border-box;padding:10px;font-size:15px;border:none;border-radius:8px;background:#1d3357;color:#fff">';
+  }
+
+  function drawBolForm(tripId){
+    var d = C.bolDraft || blankBol();
+    var body = $('choferBolFormBody');
+    if(!body) return;
+    var conf = d.ocr_confidence!=null ? ' · OCR '+Math.round(d.ocr_confidence*100)+'%' : '';
+    var h = '<div style="font-size:12px;opacity:.7;margin-bottom:6px">'+esc(t('confirmBol'))+esc(conf)+'</div>';
+    if(d.source_image_url){
+      h += '<img src="'+esc(d.source_image_url)+'" style="max-width:100%;border-radius:8px;margin-bottom:8px" onerror="this.style.display=\'none\'">';
+    }
+    h += bolInput('bolF_number', t('bolNumber'), d.bol_number);
+    h += bolInput('bolF_billto', t('billTo'), d.bill_to_name);
+    h += bolInput('bolF_shipper', t('shipper'), d.shipper_name);
+    h += bolInput('bolF_consignee', t('consignee'), d.consignee_name);
+    h += bolInput('bolF_carrier', t('carrier'), d.carrier_name);
+    h += bolInput('bolF_pickup', t('pickupDate'), d.pickup_date, 'date');
+    h += bolInput('bolF_delivery', t('deliveryDate'), d.delivery_date, 'date');
+    h += bolInput('bolF_commodity', t('commodity'), d.commodity_summary);
+    h += bolInput('bolF_terms', t('freightTerms'), d.freight_terms);
+    h += '<div style="display:flex;gap:8px">'+
+      '<div style="flex:1">'+bolInput('bolF_tpieces', t('totalPieces'), d.total_pieces, 'number')+'</div>'+
+      '<div style="flex:1">'+bolInput('bolF_tweight', t('totalWeight'), d.total_weight_lbs, 'number')+'</div></div>';
+
+    // Line items
+    h += '<div style="margin-top:14px;font-size:13px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;opacity:.8">'+esc(t('lineItems'))+'</div>';
+    h += '<div id="bolF_lines">'+d.line_items.map(lineItemHtml).join('')+'</div>';
+    h += '<button id="bolF_addLine" style="width:100%;padding:10px;margin-top:8px;border:1px dashed #3a5a8a;border-radius:8px;background:transparent;color:#9cc0f0;font-weight:700">'+esc(t('addLine'))+'</button>';
+
+    body.innerHTML = h;
+    wireBolForm(tripId);
+  }
+
+  function lineItemHtml(li, idx){
+    return '<div class="bolLineRow" data-idx="'+idx+'" style="background:#16294a;border-radius:8px;padding:8px;margin-top:8px">'+
+      '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">'+
+        '<span style="font-size:12px;opacity:.7;font-weight:700">#'+(li.line_no||idx+1)+'</span>'+
+        '<button class="bolRemoveLine" data-idx="'+idx+'" style="background:#7a2a2a;border:none;color:#fff;font-size:11px;font-weight:700;padding:3px 8px;border-radius:6px">'+esc(t('remove'))+'</button>'+
+      '</div>'+
+      '<input class="bolLi" data-idx="'+idx+'" data-f="description" placeholder="'+esc(t('description'))+'" value="'+esc(li.description||'')+'" style="width:100%;box-sizing:border-box;padding:8px;font-size:14px;border:none;border-radius:6px;background:#1d3357;color:#fff;margin-bottom:4px">'+
+      '<div style="display:flex;gap:4px;margin-bottom:4px">'+
+        '<input class="bolLi" data-idx="'+idx+'" data-f="qty" type="number" placeholder="'+esc(t('qty'))+'" value="'+esc(li.qty==null?'':li.qty)+'" style="flex:1;min-width:0;box-sizing:border-box;padding:8px;font-size:13px;border:none;border-radius:6px;background:#1d3357;color:#fff">'+
+        '<input class="bolLi" data-idx="'+idx+'" data-f="unit" placeholder="'+esc(t('unit'))+'" value="'+esc(li.unit||'')+'" style="flex:1;min-width:0;box-sizing:border-box;padding:8px;font-size:13px;border:none;border-radius:6px;background:#1d3357;color:#fff">'+
+      '</div>'+
+      '<div style="display:flex;gap:4px">'+
+        '<input class="bolLi" data-idx="'+idx+'" data-f="piece_count" type="number" placeholder="'+esc(t('pieces'))+'" value="'+esc(li.piece_count==null?'':li.piece_count)+'" style="flex:1;min-width:0;box-sizing:border-box;padding:8px;font-size:13px;border:none;border-radius:6px;background:#1d3357;color:#fff">'+
+        '<input class="bolLi" data-idx="'+idx+'" data-f="weight_lbs" type="number" placeholder="'+esc(t('weightLbs'))+'" value="'+esc(li.weight_lbs==null?'':li.weight_lbs)+'" style="flex:1;min-width:0;box-sizing:border-box;padding:8px;font-size:13px;border:none;border-radius:6px;background:#1d3357;color:#fff">'+
+        '<input class="bolLi" data-idx="'+idx+'" data-f="lot_number" placeholder="'+esc(t('lotNumber'))+'" value="'+esc(li.lot_number||'')+'" style="flex:1;min-width:0;box-sizing:border-box;padding:8px;font-size:13px;border:none;border-radius:6px;background:#1d3357;color:#fff">'+
+      '</div>'+
+    '</div>';
+  }
+
+  function syncBolDraftFromForm(){
+    var d = C.bolDraft || blankBol();
+    function v(id){ var el=$(id); return el? el.value : ''; }
+    d.bol_number = v('bolF_number');
+    d.bill_to_name = v('bolF_billto');
+    d.shipper_name = v('bolF_shipper');
+    d.consignee_name = v('bolF_consignee');
+    d.carrier_name = v('bolF_carrier');
+    d.pickup_date = v('bolF_pickup');
+    d.delivery_date = v('bolF_delivery');
+    d.commodity_summary = v('bolF_commodity');
+    d.freight_terms = v('bolF_terms');
+    d.total_pieces = v('bolF_tpieces');
+    d.total_weight_lbs = v('bolF_tweight');
+    // Line items
+    var rows = document.querySelectorAll('#bolF_lines .bolLineRow');
+    var items = [];
+    for(var i=0;i<rows.length;i++){
+      var idx = rows[i].getAttribute('data-idx');
+      var inputs = rows[i].querySelectorAll('.bolLi');
+      var li = { line_no: i+1 };
+      for(var j=0;j<inputs.length;j++){
+        li[inputs[j].getAttribute('data-f')] = inputs[j].value;
+      }
+      items.push(li);
+    }
+    d.line_items = items;
+    C.bolDraft = d;
+  }
+
+  function wireBolForm(tripId){
+    var add = $('bolF_addLine');
+    if(add) add.onclick = function(){
+      syncBolDraftFromForm();
+      C.bolDraft.line_items.push(normLine({}, C.bolDraft.line_items.length));
+      drawBolForm(tripId);
+    };
+    var removes = document.querySelectorAll('.bolRemoveLine');
+    for(var i=0;i<removes.length;i++){
+      removes[i].onclick = function(){
+        syncBolDraftFromForm();
+        var idx = parseInt(this.getAttribute('data-idx'), 10);
+        C.bolDraft.line_items.splice(idx, 1);
+        drawBolForm(tripId);
+      };
+    }
+    var save = $('choferBolSaveBtn');
+    if(save) save.onclick = function(){
+      syncBolDraftFromForm();
+      save.disabled = true; save.textContent = t('saving');
+      var d = C.bolDraft;
+      rpc('save_bol_document', {
+        p_tenant_id: TENANT_ID,
+        p_trip_id: tripId,
+        p_bol_doc: {
+          bol_number: d.bol_number||null, bill_to_name: d.bill_to_name||null,
+          shipper_name: d.shipper_name||null, consignee_name: d.consignee_name||null,
+          carrier_name: d.carrier_name||null, pickup_date: d.pickup_date||null,
+          delivery_date: d.delivery_date||null, commodity_summary: d.commodity_summary||null,
+          freight_terms: d.freight_terms||null, total_pieces: d.total_pieces||null,
+          total_weight_lbs: d.total_weight_lbs||null, ocr_confidence: d.ocr_confidence!=null?d.ocr_confidence:null
+        },
+        p_line_items: d.line_items,
+        p_bill_to_customer_id: d.bill_to_customer_id || null,
+        p_source_image_url: d.source_image_url || null,
+        p_confirmed_by: C.state.driver ? C.state.driver.driver_id : null
+      }).then(function(){
+        note(t('bolSaved'));
+        closeBolForm();
+        renderTripDetail(tripId);
+      }).catch(function(e){
+        console.warn('[Chofer] save bol', e && e.message);
+        note(t('error'));
+        save.disabled = false; save.textContent = t('saveBol');
+      });
+    };
+  }
+
+  // ── Complete-trip modal (odometer end + actual gallons) ──
+  function openCompleteModal(tripId){
+    var ov = $('choferTripCompleteOv'); if(!ov) return;
+    var tit=$('choferTripCompleteTit'); if(tit) tit.textContent=t('completeTrip');
+    var ol=$('choferTripOdoLbl'); if(ol) ol.textContent=t('odoEnd');
+    var gl=$('choferTripGalLbl'); if(gl) gl.textContent=t('actualGallons');
+    var okb=$('choferTripCompleteOk'); if(okb) okb.textContent='✓ '+t('completeTrip');
+    ov.classList.add('on');
+    var ok = $('choferTripCompleteOk');
+    var cancel = $('choferTripCompleteCancel');
+    if(cancel) cancel.onclick = function(){ ov.classList.remove('on'); };
+    if(ok) ok.onclick = function(){
+      var odo = parseFloat(($('choferTripOdoEnd')||{}).value) || null;
+      var gal = parseFloat(($('choferTripGallons')||{}).value) || null;
+      ok.disabled = true; ok.textContent = t('saving');
+      rpc('trip_complete', { p_tenant_id: TENANT_ID, p_trip_id: tripId, p_odometer_end: odo, p_actual_gallons: gal })
+        .then(function(){
+          // Completing the trip also clocks the driver out of the trip-bound entry.
+          if(C.state.clockTripId === tripId && C.isClockedIn()){ C.clockOut('trip_complete'); }
+          note(t('tripCompleted'));
+          ov.classList.remove('on');
+          renderTripDetail(tripId);
+        }).catch(function(e){
+          console.warn('[Chofer] complete trip', e && e.message);
+          note(t('error'));
+          ok.disabled = false; ok.textContent = t('completeTrip');
+        });
+    };
+  }
+
+  // Render the route on first load too (deep-link / refresh on a trip URL).
+  C.renderRoute = renderRoute;
 
 })();
 </script>
