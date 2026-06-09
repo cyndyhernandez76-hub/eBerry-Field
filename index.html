@@ -24,7 +24,7 @@
 </script>
 <script>
 // V20_21: check versión + ackedVersion para romper loop infinito cuando version.txt≠APP_VERSION
-window.APP_VERSION = 'V20_99_5';
+window.APP_VERSION = 'V20_99_6';
 (function(){
   // V20_77: AUTO-LIMPIEZA de _ackedVersion envenenado.
   // Bug detectado: surqueros tocaban "Actualizar ahora" pero el SW interceptaba el reload con HTML viejo.
@@ -12840,7 +12840,7 @@ var _checkSendTimer = setInterval(checkDaysWithoutSend, 30 * 60 * 1000);
       }
     }
     h += field(t('signature'), '<input id="choferSig" type="text" style="'+inputStyle()+'">');
-    h += '<label style="display:flex;align-items:center;gap:8px;margin-top:12px;font-size:15px"><input id="choferSafe" type="checkbox" checked style="width:22px;height:22px"> '+esc(t('safeToOperate'))+'</label>';
+    h += '<div id="choferSafeWrap" style="display:flex;align-items:center;gap:10px;margin-top:14px;font-size:15px;padding:12px;background:#16294a;border-radius:10px;cursor:pointer;user-select:none"><input id="choferSafe" type="checkbox" checked style="width:24px;height:24px;pointer-events:auto !important;flex-shrink:0"><span style="flex:1">'+esc(t('safeToOperate'))+'</span></div>';
     h += '<button id="choferComplete" '+bigBtn(t('complete'),'#1f6b3a')+'>'+esc(t('complete'))+'</button>';
     box.innerHTML = h;
     wireChecklist();
@@ -12869,6 +12869,16 @@ var _checkSendTimer = setInterval(checkDaysWithoutSend, 30 * 60 * 1000);
     }
     var comp = $('choferComplete');
     if(comp) comp.onclick = completeInspection;
+    var safeWrap = $('choferSafeWrap'), safeCb = $('choferSafe');
+    if(safeWrap && safeCb){
+      var toggleSafe = function(ev){
+        if(ev && ev.target === safeCb) return;
+        if(ev && ev.preventDefault) ev.preventDefault();
+        safeCb.checked = !safeCb.checked;
+      };
+      safeWrap.addEventListener('click', toggleSafe);
+      safeWrap.addEventListener('touchend', toggleSafe, {passive:false});
+    }
   }
   function setRow(id, isOk){
     var row = document.querySelector('[data-item="'+CSS_escape(id)+'"]'); if(!row) return;
