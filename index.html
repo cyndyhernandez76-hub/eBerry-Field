@@ -24,7 +24,7 @@
 </script>
 <script>
 // V20_21: check versión + ackedVersion para romper loop infinito cuando version.txt≠APP_VERSION
-window.APP_VERSION = 'V20_99_6';
+window.APP_VERSION = 'V20_99_7';
 (function(){
   // V20_77: AUTO-LIMPIEZA de _ackedVersion envenenado.
   // Bug detectado: surqueros tocaban "Actualizar ahora" pero el SW interceptaba el reload con HTML viejo.
@@ -12938,9 +12938,11 @@ var _checkSendTimer = setInterval(checkDaysWithoutSend, 30 * 60 * 1000);
 
   // Tab 3: Fuel
   RENDER.fuel = function(){
+    // iOS Safari blocks programmatic .click() on display:none file inputs.
+    // Use a <label> wrapping the file input so the OS-level tap directly opens the camera.
     return vehiclePickerHtml()+
-      '<button id="choferFuelPhotoBtn" '+bigBtn(t('takePhoto'),'#2a4a7a')+'>'+esc(t('takePhoto'))+'</button>'+
-      '<input id="choferFuelFile" type="file" accept="image/*" capture="environment" style="display:none">'+
+      '<label for="choferFuelFile" id="choferFuelPhotoBtn" style="display:block;width:100%;padding:18px;margin-top:16px;border:none;border-radius:14px;background:#2a4a7a;color:#fff;font-size:17px;font-weight:800;text-align:center;cursor:pointer;-webkit-tap-highlight-color:rgba(255,255,255,.2);box-sizing:border-box">'+esc(t('takePhoto'))+'</label>'+
+      '<input id="choferFuelFile" type="file" accept="image/*" capture="environment" style="position:absolute;left:-9999px;width:1px;height:1px;opacity:0">'+
       '<div id="choferFuelThumb" style="margin-top:10px"></div>'+
       field(t('gallons'), '<input id="choferFuelGal" type="number" inputmode="decimal" style="'+inputStyle()+'">')+
       field(t('total'),   '<input id="choferFuelTot" type="number" inputmode="decimal" style="'+inputStyle()+'">')+
@@ -12960,12 +12962,9 @@ var _checkSendTimer = setInterval(checkDaysWithoutSend, 30 * 60 * 1000);
     dl.innerHTML = html;
   }
   function wireFuelControls(){
-    var btn = $('choferFuelPhotoBtn'), file = $('choferFuelFile');
-    if(btn && file){
-      btn.onclick = function(ev){ if(ev && ev.preventDefault) ev.preventDefault(); file.click(); };
-      // Belt-and-suspenders: also catch touchend on iOS Safari which can drop the synthetic click on hidden inputs.
-      btn.addEventListener('touchend', function(ev){ ev.preventDefault(); file.click(); }, {passive:false});
-    }
+    var file = $('choferFuelFile');
+    // Button is now a native <label for=...> — the OS handles the tap directly.
+    // No JS click proxy needed, which avoids the iOS .click() restriction on hidden inputs.
     if(file) file.onchange = function(){
       var f = file.files && file.files[0]; if(!f) return;
       var url = URL.createObjectURL(f);
