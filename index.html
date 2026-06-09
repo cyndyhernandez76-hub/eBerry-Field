@@ -24,7 +24,7 @@
 </script>
 <script>
 // V20_21: check versión + ackedVersion para romper loop infinito cuando version.txt≠APP_VERSION
-window.APP_VERSION = 'V20_99_7';
+window.APP_VERSION = 'V20_99_8';
 (function(){
   // V20_77: AUTO-LIMPIEZA de _ackedVersion envenenado.
   // Bug detectado: surqueros tocaban "Actualizar ahora" pero el SW interceptaba el reload con HTML viejo.
@@ -12840,9 +12840,16 @@ var _checkSendTimer = setInterval(checkDaysWithoutSend, 30 * 60 * 1000);
       }
     }
     h += field(t('signature'), '<input id="choferSig" type="text" style="'+inputStyle()+'">');
-    h += '<div id="choferSafeWrap" style="display:flex;align-items:center;gap:10px;margin-top:14px;font-size:15px;padding:12px;background:#16294a;border-radius:10px;cursor:pointer;user-select:none"><input id="choferSafe" type="checkbox" checked style="width:24px;height:24px;pointer-events:auto !important;flex-shrink:0"><span style="flex:1">'+esc(t('safeToOperate'))+'</span></div>';
-    h += '<button id="choferComplete" '+bigBtn(t('complete'),'#1f6b3a')+'>'+esc(t('complete'))+'</button>';
+    // Two big buttons instead of a checkbox — matches the OK/Defect pattern that already works reliably on mobile.
+    h += '<div style="margin-top:14px;font-size:13px;opacity:.8;font-weight:700">'+esc(t('safeToOperate'))+'?</div>';
+    h += '<div style="display:flex;gap:8px;margin-top:8px">'+
+         '<button type="button" id="choferSafeYes" data-safe="1" style="flex:1;padding:14px;border:none;border-radius:10px;background:#1f6b3a;color:#fff;font-weight:800;font-size:15px;outline:3px solid #7fe3a0">✓ '+esc(t('yes')||'YES')+'</button>'+
+         '<button type="button" id="choferSafeNo"  data-safe="0" style="flex:1;padding:14px;border:none;border-radius:10px;background:#7a2a2a;color:#fff;font-weight:800;font-size:15px">✗ '+esc(t('no')||'NO')+'</button>'+
+         '</div>';
+    h += '<button type="button" id="choferComplete" '+bigBtn(t('complete'),'#1f6b3a')+'>'+esc(t('complete'))+'</button>';
+    h += '<div style="height:80px"></div>'; // bottom padding so Complete is never under a fixed bar
     box.innerHTML = h;
+    C.state.safeFlag = true; // default safe
     wireChecklist();
   }
   function wireChecklist(){
@@ -12868,17 +12875,18 @@ var _checkSendTimer = setInterval(checkDaysWithoutSend, 30 * 60 * 1000);
       }; })(defs[j]);
     }
     var comp = $('choferComplete');
-    if(comp) comp.onclick = completeInspection;
-    var safeWrap = $('choferSafeWrap'), safeCb = $('choferSafe');
-    if(safeWrap && safeCb){
-      var toggleSafe = function(ev){
-        if(ev && ev.target === safeCb) return;
-        if(ev && ev.preventDefault) ev.preventDefault();
-        safeCb.checked = !safeCb.checked;
-      };
-      safeWrap.addEventListener('click', toggleSafe);
-      safeWrap.addEventListener('touchend', toggleSafe, {passive:false});
+    if(comp){
+      comp.onclick = completeInspection;
+      comp.addEventListener('touchend', function(ev){ ev.preventDefault(); completeInspection(); }, {passive:false});
     }
+    var yes = $('choferSafeYes'), no = $('choferSafeNo');
+    function setSafe(isSafe){
+      C.state.safeFlag = isSafe;
+      if(yes) yes.style.outline = isSafe ? '3px solid #7fe3a0' : 'none';
+      if(no)  no.style.outline  = isSafe ? 'none' : '3px solid #ffb3b3';
+    }
+    if(yes){ yes.onclick = function(){ setSafe(true); }; yes.addEventListener('touchend', function(ev){ ev.preventDefault(); setSafe(true); }, {passive:false}); }
+    if(no){  no.onclick  = function(){ setSafe(false); }; no.addEventListener('touchend', function(ev){ ev.preventDefault(); setSafe(false); }, {passive:false}); }
   }
   function setRow(id, isOk){
     var row = document.querySelector('[data-item="'+CSS_escape(id)+'"]'); if(!row) return;
@@ -12896,9 +12904,13 @@ var _checkSendTimer = setInterval(checkDaysWithoutSend, 30 * 60 * 1000);
     }).catch(function(e){ console.warn('[Chofer] save_result', e && e.message); });
   }
   function completeInspection(){
-    if(!C.state.inspectionId){ note(t('error')); return; }
+    console.log('[Chofer] completeInspection called, inspectionId=', C.state.inspectionId, 'safeFlag=', C.state.safeFlag);
+    if(!C.state.inspectionId){
+      note((t('error')||'Error')+': no inspection started — tap OK/Defect on at least one item first');
+      return;
+    }
     var sig = ($('choferSig')||{}).value || '';
-    var safe = !!($('choferSafe')||{}).checked;
+    var safe = C.state.safeFlag !== false; // default true if undefined
     var btn = $('choferComplete'); if(btn){ btn.disabled=true; btn.textContent=t('saving'); }
     rpc('driver_complete_inspection', {
       p_inspection_id: C.state.inspectionId,
