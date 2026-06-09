@@ -24,7 +24,7 @@
 </script>
 <script>
 // V20_21: check versión + ackedVersion para romper loop infinito cuando version.txt≠APP_VERSION
-window.APP_VERSION = 'V20_99_9';
+window.APP_VERSION = 'V20_99_10';
 (function(){
   // V20_77: AUTO-LIMPIEZA de _ackedVersion envenenado.
   // Bug detectado: surqueros tocaban "Actualizar ahora" pero el SW interceptaba el reload con HTML viejo.
@@ -12689,6 +12689,7 @@ var _checkSendTimer = setInterval(checkDaysWithoutSend, 30 * 60 * 1000);
   function dvirHtml(type){
     return '<div data-dvir="'+type+'">'+
       vehiclePickerHtml()+
+      '<div id="choferAlreadyDone"></div>'+
       field(t('odoReading'), '<input id="choferDvirOdo" type="number" inputmode="numeric" style="'+inputStyle()+'" value="'+(C.state.lastOdometer!=null?esc(C.state.lastOdometer):'')+'">')+
       '<div id="choferCarry"></div>'+
       '<button id="choferStartInspect" '+bigBtn(t('startInspect'),'#2a4a7a')+'>'+esc(t('startInspect'))+'</button>'+
@@ -12759,10 +12760,42 @@ var _checkSendTimer = setInterval(checkDaysWithoutSend, 30 * 60 * 1000);
       if(!v) return;
       var odo = $('choferDvirOdo'); if(odo && C.state.lastOdometer!=null && !odo.value) odo.value = C.state.lastOdometer;
       loadCarryDefects();
+      checkAlreadyDoneToday(type);
     });
     var start = $('choferStartInspect');
     if(start) start.onclick = function(){ startInspection(type); };
-    if(C.state.vehicleId) loadCarryDefects();
+    if(C.state.vehicleId){ loadCarryDefects(); checkAlreadyDoneToday(type); }
+  }
+  // If an inspection of this type already completed today for this vehicle, show the
+  // "already done" panel instead of letting the driver re-run it (DOT requires one per shift
+  // — the DB unique index enforces one COMPLETED per vehicle+day+type).
+  function checkAlreadyDoneToday(type){
+    if(!C.state.vehicleId) return;
+    var panel = $('choferAlreadyDone');
+    var startBtn = $('choferStartInspect');
+    var odoIn = $('choferDvirOdo');
+    if(panel) panel.innerHTML = '<div style="opacity:.5;font-size:12px;margin-top:8px">'+esc(t('loading')||'Loading…')+'</div>';
+    rpc('driver_check_inspection_today', { p_vehicle_id: C.state.vehicleId, p_inspection_type: type }).then(function(rows){
+      var row = (rows && rows.length) ? rows[0] : null;
+      if(!row){ if(panel) panel.innerHTML = ''; return; }
+      var when = row.out_completed_at ? new Date(row.out_completed_at).toLocaleTimeString([], {hour:'numeric', minute:'2-digit'}) : '';
+      var resultBadge = (row.out_overall_result === 'pass') ? '#1f6b3a'
+                       : (row.out_overall_result === 'pass_with_defects') ? '#a86a1c' : '#7a2a2a';
+      var resultLabel = (row.out_overall_result === 'pass') ? '✓ PASS'
+                       : (row.out_overall_result === 'pass_with_defects') ? '⚠ PASS w/ DEFECTS' : '✗ FAIL';
+      var html = '<div style="background:#16294a;border-left:4px solid '+resultBadge+';padding:14px;border-radius:10px;margin-top:14px">'+
+        '<div style="font-weight:800;font-size:15px;color:'+resultBadge+';margin-bottom:6px">'+resultLabel+'</div>'+
+        '<div style="font-size:14px">'+esc(type==='pretrip'?'Pre-Trip':'Post-Trip')+' already completed today at <b>'+esc(when)+'</b></div>'+
+        (row.out_driver_signature_name ? '<div style="font-size:12px;opacity:.7;margin-top:4px">Signed: '+esc(row.out_driver_signature_name)+'</div>' : '')+
+        '<div style="font-size:12px;opacity:.7;margin-top:8px">DOT requires only one '+esc(type==='pretrip'?'Pre-Trip':'Post-Trip')+' per vehicle per day. Available again tomorrow.</div>'+
+      '</div>';
+      if(panel) panel.innerHTML = html;
+      // hide the start button and odometer input — nothing to do until tomorrow
+      if(startBtn) startBtn.style.display = 'none';
+      if(odoIn && odoIn.parentElement) odoIn.parentElement.style.display = 'none';
+      // For pretrip done, mark cached so Time In tab activates
+      if(type === 'pretrip'){ C.state.pretripDone = true; lset('pretripDone','1'); }
+    }).catch(function(e){ console.warn('[Chofer] check_today', e && e.message); if(panel) panel.innerHTML = ''; });
   }
   function loadCarryDefects(){
     var box = $('choferCarry'); if(!box || !C.state.vehicleId) return;
@@ -12968,7 +13001,11 @@ var _checkSendTimer = setInterval(checkDaysWithoutSend, 30 * 60 * 1000);
       field(t('gallons'), '<input id="choferFuelGal" type="number" inputmode="decimal" style="'+inputStyle()+'">')+
       field(t('total'),   '<input id="choferFuelTot" type="number" inputmode="decimal" style="'+inputStyle()+'">')+
       field(t('odoReading'), '<input id="choferFuelOdo" type="number" inputmode="numeric" style="'+inputStyle()+'">')+
-      '<button id="choferFuelSubmit" '+bigBtn(t('submit'),'#1f6b3a')+'>'+esc(t('submit'))+'</button>';
+      '<button id="choferFuelSubmit" '+bigBtn(t('submit'),'#1f6b3a')+'>'+esc(t('submit'))+'</button>'+
+      '<div style="margin-top:22px;border-top:1px solid #2a3e5c;padding-top:14px">'+
+        '<div style="font-size:13px;font-weight:800;opacity:.8;text-transform:uppercase;letter-spacing:.5px">'+esc(t('recentReceipts')||'Recent receipts (last 2 days)')+'</div>'+
+        '<div id="choferFuelHistory" style="margin-top:10px"></div>'+
+      '</div>';
   };
   // Re-render JUST the vehicle picker datalist once vehicles arrive, without
   // touching the rest of the form (which would wipe the buttons + re-entrancy bug).
@@ -13004,7 +13041,57 @@ var _checkSendTimer = setInterval(checkDaysWithoutSend, 30 * 60 * 1000);
     ensureVehicles(function(){ if(C.state.activeTab==='fuel') refreshVehicleDatalist(); });
     wireVehicleInput(null);
     wireFuelControls();
+    loadFuelHistory();
   };
+  function loadFuelHistory(){
+    var box = $('choferFuelHistory');
+    if(!box || !C.state.driver) return;
+    box.innerHTML = '<div style="opacity:.5;font-size:12px">'+esc(t('loading')||'Loading…')+'</div>';
+    rpc('driver_recent_fuel_receipts', { p_driver_id: C.state.driver.driver_id, p_days: 2 }).then(function(rows){
+      if(!rows || !rows.length){
+        box.innerHTML = '<div style="opacity:.5;font-size:13px;font-style:italic">'+esc(t('noReceipts')||'No receipts submitted in the last 2 days')+'</div>';
+        return;
+      }
+      var h = '';
+      for(var i=0;i<rows.length;i++){
+        var r = rows[i];
+        var when = r.out_submitted_at ? new Date(r.out_submitted_at) : null;
+        var whenStr = when ? (when.toLocaleDateString([], {month:'short', day:'numeric'}) + ' ' + when.toLocaleTimeString([], {hour:'numeric', minute:'2-digit'})) : '';
+        var statusColor = (r.out_status === 'matched') ? '#1f6b3a'
+                         : (r.out_status === 'rejected') ? '#7a2a2a'
+                         : (r.out_status === 'manual_review') ? '#a86a1c' : '#446';
+        var statusLabel = (r.out_status === 'matched') ? '✓ matched'
+                         : (r.out_status === 'rejected') ? '✗ rejected'
+                         : (r.out_status === 'manual_review') ? '⚠ review' : '… pending';
+        var thumb = r.out_receipt_thumb_url || r.out_receipt_photo_url || '';
+        var galTot = '';
+        if(r.out_gallons != null) galTot += Number(r.out_gallons).toFixed(2)+' gal';
+        if(r.out_total_amount != null) galTot += (galTot?' · ':'')+'$'+Number(r.out_total_amount).toFixed(2);
+        if(r.out_odometer != null) galTot += (galTot?' · ':'')+Number(r.out_odometer).toLocaleString()+' mi';
+        h += '<div style="display:flex;gap:10px;background:#16294a;border-radius:10px;padding:10px;margin-bottom:8px;align-items:flex-start">'+
+             (thumb ? '<img src="'+esc(thumb)+'" data-full="'+esc(r.out_receipt_photo_url||thumb)+'" class="choferReceiptThumb" style="width:64px;height:64px;object-fit:cover;border-radius:6px;flex-shrink:0;cursor:pointer" onerror="this.style.display=\'none\'">' : '<div style="width:64px;height:64px;background:#0c1830;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:24px;opacity:.4;flex-shrink:0">📷</div>')+
+             '<div style="flex:1;min-width:0">'+
+               '<div style="font-size:13px;font-weight:700">'+esc(r.out_vehicle_code||'—')+'<span style="opacity:.6;font-weight:400"> · '+esc(whenStr)+'</span></div>'+
+               (r.out_station_name ? '<div style="font-size:12px;opacity:.7;margin-top:2px">'+esc(r.out_station_name)+'</div>' : '')+
+               (galTot ? '<div style="font-size:13px;margin-top:4px">'+esc(galTot)+'</div>' : '')+
+               '<div style="display:inline-block;background:'+statusColor+';color:#fff;font-size:11px;padding:2px 8px;border-radius:8px;margin-top:6px;font-weight:700">'+esc(statusLabel)+'</div>'+
+             '</div>'+
+             '</div>';
+      }
+      box.innerHTML = h;
+      // Tap thumbnail to open full-size
+      var thumbs = box.querySelectorAll('.choferReceiptThumb');
+      for(var k=0;k<thumbs.length;k++){
+        thumbs[k].onclick = (function(img){ return function(){
+          var full = img.getAttribute('data-full');
+          if(full) window.open(full, '_blank');
+        }; })(thumbs[k]);
+      }
+    }).catch(function(e){
+      console.warn('[Chofer] fuel history', e && e.message);
+      box.innerHTML = '<div style="opacity:.5;font-size:12px;color:#ffb3b3">'+esc(t('error')||'Error')+' loading history</div>';
+    });
+  }
 
   // Upload the photo as a temp file under driver/ocr-tmp/<id>.jpg, then call
   // analyze-fuel-receipt to extract gallons/total/etc. and autopopulate the form.
