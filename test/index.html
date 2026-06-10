@@ -35,7 +35,7 @@
 </script>
 <script>
 // V20_21: check versión + ackedVersion para romper loop infinito cuando version.txt≠APP_VERSION
-window.APP_VERSION = 'V1_0_0_0';
+window.APP_VERSION = 'V1_0_0_1';
 (function(){
   // V20_77: AUTO-LIMPIEZA de _ackedVersion envenenado.
   // Bug detectado: surqueros tocaban "Actualizar ahora" pero el SW interceptaba el reload con HTML viejo.
@@ -442,6 +442,10 @@ html.login-locked{overflow:hidden!important;height:100%!important}
 /* V20_91_22: logo real eBerry en una "tarjeta blanca" sobre el fondo azul del login */
 .login-logo-box{background:#fff;border-radius:18px;padding:18px 26px;margin-bottom:24px;box-shadow:0 6px 20px rgba(0,0,0,.18);max-width:340px;width:100%;display:flex;align-items:center;justify-content:center}
 .login-logo-box img{width:100%;max-width:280px;height:auto;display:block}
+/* V1_0_0_0: branding FieldPay (login) — paridad con producción de Cindy */
+.login-logo{font-family:'Bebas Neue',sans-serif;font-size:42px;letter-spacing:3px;color:#fff;margin-bottom:4px}
+.login-logo em{color:var(--a);font-style:normal}
+.login-sub{font-size:11px;color:rgba(255,255,255,.6);letter-spacing:.5px;font-weight:600;margin-bottom:32px}
 @media (max-width:380px){
   .login-logo-box{padding:14px 18px;max-width:280px}
   .login-logo-box img{max-width:230px}
@@ -868,10 +872,9 @@ html.login-locked{overflow:hidden!important;height:100%!important}
     <!-- V20_102: botón hamburger para abrir drawer -->
     <button class="tab-burger" onclick="openDrawer()" aria-label="Abrir menú">☰</button>
     <div>
-      <!-- V20_91_23: logo real eBerry en mini-tarjeta blanca (opción B confirmada por Serafín) -->
-      <div class="hdr-logo-card">
-        <img src="eberry-logo-login.png" srcset="eberry-logo-login.png 1x, eberry-logo-login@2x.png 2x" alt="eBerry Harvest Company">
-      </div>
+      <!-- V1_0_0_0: branding FieldPay (header) — paridad con producción de Cindy -->
+      <div class="logo">eBerry <em>Time &amp; Production</em></div>
+      <div style="font-size:9px;color:rgba(255,255,255,.6);letter-spacing:.5px;margin-top:-2px;font-weight:600">by FIELDPAY SOLUTIONS</div>
     </div>
     <div id="adminBadge" style="display:none;background:var(--a);border-radius:20px;padding:4px 12px;font-size:12px;font-weight:700;color:#fff;letter-spacing:1px">🔐 ADMIN</div>
     <div style="display:flex;align-items:center;gap:4px;flex-wrap:wrap">
@@ -930,10 +933,10 @@ html.login-locked{overflow:hidden!important;height:100%!important}
 </div>
 <!-- ── LOGIN SCREEN ── -->
 <div id="loginScreen">
-  <!-- V20_91_22: logo real de eBerry en tarjeta blanca, reemplaza texto "eBerry Field" + "HARVEST COMPANY LLC" -->
-  <div class="login-logo-box">
-    <img src="eberry-logo-login.png" srcset="eberry-logo-login.png 1x, eberry-logo-login@2x.png 2x" alt="eBerry Harvest Company">
-  </div>
+  <!-- V1_0_0_0: branding FieldPay (paridad con producción de Cindy) -->
+  <img id="loginFpLogo" alt="FieldPay Solutions" style="height:80px;width:auto;margin-bottom:12px;filter:drop-shadow(0 2px 4px rgba(0,0,0,.3))">
+  <div class="login-logo">eBerry <em>Time &amp; Production</em></div>
+  <div class="login-sub">by FIELDPAY SOLUTIONS</div>
   <div class="login-card">
     <div class="login-title">🔐 Acceso al Sistema</div>
     <div class="login-hint" id="loginHint">Ingresa tu PIN de 4 dígitos</div>
@@ -3559,7 +3562,7 @@ function buildLideres(){
   LIDERES = [];
   for(var i=0;i<ALL_WORKERS.length;i++){
     var w = ALL_WORKERS[i];
-    if(w.lider && w.lider.toLowerCase()==='surquero' && w.nip){
+    if(w.lider && /surquero/i.test(w.lider) && w.nip){  // V1_0_0_0: regex tolerante (paridad con V21_00_6d de Cindy) — antes match exacto excluía variantes
       LIDERES.push({name:w.name, empNum:w.empNum, pin:String(w.nip).trim(), crew:w.crew, pinHash:''});
     }
   }
@@ -3588,6 +3591,8 @@ function setLoading(show, msg){
 function showLogin(){
   // Pre-fill login hint with crew info count
   gEl('loginHint').textContent = 'Ingresa tu PIN de 4 dígitos (' + LIDERES.length + ' surqueros registrados)';
+  // V1_0_0_0: cargar logo FieldPay (lazy — FIELDPAY_LOGO definido más abajo en el archivo)
+  try { var _fp = gEl('loginFpLogo'); if(_fp && !_fp.src && typeof FIELDPAY_LOGO !== 'undefined') _fp.src = FIELDPAY_LOGO; } catch(e){}
   gEl('loginScreen').classList.remove('hide');
   // Tau: lock body scroll so content can't be seen behind login on Safari/iOS
   document.body.classList.add('login-locked');
