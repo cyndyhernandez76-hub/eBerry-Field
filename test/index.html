@@ -24,7 +24,7 @@
 </script>
 <script>
 // V20_21: check versión + ackedVersion para romper loop infinito cuando version.txt≠APP_VERSION
-window.APP_VERSION = 'V21_00_4'; // V21_00_4: RPC signature fixes for submit_maintenance_event + trip_driver_view rancho_origin
+window.APP_VERSION = 'V21_00_6'; // V21_00_6: Wire Pausar/Reanudar to trip_add_event(paused|resumed) + reason picker + client-side paused banner
 (function(){
   // V20_77: AUTO-LIMPIEZA de _ackedVersion envenenado.
   // Bug detectado: surqueros tocaban "Actualizar ahora" pero el SW interceptaba el reload con HTML viejo.
@@ -844,7 +844,7 @@ html.login-locked{overflow:hidden!important;height:100%!important}
 </div>
 
 <!-- V21_00: Complete-trip modal -->
-<div class="ov" id="choferTripCompleteOv" role="dialog" aria-modal="true" style="z-index:10100">
+<div class="ov" id="choferTripCompleteOv" role="dialog" aria-modal="true" translate="no" style="z-index:10100"><!-- V21_00_5: translate=no prevents Chrome auto-translate from mangling 'Galones reales' -> 'Real Chevrons' -->
   <div class="md" style="max-width:420px">
     <div class="mt" id="choferTripCompleteTit" style="font-size:16px">Completar viaje</div>
     <label style="display:block;margin:10px 0 3px;font-size:13px;font-weight:600;opacity:.85" id="choferTripOdoLbl">Odómetro final</label>
@@ -859,7 +859,7 @@ html.login-locked{overflow:hidden!important;height:100%!important}
 </div>
 
 <!-- V21_00_3: Hauler load-item add/edit modal (ported from V21_01_0) -->
-<div class="ov" id="haulerLoadItemOv" role="dialog" aria-modal="true" style="z-index:10100">
+<div class="ov" id="haulerLoadItemOv" role="dialog" aria-modal="true" translate="no" style="z-index:10100"><!-- V21_00_5: translate=no defeats Chrome auto-translate -->
   <div class="md" style="max-width:460px">
     <div class="mt" id="haulerLiTit" style="font-size:16px">Artículo de carga</div>
     <label style="display:block;margin:10px 0 3px;font-size:13px;font-weight:600;opacity:.85" id="haulerLiDescLbl">Descripción</label>
@@ -892,7 +892,7 @@ html.login-locked{overflow:hidden!important;height:100%!important}
 </div>
 
 <!-- V21_00_3: Hauler trip-event add modal (ported from V21_01_0) -->
-<div class="ov" id="haulerEventOv" role="dialog" aria-modal="true" style="z-index:10100">
+<div class="ov" id="haulerEventOv" role="dialog" aria-modal="true" translate="no" style="z-index:10100"><!-- V21_00_5: translate=no defeats Chrome auto-translate -->
   <div class="md" style="max-width:440px">
     <div class="mt" id="haulerEvTit" style="font-size:16px">Evento</div>
     <label style="display:block;margin:10px 0 3px;font-size:13px;font-weight:600;opacity:.85" id="haulerEvTypeLbl">Tipo</label>
@@ -13210,6 +13210,18 @@ var _checkSendTimer = setInterval(checkDaysWithoutSend, 30 * 60 * 1000);
     tripCompleted:  {es:'✓ Viaje completado',       en:'✓ Trip completed'},
     tripPaused:     {es:'⏸ Viaje pausado',          en:'⏸ Trip paused'},
     tripResumed:    {es:'▶ Viaje reanudado',        en:'▶ Trip resumed'},
+    // V21_00_6: Pause/Resume reason picker
+    pauseTrip:      {es:'⏸ Pausar viaje',           en:'⏸ Pause trip'},
+    resumeTrip:     {es:'▶ Reanudar viaje',         en:'▶ Resume trip'},
+    pauseReasonTitle:{es:'¿Motivo de la pausa?',    en:'Pause reason?'},
+    reasonLunch:    {es:'Almuerzo',                 en:'Lunch'},
+    reasonRepair:   {es:'Reparación',               en:'Repair'},
+    reasonDotBreak: {es:'Descanso DOT',             en:'DOT break'},
+    reasonLoading:  {es:'Cargando',                 en:'Loading'},
+    reasonUnloading:{es:'Descargando',              en:'Unloading'},
+    reasonOther:    {es:'Otro',                     en:'Other'},
+    pausedBanner:   {es:'⏸ Viaje en pausa',         en:'⏸ Trip on pause'},
+    cancel:         {es:'Cancelar',                 en:'Cancel'},
     back:           {es:'← Volver',                 en:'← Back'},
     statusScheduled:{es:'programado',               en:'scheduled'},
     statusInProgress:{es:'en progreso',             en:'in progress'},
@@ -13253,6 +13265,11 @@ var _checkSendTimer = setInterval(checkDaysWithoutSend, 30 * 60 * 1000);
     notClocked:     {es:'Sin marcar',               en:'Not clocked in'},
     dvirReqInProg:  {es:'Pre-Viaje requerido antes de iniciar el viaje', en:'Pre-Trip required before starting the trip'},
     dvirReqComplete:{es:'Post-Viaje requerido antes de completar',       en:'Post-Trip required before completing'},
+    // V21_00_5: louder DVIR gate strings + new pre-trip-on-entry text
+    dvirGateTitle:  {es:'Inspección requerida',                          en:'Inspection required'},
+    dvirGatePreBody:{es:'Antes de continuar con el viaje, debes completar la inspección Pre-Viaje del vehículo. Esto es requisito del DOT.', en:'You must complete the Pre-Trip vehicle inspection before continuing with this trip. This is a DOT requirement.'},
+    dvirGatePostBody:{es:'Antes de completar el viaje, debes hacer la inspección Post-Viaje del vehículo. Esto es requisito del DOT.', en:'You must complete the Post-Trip vehicle inspection before completing this trip. This is a DOT requirement.'},
+    dvirGateGoBtn:  {es:'Hacer la inspección ahora',                     en:'Do the inspection now'},
     dvirDoneToday:  {es:'\u2713 Completado hoy',        en:'\u2713 Done today'},
     dvirNotDone:    {es:'Pendiente hoy',             en:'Not done today'},
     startDvir:      {es:'Iniciar inspecci\u00f3n',     en:'Start inspection'},
@@ -13535,12 +13552,59 @@ var _checkSendTimer = setInterval(checkDaysWithoutSend, 30 * 60 * 1000);
     // Keep the chofer shell hidden — hauler never uses the Driver tabs.
     var cs = $('choferScreen'); if(cs) cs.style.display = 'none';
     syncLangBtn();
-    // If a hauling trip is already active for this driver, resume straight into it.
+    // V21_00_5: On hauler entry, if a trip is already active, gate Pre-Trip DVIR before showing Trip Detail.
+    // If no active trip, show the Start screen as before.
     C.restoreClock().then(function(){
-      if(C.state.activeTripId){ C.navTrip(C.state.activeTripId); }
-      else { C.showHaulerStart(); }
+      if(C.state.activeTripId){
+        ensurePreTripBeforeResume(C.state.activeTripId); // V21_00_5: Pre-Trip DVIR gate
+      } else {
+        C.showHaulerStart();
+      }
     });
   };
+
+  // V21_00_5: Pre-Trip DVIR gate when resuming into an already-active trip.
+  // Looks up the active trip's vehicle, then checks driver_check_inspection_today('pretrip').
+  // If no Pre-Trip done today → show full-screen modal with explanation + 'Do inspection now' button.
+  // If Pre-Trip already done → proceed straight to Trip Detail (current behavior).
+  function ensurePreTripBeforeResume(tripId){
+    rpc('hauler_my_active_trip', { p_tenant_id: TENANT_ID, p_driver_id: C.state.driver.driver_id }).then(function(rows){
+      var trip = (rows && rows.length) ? rows[0] : null;
+      if(!trip || !trip.vehicle_id){ C.navTrip(tripId); return; } // No vehicle assigned yet → can't DVIR
+      rpc('driver_check_inspection_today', { p_vehicle_id: trip.vehicle_id, p_inspection_type: 'pretrip' }).then(function(insp){
+        if(insp && insp.length){ C.navTrip(tripId); return; } // Pre-Trip already done today → proceed
+        showDvirGateModal('pretrip', trip, function(){ C.navTrip(tripId); }); // V21_00_5: louder block
+      }).catch(function(){ C.navTrip(tripId); }); // Fail open on RPC error
+    }).catch(function(){ C.navTrip(tripId); });
+  }
+
+  // V21_00_5: Louder DVIR gate — full-screen modal explaining why driver can't proceed.
+  // Used by Pre-Trip gate (on hauler entry) and Post-Trip gate (Complete Trip button).
+  function showDvirGateModal(type, trip, afterDone){
+    var existing = document.getElementById('dvirGateOv'); if(existing) existing.remove();
+    var ov = document.createElement('div');
+    ov.id = 'dvirGateOv';
+    ov.setAttribute('translate','no');
+    ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,8,20,.85);z-index:11000;display:flex;align-items:center;justify-content:center;padding:20px;font-family:inherit;color:#fff';
+    var bodyKey = (type==='pretrip') ? 'dvirGatePreBody' : 'dvirGatePostBody';
+    var icon = (type==='pretrip') ? '🔧' : '🏁';
+    ov.innerHTML =
+      '<div style="background:#0f1f3a;border:2px solid #ffb84d;border-radius:14px;padding:22px;max-width:420px;width:100%;box-shadow:0 8px 40px rgba(255,184,77,.3)">'+
+        '<div style="text-align:center;font-size:54px;margin-bottom:8px">'+icon+'</div>'+
+        '<div style="font-size:20px;font-weight:900;text-align:center;color:#ffd27f;margin-bottom:10px">'+esc(t('dvirGateTitle'))+'</div>'+
+        '<div style="font-size:14px;line-height:1.4;margin-bottom:18px;text-align:center">'+esc(t(bodyKey))+'</div>'+
+        '<button id="dvirGateGo" style="width:100%;padding:14px;border:none;border-radius:10px;background:#1f6b3a;color:#fff;font-size:15px;font-weight:800">'+esc(t('dvirGateGoBtn'))+'</button>'+
+      '</div>';
+    document.body.appendChild(ov);
+    document.getElementById('dvirGateGo').onclick = function(){
+      ov.remove();
+      if(trip && trip.vehicle_id){ C.state.vehicleId = trip.vehicle_id; }
+      C.state.pendingDvirAfterDone = afterDone || null;
+      C.state.forceDvirTabType = type;
+      if(trip && trip.trip_id){ C.navTrip(trip.trip_id); }
+      setTimeout(function(){ try{ showHaulerTab('dvir'); }catch(_){} }, 180);
+    };
+  }
 
   C.showHaulerStart = function(){
     var ov = $('choferTripScreen'); if(ov) ov.style.display = 'none';
@@ -14606,6 +14670,29 @@ var _checkSendTimer = setInterval(checkDaysWithoutSend, 30 * 60 * 1000);
         C.state.tripDetail = tr;
         var det = (out[1] && out[1][0]) || {};
         C.state.tripEvents = det.events || [];
+        // V21_00_6: restore client-side paused state for this trip from localStorage (survives refresh).
+        // Also derive from latest pause/resume event in tripEvents so multi-device stays roughly consistent.
+        try{
+          if(!C.state.tripPausedAt) C.state.tripPausedAt = {};
+          var raw = localStorage.getItem('eb_trip_paused_'+tr.trip_id);
+          if(raw){ C.state.tripPausedAt[tr.trip_id] = JSON.parse(raw); }
+          else { delete C.state.tripPausedAt[tr.trip_id]; }
+          // Cross-check with server events: most recent paused/resumed wins
+          var evs = C.state.tripEvents || [];
+          var lastPause = null, lastResume = null;
+          for(var ei=0; ei<evs.length; ei++){
+            var ev = evs[ei];
+            if(ev && ev.event_type === 'paused')  { if(!lastPause  || (ev.event_time > lastPause.event_time))  lastPause  = ev; }
+            if(ev && ev.event_type === 'resumed') { if(!lastResume || (ev.event_time > lastResume.event_time)) lastResume = ev; }
+          }
+          if(lastPause && (!lastResume || lastPause.event_time > lastResume.event_time)){
+            C.state.tripPausedAt[tr.trip_id] = { at: Date.parse(lastPause.event_time)||Date.now(), reason: lastPause.notes||'', key: '' };
+            try{ localStorage.setItem('eb_trip_paused_'+tr.trip_id, JSON.stringify(C.state.tripPausedAt[tr.trip_id])); }catch(_){ }
+          } else if(lastResume){
+            delete C.state.tripPausedAt[tr.trip_id];
+            try{ localStorage.removeItem('eb_trip_paused_'+tr.trip_id); }catch(_){ }
+          }
+        }catch(_){ /* localStorage may be disabled */ }
         // V21_00_3: manage GPS ping lifecycle: ping only while in_progress
         if(tr.status === 'in_progress'){ startGpsPing(tripId); } else { stopGpsPing(); }
         // V21_00_3: hide legacy bottom action bar; tabbed UI owns its own buttons
@@ -14707,6 +14794,19 @@ var _checkSendTimer = setInterval(checkDaysWithoutSend, 30 * 60 * 1000);
     // Helpers
     var helpers = (trip.helper_driver_ids && trip.helper_driver_ids.length) ? trip.helper_driver_ids.length+' '+t('helpers') : t('noHelpers');
     h += '<div style="background:#13294d;border-radius:12px;padding:6px 12px;margin-bottom:12px">'+infoRow(t('helpers'), helpers)+'</div>';
+    // V21_00_6: Paused banner (client-side derived from C.state.tripPausedAt)
+    var isPaused = !!(C.state.tripPausedAt && C.state.tripPausedAt[trip.trip_id]);
+    if(isPaused){
+      h += '<div style="background:#8a6d1a;color:#fff;border-radius:12px;padding:12px;margin-bottom:12px;text-align:center;font-weight:800">'+esc(t('pausedBanner'))+'</div>';
+    }
+    // V21_00_6: Pause/Resume buttons (active when trip is in_progress and not completed/cancelled)
+    if(trip.status !== 'completed' && trip.status !== 'cancelled'){
+      if(isPaused){
+        h += '<button id="haulerResumeBtn" style="width:100%;padding:14px;border:none;border-radius:12px;background:#1f6b3a;color:#fff;font-size:15px;font-weight:800;margin-bottom:10px">'+esc(t('resumeTrip'))+'</button>';
+      } else {
+        h += '<button id="haulerPauseBtn" style="width:100%;padding:14px;border:none;border-radius:12px;background:#8a6d1a;color:#fff;font-size:15px;font-weight:800;margin-bottom:10px">'+esc(t('pauseTrip'))+'</button>';
+      }
+    }
     // Complete button
     if(trip.status !== 'completed' && trip.status !== 'cancelled'){
       h += '<button id="haulerCompleteBtn" style="width:100%;padding:14px;border:none;border-radius:12px;background:#1f6b3a;color:#fff;font-size:15px;font-weight:800;margin-bottom:10px">✓ '+esc(t('completeTrip'))+'</button>';
@@ -14714,13 +14814,82 @@ var _checkSendTimer = setInterval(checkDaysWithoutSend, 30 * 60 * 1000);
     h += '<div style="height:40px"></div>';
     return h;
   };
-  HWIRE.overview = function(trip){ // V21_00_3:
+  HWIRE.overview = function(trip){ // V21_00_3 + V21_00_6:
     var b = $('haulerCompleteBtn');
     if(b) b.onclick = function(){
       // V21_00_3: require Post-Trip DVIR before completing
       ensurePostTripThen(trip, function(){ openCompleteModal(trip.trip_id); });
     };
+    // V21_00_6: Pause button -> reason picker -> trip_add_event('paused', reason) -> mark client-side paused
+    var bp = $('haulerPauseBtn');
+    if(bp) bp.onclick = function(){ openPauseReasonModal(trip); };
+    // V21_00_6: Resume button -> trip_add_event('resumed') -> clear client-side paused
+    var br = $('haulerResumeBtn');
+    if(br) br.onclick = function(){
+      br.disabled = true;
+      rpc('trip_add_event', { p_tenant_id: TENANT_ID, p_trip_id: trip.trip_id, p_event_type: 'resumed', p_notes: null })
+        .then(function(){
+          if(C.state.tripPausedAt) delete C.state.tripPausedAt[trip.trip_id];
+          try{ localStorage.removeItem('eb_trip_paused_'+trip.trip_id); }catch(_){ }
+          if(typeof toast === 'function') toast(t('tripResumed'));
+          showHaulerTab('overview');
+        })
+        .catch(function(e){ br.disabled = false; if(typeof toast === 'function') toast('⚠ '+(e && e.message ? e.message : 'error')); });
+    };
   };
+
+  // V21_00_6: Pause reason picker modal
+  function openPauseReasonModal(trip){
+    var reasons = [
+      { key: 'lunch',     label: t('reasonLunch') },
+      { key: 'repair',    label: t('reasonRepair') },
+      { key: 'dot_break', label: t('reasonDotBreak') },
+      { key: 'loading',   label: t('reasonLoading') },
+      { key: 'unloading', label: t('reasonUnloading') },
+      { key: 'other',     label: t('reasonOther') }
+    ];
+    var ov = document.createElement('div');
+    ov.setAttribute('translate', 'no'); // V21_00_5 pattern: protect from MT mangling
+    ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:10000;display:flex;align-items:center;justify-content:center;padding:18px';
+    var btnsHtml = '';
+    for(var i=0;i<reasons.length;i++){
+      btnsHtml += '<button data-reason-key="'+reasons[i].key+'" data-reason-label="'+esc(reasons[i].label)+'" '+
+        'style="width:100%;padding:14px;margin-bottom:8px;border:none;border-radius:10px;background:#2a4a7a;color:#fff;font-size:15px;font-weight:700;text-align:left">'+
+        esc(reasons[i].label)+'</button>';
+    }
+    ov.innerHTML = '<div style="max-width:420px;width:100%;background:#0c1a35;color:#fff;border-radius:14px;padding:18px">'+
+      '<div style="font-size:17px;font-weight:800;margin-bottom:12px">'+esc(t('pauseReasonTitle'))+'</div>'+
+      '<div id="pauseReasonList">'+btnsHtml+'</div>'+
+      '<button id="pauseReasonCancel" style="width:100%;padding:12px;margin-top:6px;border:none;border-radius:10px;background:#444;color:#fff;font-weight:700">'+esc(t('cancel'))+'</button>'+
+      '</div>';
+    document.body.appendChild(ov);
+    var close = function(){ if(ov.parentNode) ov.parentNode.removeChild(ov); };
+    var cancelBtn = ov.querySelector('#pauseReasonCancel');
+    if(cancelBtn) cancelBtn.onclick = close;
+    var btns = ov.querySelectorAll('button[data-reason-key]');
+    for(var j=0;j<btns.length;j++){
+      btns[j].onclick = (function(btn){ return function(){
+        var key = btn.getAttribute('data-reason-key');
+        var lab = btn.getAttribute('data-reason-label');
+        for(var k=0;k<btns.length;k++) btns[k].disabled = true;
+        if(cancelBtn) cancelBtn.disabled = true;
+        rpc('trip_add_event', { p_tenant_id: TENANT_ID, p_trip_id: trip.trip_id, p_event_type: 'paused', p_notes: lab })
+          .then(function(){
+            if(!C.state.tripPausedAt) C.state.tripPausedAt = {};
+            C.state.tripPausedAt[trip.trip_id] = { at: Date.now(), reason: lab, key: key };
+            try{ localStorage.setItem('eb_trip_paused_'+trip.trip_id, JSON.stringify(C.state.tripPausedAt[trip.trip_id])); }catch(_){ }
+            close();
+            if(typeof toast === 'function') toast(t('tripPaused')+' — '+lab);
+            showHaulerTab('overview');
+          })
+          .catch(function(e){
+            for(var m=0;m<btns.length;m++) btns[m].disabled = false;
+            if(cancelBtn) cancelBtn.disabled = false;
+            if(typeof toast === 'function') toast('⚠ '+(e && e.message ? e.message : 'error'));
+          });
+      }; })(btns[j]);
+    }
+  }
 
   function hosSoftCapPill(){ // V21_00_3: §395.1(k) 14h soft cap informational pill
     var startMs = C.state.clockInAt ? new Date(C.state.clockInAt).getTime() : 0;
@@ -15017,12 +15186,15 @@ var _checkSendTimer = setInterval(checkDaysWithoutSend, 30 * 60 * 1000);
   }
 
   // V21_00_3: DVIR gate before Complete Trip — require a Post-Trip done today
+  // V21_00_5: replaced silent toast + tab-flip with louder full-screen modal explaining the DOT gate
   function ensurePostTripThen(trip, proceed){
     if(!trip.vehicle_id){ proceed(); return; }
     rpc('driver_check_inspection_today', { p_vehicle_id: trip.vehicle_id, p_inspection_type: 'posttrip' }).then(function(rows){
       if(rows && rows.length){ proceed(); }
-      else { note(t('dvirReqComplete')); C.state.vehicleId = trip.vehicle_id; showHaulerTab('dvir'); }
-    }).catch(function(){ proceed(); });
+      else {
+        showDvirGateModal('posttrip', trip, proceed); // V21_00_5: louder block
+      }
+    }).catch(function(){ proceed(); }); // Fail open on RPC error
   }
 
   // V21_00_3: Dispatcher hand-off — show assigned trips list (hauler_my_assigned_trips)
