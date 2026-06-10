@@ -24,7 +24,7 @@
 </script>
 <script>
 // V20_21: check versión + ackedVersion para romper loop infinito cuando version.txt≠APP_VERSION
-window.APP_VERSION = 'V21_01_0a'; // V21_01_0a: V21_01_0 hauling dropdowns + V21_00_6d PIN race fixes rolled into main index.html.
+window.APP_VERSION = 'V21_01_0b'; // V21_01_0b: HOTFIX remove stray 'f' at line 2710 that broke script parse on fresh installs.
 (function(){
   // V20_77: AUTO-LIMPIEZA de _ackedVersion envenenado.
   // Bug detectado: surqueros tocaban "Actualizar ahora" pero el SW interceptaba el reload con HTML viejo.
@@ -2706,7 +2706,6 @@ function fetchFromScript(action, callback, _retries){
 }
 
 // V21_00_2 (port V20_194/V23/V24): sendAllRanchosToSheets — envía cada rancho individualmente
-f
 
 function loadSheetsData(){
   setLoading(true, 'Cargando datos...');
