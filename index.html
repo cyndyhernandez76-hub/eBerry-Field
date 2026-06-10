@@ -24,7 +24,7 @@
 </script>
 <script>
 // V20_21: check versión + ackedVersion para romper loop infinito cuando version.txt≠APP_VERSION
-window.APP_VERSION = 'V21_00_6b'; // V21_00_6: Wire Pausar/Reanudar to trip_add_event(paused|resumed) + reason picker + client-side paused banner
+window.APP_VERSION = 'V21_00_6c'; // V21_00_6c: fix PIN cache race — await buildLideres before saveCache, re-run buildLideres on cache hydrate, defensive plaintext fallback
 (function(){
   // V20_77: AUTO-LIMPIEZA de _ackedVersion envenenado.
   // Bug detectado: surqueros tocaban "Actualizar ahora" pero el SW interceptaba el reload con HTML viejo.
@@ -2113,7 +2113,11 @@ function doLideresCheck(pin, hashed){
   // V7: comparar PIN hasheado contra líderes (hashear PINes de Sheets al cargarlos)
   var matchedUser = null;
   for(var i=0;i<LIDERES.length;i++){
-    if(LIDERES[i].pinHash === hashed || LIDERES[i].pin === pin){
+    // V21_00_6c: fallback defensivo — si pinHash quedó vacío por una race del cache
+    // y el pin guardado sigue siendo un PIN real (4 dígitos, no '****'), aceptar
+    // comparación en texto plano. Desbloquea surqueros atascados con cache corrupto.
+    var _plainOk = (!LIDERES[i].pinHash) && LIDERES[i].pin && LIDERES[i].pin !== '****' && LIDERES[i].pin === pin;
+    if(LIDERES[i].pinHash === hashed || LIDERES[i].pin === pin || _plainOk){
       matchedUser = {name:LIDERES[i].name, pin:pin, crew:LIDERES[i].crew, isAdmin:false, empNum:LIDERES[i].empNum};
       break;
     }
@@ -2733,8 +2737,11 @@ function loadSheetsData(){
     if(loaded.workers && loaded.tasks && loaded.config){
       done = true;
       clearTimeout(timeout);
-      buildLideres();
-      saveCache(ALL_WORKERS, ALL_ACTS, LIDERES);
+      // V21_00_6c: esperar a que buildLideres termine de hashear los PINes antes
+      // de persistir el cache, para que LIDERES.pinHash NO se guarde vacío (race fix).
+      buildLideres().then(function(){
+        saveCache(ALL_WORKERS, ALL_ACTS, LIDERES);
+      });
       startKeepAlive();
       setLoading(false);
       // V10: Diagnóstico visual — mostrar si usó FALLBACK
@@ -2863,14 +2870,18 @@ function buildLideres(){
     }
   }
   // V7: pre-hashear PINes de líderes para no tenerlos en texto plano en memoria
+  // V21_00_6c: recolectar las promesas para que los callers puedan await antes de saveCache
+  var _hashJobs = [];
   for(var j=0;j<LIDERES.length;j++){
     (function(idx){
-      hashPin(LIDERES[idx].pin).then(function(h){
+      var p = hashPin(LIDERES[idx].pin).then(function(h){
         LIDERES[idx].pinHash = h;
         LIDERES[idx].pin = '****'; // limpiar texto plano
       });
+      _hashJobs.push(p);
     })(j);
   }
+  return Promise.all(_hashJobs);
 }
 
 function setLoading(show, msg){
@@ -10260,6 +10271,14 @@ window.addEventListener('DOMContentLoaded', function(){
     ALL_ACTS    = cache.acts || [];
     LIDERES     = cache.lideres || [];
     if(cache.contratos) CONTRATOS = cache.contratos;
+    // V21_00_6c: re-derivar LIDERES desde ALL_WORKERS (con nip limpio) para
+    // garantizar pinHash fresco aunque el cache.lideres venga corrupto de una
+    // race anterior (pinHash='' / pin='****'). Luego re-guardar el cache limpio.
+    if(ALL_WORKERS && ALL_WORKERS.length){
+      buildLideres().then(function(){
+        saveCache(ALL_WORKERS, ALL_ACTS, LIDERES);
+      });
+    }
     // Tau: re-normalize cached ACTS — fix Daywork that was cached as Hora
     // Old cache may not have payType at all, so check both conditions
     for(var ci=0;ci<ALL_ACTS.length;ci++){
