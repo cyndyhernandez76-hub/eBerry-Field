@@ -35,7 +35,7 @@
 </script>
 <script>
 // V20_21: check versión + ackedVersion para romper loop infinito cuando version.txt≠APP_VERSION
-window.APP_VERSION = 'V1_0_0_3';
+window.APP_VERSION = 'V1_0_0_4';
 (function(){
   // V20_77: AUTO-LIMPIEZA de _ackedVersion envenenado.
   // Bug detectado: surqueros tocaban "Actualizar ahora" pero el SW interceptaba el reload con HTML viejo.
@@ -10130,7 +10130,9 @@ function go(n){
   // V20_91_01: bloquear pestañas distintas a Parámetros hasta que el día esté iniciado.
   // Admin con currentUser.isAdmin queda exento (puede revisar sin haber escaneado).
   // V20_124: también modo lectura exento — al cargar día desde Sheets no debe forzar captura
-  if(n !== 0 && _dayFlow && !_dayFlow.diaIniciado && currentUser && !currentUser.isAdmin && !_readOnlyMode){
+  // V1_0_0_4: ⑤ Check-in/Ausencias (5) y ⑨ Archivos (8) accesibles SIN iniciar el día
+  // (el surquero puede marcar ausencias y recuperar/exportar historial sin ponchar chofer/surquero).
+  if(n !== 0 && n !== 5 && n !== 8 && _dayFlow && !_dayFlow.diaIniciado && currentUser && !currentUser.isAdmin && !_readOnlyMode){
     toast('🔒 Primero escanea al chofer y al surquero en Parámetros');
     return;
   }
