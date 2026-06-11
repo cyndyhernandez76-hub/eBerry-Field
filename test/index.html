@@ -35,7 +35,7 @@
 </script>
 <script>
 // V20_21: check versión + ackedVersion para romper loop infinito cuando version.txt≠APP_VERSION
-window.APP_VERSION = 'V1_0_0_2';
+window.APP_VERSION = 'V1_0_0_3';
 (function(){
   // V20_77: AUTO-LIMPIEZA de _ackedVersion envenenado.
   // Bug detectado: surqueros tocaban "Actualizar ahora" pero el SW interceptaba el reload con HTML viejo.
@@ -14666,6 +14666,29 @@ function archImportSelected(file){
   reader.onload = function(ev){
     try{
       var data = JSON.parse(ev.target.result);
+      // V1_0_0_3: aceptar TAMBIÉN el formato del Diagnóstico Recovery ({fullData:{key:rawString}}).
+      // El Recovery guarda las keys crudas de localStorage; el export normal usa {userKey,days}.
+      if(data && data.fullData && typeof data.fullData === 'object'){
+        var rkeys = Object.keys(data.fullData);
+        if(!rkeys.length){ alert('⚠️ El archivo de recuperación no tiene datos.'); return; }
+        var rHist = 0, rConf = 0;
+        for(var ri=0; ri<rkeys.length; ri++){ if(rkeys[ri].indexOf('_hist_')>=0){ rHist++; if(localStorage.getItem(rkeys[ri])) rConf++; } }
+        var rmsg = '🛟 Archivo de RECUPERACIÓN (Diagnóstico Recovery)\n👤 '+(data.currentUser||'?')+'\n📊 '+rkeys.length+' registro(s), '+rHist+' día(s) de historial';
+        if(rConf>0) rmsg += '\n\n⚠️ '+rConf+' día(s) ya existen y serán SOBRESCRITOS.';
+        rmsg += '\n\n¿Restaurar todo en este dispositivo?';
+        if(!confirm(rmsg)) return;
+        var rImp = 0;
+        for(var rj=0; rj<rkeys.length; rj++){
+          try{
+            var rval = data.fullData[rkeys[rj]];
+            if(typeof rval !== 'string') rval = JSON.stringify(rval); // por si vino ya parseado
+            if(rval != null){ localStorage.setItem(rkeys[rj], rval); rImp++; }
+          }catch(err){ console.warn('Recovery import: fallo '+rkeys[rj]+' — '+err.message); }
+        }
+        toast('✅ Restaurados '+rImp+' registro(s) — recarga la app si no ves los días');
+        try { renderArchives(); } catch(e){}
+        return;
+      }
       if(!data || !data.userKey || !data.days){
         alert('⚠️ Archivo no válido — falta userKey o days.\n\nAsegúrate que sea un JSON exportado por esta app.');
         return;
