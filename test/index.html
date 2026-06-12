@@ -35,7 +35,7 @@
 </script>
 <script>
 // V20_21: check versión + ackedVersion para romper loop infinito cuando version.txt≠APP_VERSION
-window.APP_VERSION = 'V1_0_0_6';
+window.APP_VERSION = 'V1_0_0_7';
 (function(){
   // V20_77: AUTO-LIMPIEZA de _ackedVersion envenenado.
   // Bug detectado: surqueros tocaban "Actualizar ahora" pero el SW interceptaba el reload con HTML viejo.
@@ -1199,6 +1199,13 @@ html.login-locked{overflow:hidden!important;height:100%!important}
     </div>
     <div id="assignExtraShifts"></div>
     <button type="button" onclick="addAssignShift()" class="shift-add" style="margin-bottom:12px">+ Agregar turno</button>
+
+    <!-- V1_0_0_6: lonche(s) para "Asignar a varios" — se aplica a todos los seleccionados -->
+    <div style="margin-bottom:4px;padding-top:8px;border-top:1px dashed #e0d39a">
+      <label style="font-size:12px;font-weight:700;color:#8a6d1a">🍔 Lonche(s) — se descuenta de las horas</label>
+      <div id="assignLonches"></div>
+      <button type="button" onclick="addAssignLonche()" class="shift-add" style="background:#fff7d6;color:#8a6d1a;border-color:#c8a415;margin-top:4px;margin-bottom:12px">+ Agregar lonche</button>
+    </div>
 
     <div id="assignVarInputs" style="margin-bottom:12px"></div>
 
@@ -9557,6 +9564,9 @@ function editActivityGroup(groupKey){
       }
     }
     try { renderAssignExtraShifts(); } catch(eR){ console.warn('V20_187 renderAssignExtraShifts fallo:', eR); }
+    // V1_0_0_7: pre-cargar el/los lonche(s) de la actividad editada en el modal (sino aparecería el default)
+    _assignLonches = (firstAct && firstAct.lonches && firstAct.lonches.length) ? JSON.parse(JSON.stringify(firstAct.lonches)) : [{ini:'12:00',fin:'12:30'}];
+    try { renderAssignLonches(); } catch(eL){}
     // Pre-poblar finca (después de onAssignActChange que la pintó)
     var fincaSel = gEl('assignFincaSel');
     var fincaInp = gEl('assignFincaInput');
@@ -9662,7 +9672,8 @@ function _saveEditedActivityGroup(){
       tipo: _derivarTipoActividad(newAct),
       p: newAct.p, payType: newAct.payType||'',
       ini: newIni, fin: newFin, finca: newFinca,
-      qty: 0, showTime: true, shifts: _newShifts.slice(), inputs:{}  // V20_187: T1 + extras
+      qty: 0, showTime: true, shifts: _newShifts.slice(), inputs:{}, // V20_187: T1 + extras
+      lonches: JSON.parse(JSON.stringify(_assignLonches)) // V1_0_0_7: guardar lonche editado
     });
     var savedActs = wC.acts;
     wC.acts = tempActs;
@@ -9799,6 +9810,29 @@ function renderAssignExtraShifts(){
   wrap.innerHTML = html;
 }
 
+// V1_0_0_6: lonche(s) del modal "Asignar a varios" (mismo patrón que turnos extras)
+var _assignLonches = [];
+function addAssignLonche(){ _assignLonches.push({ini:'', fin:''}); renderAssignLonches(); }
+function removeAssignLonche(idx){ if(idx<0||idx>=_assignLonches.length) return; _assignLonches.splice(idx,1); renderAssignLonches(); }
+function _onAssignLoncheChange(idx, field, value){ if(!_assignLonches[idx]) return; _assignLonches[idx][field]=value; }
+function renderAssignLonches(){
+  var wrap = gEl('assignLonches'); if(!wrap) return;
+  var html = '';
+  for(var i=0; i<_assignLonches.length; i++){
+    var s = _assignLonches[i];
+    var ini = s.ini ? esc(s.ini) : '';
+    var fin = s.fin ? esc(s.fin) : '';
+    html += '<div style="display:flex;gap:10px;margin-bottom:8px;align-items:end;background:#fff7d6;padding:8px;border-radius:6px;border-left:3px solid #c8a415">'
+      + '<div style="flex:1"><label style="display:block;font-size:11px;font-weight:600;color:#666;margin-bottom:4px">🍔 Lonche '+(i+1)+' Inicio</label>'
+      + '<input type="time" value="'+ini+'" oninput="_onAssignLoncheChange('+i+',\'ini\',this.value)" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:6px;font-size:14px"></div>'
+      + '<div style="flex:1"><label style="display:block;font-size:11px;font-weight:600;color:#666;margin-bottom:4px">🍔 Lonche '+(i+1)+' Fin</label>'
+      + '<input type="time" value="'+fin+'" oninput="_onAssignLoncheChange('+i+',\'fin\',this.value)" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:6px;font-size:14px"></div>'
+      + '<button type="button" onclick="removeAssignLonche('+i+')" title="Quitar lonche" style="background:none;border:1.5px solid #c0392b;color:#c0392b;width:36px;height:38px;border-radius:6px;font-size:14px;font-weight:700;cursor:pointer;padding:0">✕</button>'
+      + '</div>';
+  }
+  wrap.innerHTML = html;
+}
+
 function openAssignManyModal(){
   if(_readOnlyMode){ toast && toast('🔒 Modo lectura — no se pueden agregar actividades'); return; }
   if(!workers || !workers.length){ toast && toast('⚠️ Primero agrega trabajadores con Check-in cuadrilla'); return; }
@@ -9807,6 +9841,9 @@ function openAssignManyModal(){
   // V20_186: reset turnos extras al abrir
   _assignExtraShifts = [];
   var extraWrap = gEl('assignExtraShifts'); if(extraWrap) extraWrap.innerHTML = '';
+  // V1_0_0_6: reset lonche(s) al abrir el modal — default 12:00-12:30
+  _assignLonches = [{ini:'12:00', fin:'12:30'}];
+  try { renderAssignLonches(); } catch(e){}
   // Llenar dropdown actividades del MASTER (ACTS ya filtrado por rancho activo)
   var sel = gEl('assignActSel');
   if(sel){
@@ -10019,7 +10056,8 @@ function confirmAssignMany(){
       ai: _assignCurrentActIdx, esName: act.es,
       tipo: _derivarTipoActividad(act), // V20_133_a: data-driven (col G + col J)
       p: act.p, payType: act.payType||'', ini:ini, fin:fin, finca:finca,
-      qty: 0, showTime:true, shifts:_shifts.slice(), inputs:{}
+      qty: 0, showTime:true, shifts:_shifts.slice(), inputs:{},
+      lonches: JSON.parse(JSON.stringify(_assignLonches)) // V1_0_0_6: lonche capturado en el modal "Asignar a varios"
     };
     w.acts = w.acts || [];
     w.acts.push(tempAct);
