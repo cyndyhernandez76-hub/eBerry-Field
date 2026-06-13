@@ -35,7 +35,7 @@
 </script>
 <script>
 // V20_21: check versión + ackedVersion para romper loop infinito cuando version.txt≠APP_VERSION
-window.APP_VERSION = 'V1_0_0_9';
+window.APP_VERSION = 'V1_0_0_10';
 (function(){
   // V20_77: AUTO-LIMPIEZA de _ackedVersion envenenado.
   // Bug detectado: surqueros tocaban "Actualizar ahora" pero el SW interceptaba el reload con HTML viejo.
@@ -10807,7 +10807,10 @@ function buildPDFWindow(vals, wks, ep, hp, cp, ausArr, grpActsArr){
       // se hace en 2 fincas distintas del mismo rancho (antes se fusionaba y la 2da finca desaparecía del PDF).
       // V20_152 FIX 1: agregar payType al colKey para separar Hours vs Pieces con MISMO nombre.
       var _fincaKey=(a_.finca||'').trim();
-      colKey = actName + '|' + actTipo + '|' + _fincaKey + '|' + (actPayT||'');
+      // V1_0_0_10: quitar 'tipo' del colKey. 'tipo' tiene 2 vocabularios ('pieza' en vivo vs 'Ficha'
+      // serializado) → con el fix V1_0_0_9 (matching por payType) se DUPLICABAN columnas Pieces (una por
+      // cada vocabulario de tipo, ambas llenas con los mismos datos). name+finca+payType discrimina solo.
+      colKey = actName + '|' + _fincaKey + '|' + (actPayT||'');
       var found=false;
       for(var k=0;k<actCols.length;k++){ if(actCols[k].colKey===colKey){found=true;break;} }
       if(!found) actCols.push({
@@ -11036,10 +11039,21 @@ function buildPDFWindow(vals, wks, ep, hp, cp, ausArr, grpActsArr){
       for(var pi3_=0;pi3_<g_.participantes.length;pi3_++) col_.perPersona[g_.participantes[pi3_]]=hGrp_;
     } else {
       var totalP_=parseFloat(g_.vars.totalP)||0;
+      // V1_0_0_10 FIX: grupales DATA-DRIVEN (motor V20_177, ej. "Empaque" Pieces) guardan la cantidad
+      // en vars.inputs (no en vars.totalP legacy) → antes se OMITÍAN del PDF aunque la pantalla SÍ las
+      // mostraba. Si no hay totalP pero la grupal usa el motor, calcular la cantidad total con computeQty.
+      if(!totalP_ && typeof _grpUsesMotor==='function' && _grpUsesMotor(gact_)){
+        try {
+          var _inpM_=_grpReadMotorInputs(g_);
+          var _qM_=computeQty(gact_, _inpM_, np_);
+          totalP_=(_qM_==null||isNaN(_qM_))?0:_qM_;
+        } catch(eM_){ totalP_=0; }
+      }
       if(!totalP_) continue;
       var qpx_=totalP_/np_;
+      var _prcG_=parseFloat(g_.vars.precioC)||parseFloat(gact_.p)||0; // V1_0_0_10: precio del grupal (precioC) si existe
       // V20_71 Fase B: usar nombre en inglés en label (PDF es para Cindy en EN)
-      col_={label:(gact_.en||gact_.es), ct:'generic', perPersona:{}, totalVal:totalP_, np:np_, precio:gact_.p, unitLabel:gact_.payType||'Pieces p/p', finca:g_.vars.finca||'', ini:g_.vars.ini||'', fin:g_.vars.fin||''};
+      col_={label:(gact_.en||gact_.es), ct:'generic', perPersona:{}, totalVal:totalP_, np:np_, precio:_prcG_, unitLabel:(gact_.payType||'Pieces')+' p/p', finca:g_.vars.finca||'', ini:g_.vars.ini||'', fin:g_.vars.fin||''};
       for(var pi4_=0;pi4_<g_.participantes.length;pi4_++) col_.perPersona[g_.participantes[pi4_]]=qpx_;
     }
     if(col_) grpPuertasCols.push(col_);
@@ -12600,6 +12614,11 @@ function _sendToSheetsCore() {
       qtyPerPerson = hGrp || 0; // horas (igual para todos)
     } else {
       var totalP = parseFloat(g.vars.totalP) || 0;
+      // V1_0_0_10 FIX: grupales DATA-DRIVEN (motor V20_177, ej. "Empaque" Pieces) guardan la cantidad
+      // en vars.inputs, NO en vars.totalP legacy → antes NO se enviaban a FIELD_DROP (qtyPerPerson=0 → continue).
+      if(!totalP && typeof _grpUsesMotor==='function' && _grpUsesMotor(act)){
+        try { var _qS=computeQty(act, _grpReadMotorInputs(g), np); totalP=(_qS==null||isNaN(_qS))?0:_qS; } catch(eS){}
+      }
       qtyPerPerson = totalP / np;
     }
 
