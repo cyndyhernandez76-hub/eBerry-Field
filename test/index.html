@@ -35,7 +35,7 @@
 </script>
 <script>
 // V20_21: check versión + ackedVersion para romper loop infinito cuando version.txt≠APP_VERSION
-window.APP_VERSION = 'V1_0_0_14';
+window.APP_VERSION = 'V1_0_0_15';
 (function(){
   // V20_77: AUTO-LIMPIEZA de _ackedVersion envenenado.
   // Bug detectado: surqueros tocaban "Actualizar ahora" pero el SW interceptaba el reload con HTML viejo.
@@ -10712,7 +10712,37 @@ function genPDFFromKey(key){
   }catch(e){ toast('Error al generar PDF'); }
 }
 
+// V1_0_0_15: detectar workers con check-in pero SIN actividad (ni individual ni grupal).
+// Incluye a TODOS (chofer/surquero/trabajador) — decisión de Serafín 2026-06-13: a veces el
+// surquero se captura al último y se le olvida. Si no debe capturar, solo da Continuar.
+function _workersSinActividad(){
+  var out = [];
+  for(var i=0;i<workers.length;i++){
+    var w = workers[i];
+    if(!w || !w.checkInTime) continue; // solo los que hicieron check-in
+    var tieneInd = !!(w.acts && w.acts.length > 0);
+    var tieneGrp = false;
+    try { tieneGrp = (typeof _isInAnyGrpAct==='function') && _isInAnyGrpAct(w.name); } catch(e){}
+    if(!tieneInd && !tieneGrp) out.push(w.name);
+  }
+  return out;
+}
+// V1_0_0_15: advertencia previa a enviar/generar PDF. Retorna true si se puede proceder.
+// En modo lectura (admin revisando día cerrado) NO aplica — solo el surquero en vivo captura.
+function _confirmSinActividad(){
+  if(typeof _readOnlyMode!=='undefined' && _readOnlyMode) return true;
+  var sa = _workersSinActividad();
+  if(!sa.length) return true;
+  var plural = sa.length > 1;
+  var lista = sa.map(function(n){ return '• ' + n; }).join('\n');
+  return confirm('⚠️ '+(plural?'Estas personas hicieron':'Esta persona hizo')+' check-in pero '
+    +(plural?'NO tienen':'NO tiene')+' actividad asignada:\n\n'+lista
+    +'\n\n¿Seguro que deseas continuar?\n\n'
+    +'Aceptar = continuar igual\nCancelar = revisar y agregar actividad');
+}
 function genPDF(){
+  // V1_0_0_15: advertir si alguien con check-in no tiene actividad
+  if(!_confirmSinActividad()) return;
   // Theta: usa collectSaveFields para recoger todos los campos automáticamente
   var vals=collectSaveFields();
   buildPDFWindow(vals, workers, estP, hilP, cajasP, ausencias, grpActs);
@@ -12399,6 +12429,8 @@ function _hidratarContractRate95(w){
 function sendToSheets() {
   if (!workers.length && !ausencias.length) { toast('⚠️ No hay trabajadores ni ausencias'); return; }
   if (!gVal('fecha'))  { toast('⚠️ Ingresa la fecha primero'); return; }
+  // V1_0_0_15: advertir si alguien con check-in no tiene actividad (antes de cualquier envío)
+  if(!_confirmSinActividad()) return;
   if(!navigator.onLine || window._exceptionsClearedFor === gVal('fecha')){ return _sendToSheetsCore(); }
   if(typeof checkExceptionsBeforeSend === 'function'){
     checkExceptionsBeforeSend(function(ok){
