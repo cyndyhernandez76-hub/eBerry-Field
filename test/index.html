@@ -35,7 +35,7 @@
 </script>
 <script>
 // V20_21: check versión + ackedVersion para romper loop infinito cuando version.txt≠APP_VERSION
-window.APP_VERSION = 'V1_0_0_13';
+window.APP_VERSION = 'V1_0_0_14';
 (function(){
   // V20_77: AUTO-LIMPIEZA de _ackedVersion envenenado.
   // Bug detectado: surqueros tocaban "Actualizar ahora" pero el SW interceptaba el reload con HTML viejo.
@@ -9564,7 +9564,9 @@ function editActivityGroup(groupKey){
     }
     try { renderAssignExtraShifts(); } catch(eR){ console.warn('V20_187 renderAssignExtraShifts fallo:', eR); }
     // V1_0_0_7: pre-cargar el/los lonche(s) de la actividad editada en el modal (sino aparecería el default)
-    _assignLonches = (firstAct && firstAct.lonches && firstAct.lonches.length) ? JSON.parse(JSON.stringify(firstAct.lonches)) : [{ini:'12:00',fin:'12:30'}];
+    // V1_0_0_14 FIX: usar Array.isArray (no .length) para RESPETAR el lonche quitado ([] = sin lonche).
+    // Antes [].length===0 caía al default → el lonche que el surquero QUITÓ reaparecía al editar.
+    _assignLonches = (firstAct && Array.isArray(firstAct.lonches)) ? JSON.parse(JSON.stringify(firstAct.lonches)) : [{ini:'12:00',fin:'12:30'}];
     try { renderAssignLonches(); } catch(eL){}
     // Pre-poblar finca (después de onAssignActChange que la pintó)
     var fincaSel = gEl('assignFincaSel');
@@ -9737,7 +9739,8 @@ function _saveEditedActivityGroup(){
       showTime: true,
       // V20_187: shifts incluye turnos extras del modal (deep copy)
       shifts: JSON.parse(JSON.stringify(_newShifts)),
-      inputs: preserved && preserved.inputs ? preserved.inputs : JSON.parse(JSON.stringify(commonVars))
+      inputs: preserved && preserved.inputs ? preserved.inputs : JSON.parse(JSON.stringify(commonVars)),
+      lonches: JSON.parse(JSON.stringify(_assignLonches)) // V1_0_0_14 FIX: guardar lonche(s) editado(s) en la act FINAL — antes solo iba al tempActs de validación y se perdía → editar reseteaba al default
     };
     var newIdx = wTarget.acts.length;
     wTarget.acts.push(newActObj);
