@@ -35,7 +35,7 @@
 </script>
 <script>
 // V20_21: check versión + ackedVersion para romper loop infinito cuando version.txt≠APP_VERSION
-window.APP_VERSION = 'V1_0_0_15';
+window.APP_VERSION = 'V1_0_0_16';
 (function(){
   // V20_77: AUTO-LIMPIEZA de _ackedVersion envenenado.
   // Bug detectado: surqueros tocaban "Actualizar ahora" pero el SW interceptaba el reload con HTML viejo.
@@ -10712,14 +10712,18 @@ function genPDFFromKey(key){
   }catch(e){ toast('Error al generar PDF'); }
 }
 
-// V1_0_0_15: detectar workers con check-in pero SIN actividad (ni individual ni grupal).
+// V1_0_0_15/16: detectar workers en la lista del día SIN actividad (ni individual ni grupal).
 // Incluye a TODOS (chofer/surquero/trabajador) — decisión de Serafín 2026-06-13: a veces el
 // surquero se captura al último y se le olvida. Si no debe capturar, solo da Continuar.
+// V1_0_0_16 FIX: NO exigir checkInTime. Los trabajadores agregados antes de "iniciar día"
+// (o por flujos sin check-in instantáneo) quedan con checkInTime='' → antes se saltaban y solo
+// salía el surquero. Ahora alerta de CUALQUIER worker presente sin actividad. Las ausencias NO
+// están en workers[] (van en ausencias[]) → no se incluyen.
 function _workersSinActividad(){
   var out = [];
   for(var i=0;i<workers.length;i++){
     var w = workers[i];
-    if(!w || !w.checkInTime) continue; // solo los que hicieron check-in
+    if(!w) continue;
     var tieneInd = !!(w.acts && w.acts.length > 0);
     var tieneGrp = false;
     try { tieneGrp = (typeof _isInAnyGrpAct==='function') && _isInAnyGrpAct(w.name); } catch(e){}
@@ -10735,7 +10739,7 @@ function _confirmSinActividad(){
   if(!sa.length) return true;
   var plural = sa.length > 1;
   var lista = sa.map(function(n){ return '• ' + n; }).join('\n');
-  return confirm('⚠️ '+(plural?'Estas personas hicieron':'Esta persona hizo')+' check-in pero '
+  return confirm('⚠️ '+(plural?'Estas personas están':'Esta persona está')+' en la lista del día pero '
     +(plural?'NO tienen':'NO tiene')+' actividad asignada:\n\n'+lista
     +'\n\n¿Seguro que deseas continuar?\n\n'
     +'Aceptar = continuar igual\nCancelar = revisar y agregar actividad');
