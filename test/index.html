@@ -35,7 +35,7 @@
 </script>
 <script>
 // V20_21: check versión + ackedVersion para romper loop infinito cuando version.txt≠APP_VERSION
-window.APP_VERSION = 'V1_0_0_16';
+window.APP_VERSION = 'V1_0_0_18';
 (function(){
   // V20_77: AUTO-LIMPIEZA de _ackedVersion envenenado.
   // Bug detectado: surqueros tocaban "Actualizar ahora" pero el SW interceptaba el reload con HTML viejo.
@@ -5427,9 +5427,30 @@ function _enterReadOnly(payload){
       }
       var qty = (typeof pa.qty==='number') ? pa.qty : parseFloat(pa.qty)||0;
       var price = parseFloat(pa.unitPrice)||0;
+      // V1_0_0_17 FIX: si el backend NO mandó unitPrice (pa.unitPrice vacío/0) → fallback al precio
+      // del MASTER (mismo patrón tolerante que _payType/_variable abajo). Sin esto las actividades
+      // Pieces (ej. Cosecha de tomate $0.70) salían con pago $0.00 al cargar el día desde Sheets en
+      // modo lectura → el PDF/invoice regenerado por el admin quedaba con totales en $0. Hours NO
+      // fallaba porque su pago usa getHRate (contractRate del worker, sí hidratado). Reportado por
+      // Serafín 2026-06-15 (día 2026-06-14, Cosecha de tomate bola, admin en modo lectura).
+      if(!price){
+        if(aiIdx>=0 && ACTS[aiIdx]) price = parseFloat(ACTS[aiIdx].p)||0;
+        if(!price){
+          for(var _aaiP=0; _aaiP<ALL_ACTS.length; _aaiP++){
+            if(_normActName(ALL_ACTS[_aaiP].es) === _paActNorm){ price = parseFloat(ALL_ACTS[_aaiP].p)||0; break; }
+          }
+        }
+      }
       // V20_37 FIX: fallback robusto — 0 es valor válido, no caer a (qty*price) si payEst fue explícitamente 0
       var _payEstParsed = parseFloat(pa.payEst);
       var payEst = (!isNaN(_payEstParsed) && pa.payEst !== null && pa.payEst !== undefined && pa.payEst !== '') ? _payEstParsed : (qty*price);
+      // V1_0_0_18 FIX: el backend puede mandar payEst=0 (el total de FIELD_DROP quedó en 0 por bug de
+      // captura) aunque qty y price sean válidos → en modo lectura el PAGO salía $0.00 (Cosecha de tomate
+      // 81 u × $0.70 mostraba $0.00). Un pago 0 con cantidad>0 Y precio>0 es matemáticamente imposible →
+      // recalcular qty*price. NO afecta qty=0 (Daywork fantasma) ni price=0. Hours sigue OK (qty=horas,
+      // price=rate → qty*price = horas*rate = mismo pago, y normalmente ya viene poblado). Reportado por
+      // Serafín 2026-06-15 (día 2026-06-14 en modo lectura: precio $0.70 visible pero PAGO/TOTAL $0.00).
+      if(!payEst && qty>0 && price>0) payEst = qty*price;
       // V20_181: PRIORIDAD 1 — backend v5.36+ manda pa.payType y pa.variable directamente.
       // Si vienen poblados, usarlos sin lookup. Frontend defensivo para clientes con backend viejo (v5.35-).
       var _payTypeForAct = pa.payType || '';
@@ -5558,7 +5579,8 @@ function _enterReadOnly(payload){
       // V20_60: cajas son discretas (no medias cajas) — redondear a entero por si la suma
       // backend acumuló basura binaria (ej: 18 × 5.555... = 99.999... → Math.round=100)
       _vars.totalC  = Math.round(_qtyT);
-      _vars.precioC = parseFloat(pg.unitPrice||0) || 0;
+      // V1_0_0_17 FIX: fallback al precio del MASTER si el backend no mandó unitPrice (igual que individuales) → grupales cajas (Empaque) no salen en $0 en modo lectura
+      _vars.precioC = parseFloat(pg.unitPrice||0) || (_grpAct ? parseFloat(_grpAct.p)||0 : 0);
     } else if(_ct==='piezas'){
       // V20_60: piezas también son discretas — mismo trato
       _vars.totalP = Math.round(_qtyT);
@@ -5582,7 +5604,7 @@ function _enterReadOnly(payload){
       gai: gaiIdx, esName: pg.actEs||'',
       _actEs: pg.actEs || '',
       _payType: pg.tipo || '',
-      _unitPrice: parseFloat(pg.unitPrice) || 0,
+      _unitPrice: parseFloat(pg.unitPrice) || (_grpAct ? parseFloat(_grpAct.p)||0 : 0), // V1_0_0_17 FIX: fallback al precio del MASTER
       participantes: partIds,
       vars: _vars,
       _frozen: true
