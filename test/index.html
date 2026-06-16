@@ -35,7 +35,7 @@
 </script>
 <script>
 // V20_21: check versión + ackedVersion para romper loop infinito cuando version.txt≠APP_VERSION
-window.APP_VERSION = 'V1_0_0_18';
+window.APP_VERSION = 'V1_0_0_19';
 (function(){
   // V20_77: AUTO-LIMPIEZA de _ackedVersion envenenado.
   // Bug detectado: surqueros tocaban "Actualizar ahora" pero el SW interceptaba el reload con HTML viejo.
@@ -18983,6 +18983,12 @@ function checkInFaceID(){
     ranchoOrigen:   {es:'Rancho de origen',             en:'Ranch of origin'},
     selRancho:      {es:'— Selecciona un rancho —',     en:'— Select a ranch —'},
     ranchoRequired: {es:'Selecciona el rancho de origen antes de iniciar.', en:'Please select the ranch of origin before starting.'},
+    selOrigin:      {es:'— Selecciona origen —',        en:'— Select origin —'},
+    selDestination: {es:'— Selecciona destino —',       en:'— Select destination —'},
+    selCustomer:    {es:'— Selecciona cliente —',       en:'— Select customer —'},
+    selLoadType:    {es:'— Selecciona tipo de carga —', en:'— Select load type —'},
+    otherDesc:      {es:'Describe la carga',            en:'Describe the load'},
+    typeOther:      {es:'Escribir manualmente',         en:'Type manually'},
     // V21_00_3: 9-tab Trip Detail strings (ported from V21_01_0)
     tabOverview:    {es:'Resumen',                  en:'Overview'},
     tabTime:        {es:'Tiempo',                   en:'Time'},
@@ -19448,15 +19454,37 @@ function checkInFaceID(){
           return '<input id="haulerStartRancho" type="text" autocomplete="off" placeholder="'+esc(t('ranchoOrigen'))+'" style="'+inputStyle()+'">';
         }
       })())+
-      field(t('origin')+' '+t('optional'),      '<input id="haulerOrigin" autocomplete="off" style="'+inputStyle()+'">')+
-      field(t('destination')+' '+t('optional'), '<input id="haulerDest" autocomplete="off" style="'+inputStyle()+'">')+
-      field(t('customer')+' '+t('optional'),    '<input id="haulerCustomer" autocomplete="off" style="'+inputStyle()+'">')+
+      // V21_01_0: Origin / Destination / Customer / Load Type — dropdowns backed by
+      // public.list_hauling_locations / _customers / _load_types. Each renders as an empty
+      // <select> with a free-text fallback <input>. RPCs populate them after render; if a
+      // call fails (offline, etc.) the field stays as a free-text input so drivers aren't blocked.
+      field(t('origin')+' '+t('optional'),
+        '<select id="haulerOriginSel" style="'+inputStyle()+';appearance:none;-webkit-appearance:none">'+
+          '<option value="">'+esc(t('selOrigin'))+'</option>'+
+        '</select>'+
+        '<input id="haulerOrigin" autocomplete="off" placeholder="'+esc(t('typeOther'))+'" style="'+inputStyle()+';margin-top:6px;display:none">')+
+      field(t('destination')+' '+t('optional'),
+        '<select id="haulerDestSel" style="'+inputStyle()+';appearance:none;-webkit-appearance:none">'+
+          '<option value="">'+esc(t('selDestination'))+'</option>'+
+        '</select>'+
+        '<input id="haulerDest" autocomplete="off" placeholder="'+esc(t('typeOther'))+'" style="'+inputStyle()+';margin-top:6px;display:none">')+
+      field(t('customer')+' '+t('optional'),
+        '<select id="haulerCustomerSel" style="'+inputStyle()+';appearance:none;-webkit-appearance:none">'+
+          '<option value="">'+esc(t('selCustomer'))+'</option>'+
+        '</select>'+
+        '<input id="haulerCustomer" autocomplete="off" placeholder="'+esc(t('typeOther'))+'" style="'+inputStyle()+';margin-top:6px;display:none">')+
+      field(t('loadType')+' '+t('optional'),
+        '<select id="haulerLoadTypeSel" style="'+inputStyle()+';appearance:none;-webkit-appearance:none">'+
+          '<option value="">'+esc(t('selLoadType'))+'</option>'+
+        '</select>'+
+        '<input id="haulerLoadTypeOther" autocomplete="off" placeholder="'+esc(t('otherDesc'))+'" style="'+inputStyle()+';margin-top:6px;display:none">')+
       '<button id="haulerStartBtn" '+bigBtn(t('startTrip'),'#1f6b3a')+'>'+esc(t('startTrip'))+'</button>'+
       '<div id="haulerStartErr" style="margin-top:10px;color:#ff9a9a;font-size:13px;font-weight:600"></div>'+ // V21_00_3:
       '<div id="haulerRecent" style="margin-top:22px"></div>'; // V21_00_3: recent trips section
     wireVehicleInput(null);
     loadAssignedTrips(); // V21_00_3: dispatcher hand-off
     loadRecentTrips();   // V21_00_3: trip history (hauler_my_trip_history)
+    loadHaulingLookups(); // V21_01_0: fetch origin/customer/load-type dropdowns
     var btn = $('haulerStartBtn');
     if(btn) btn.onclick = function(){
       // V21_00_3: validate rancho_origin (required — from dropdown or free-text fallback)
@@ -19466,13 +19494,135 @@ function checkInFaceID(){
         if(_errEl) _errEl.textContent = t('ranchoRequired');
         return;
       }
+      // V21_01_0: resolve origin/dest/customer/load-type from select OR free-text fallback
+      var _origin   = pickLookupValue('haulerOriginSel',   'haulerOrigin',   '_haulingLocs',  'name');
+      var _dest     = pickLookupValue('haulerDestSel',     'haulerDest',     '_haulingLocs',  'name');
+      var _customer = pickLookupValue('haulerCustomerSel', 'haulerCustomer', '_haulingCusts', 'canonical_name');
+      var _ltSel    = $('haulerLoadTypeSel');
+      var _ltOther  = $('haulerLoadTypeOther');
+      var _loadTypeId   = (_ltSel && _ltSel.value) || null;
+      var _loadOtherTxt = (_ltOther && _ltOther.style.display !== 'none' && _ltOther.value.trim()) || null;
       C.startHaulingTrip({
-        origin:        ($('haulerOrigin')   && $('haulerOrigin').value.trim())   || null,
-        dest:          ($('haulerDest')     && $('haulerDest').value.trim())     || null,
-        customer:      ($('haulerCustomer') && $('haulerCustomer').value.trim()) || null,
-        rancho_origin: _rOrig  // V21_00_3: pass rancho_origin as last param to start_hauling_trip
+        origin:        _origin   || null,
+        dest:          _dest     || null,
+        customer:      _customer || null,
+        rancho_origin: _rOrig, // V21_00_3: pass rancho_origin as last param to start_hauling_trip
+        load_type_id:           _loadTypeId,     // V21_01_0: hauling_load_type FK (RPC will ignore until backend updated)
+        load_description_other: _loadOtherTxt    // V21_01_0: "Other" free-text fallback
       });
     };
+  }
+
+  // V21_01_0: shared helper — returns selected dropdown label OR free-text fallback value
+  function pickLookupValue(selId, inputId, cacheKey, labelField){
+    var sel = $(selId); var inp = $(inputId);
+    if(sel && sel.value){
+      try {
+        var cache = window[cacheKey] || [];
+        for(var i=0;i<cache.length;i++){
+          var row = cache[i]; if(!row) continue;
+          if(row.location_id===sel.value || row.customer_id===sel.value){
+            return row[labelField] || (sel.options[sel.selectedIndex] && sel.options[sel.selectedIndex].text);
+          }
+        }
+      } catch(e){}
+      try { return sel.options[sel.selectedIndex].text; } catch(e){ return null; }
+    }
+    if(inp && inp.style.display !== 'none' && inp.value.trim()){ return inp.value.trim(); }
+    return null;
+  }
+
+  // V21_01_0: load three hauling lookup lists in parallel and wire "Other" reveal
+  function loadHaulingLookups(){
+    function hideSelShowInput(selId, inputId){
+      var s = $(selId); var i = $(inputId);
+      if(s){ s.style.display='none'; } if(i){ i.style.display=''; }
+    }
+    function fillLocationSelect(selId, inputId, rows){
+      var sel = $(selId); var inp = $(inputId);
+      if(!sel) return;
+      if(!rows || !rows.length){ hideSelShowInput(selId, inputId); return; }
+      var html = sel.options[0] ? sel.options[0].outerHTML : '';
+      for(var i=0;i<rows.length;i++){
+        var r = rows[i]; if(!r || !r.location_id || !r.name) continue;
+        html += '<option value="'+esc(r.location_id)+'">'+esc(r.name)+'</option>';
+      }
+      html += '<option value="__OTHER__">'+esc(t('typeOther'))+'</option>';
+      sel.innerHTML = html;
+      sel.onchange = function(){
+        if(sel.value === '__OTHER__'){
+          sel.value = '';
+          if(inp){ inp.style.display = ''; inp.focus(); }
+        } else if(inp){
+          inp.style.display = 'none'; inp.value = '';
+        }
+      };
+    }
+    function fillCustomerSelect(rows){
+      var sel = $('haulerCustomerSel'); var inp = $('haulerCustomer');
+      if(!sel) return;
+      if(!rows || !rows.length){ hideSelShowInput('haulerCustomerSel','haulerCustomer'); return; }
+      var html = sel.options[0] ? sel.options[0].outerHTML : '';
+      for(var i=0;i<rows.length;i++){
+        var r = rows[i]; if(!r || !r.customer_id || !r.canonical_name) continue;
+        html += '<option value="'+esc(r.customer_id)+'">'+esc(r.canonical_name)+'</option>';
+      }
+      html += '<option value="__OTHER__">'+esc(t('typeOther'))+'</option>';
+      sel.innerHTML = html;
+      sel.onchange = function(){
+        if(sel.value === '__OTHER__'){
+          sel.value = '';
+          if(inp){ inp.style.display = ''; inp.focus(); }
+        } else if(inp){
+          inp.style.display = 'none'; inp.value = '';
+        }
+      };
+    }
+    rpc('list_hauling_locations', { p_tenant_id: TENANT_ID, p_active_only: true })
+      .then(function(rows){
+        window._haulingLocs = rows || [];
+        fillLocationSelect('haulerOriginSel', 'haulerOrigin', rows);
+        fillLocationSelect('haulerDestSel',   'haulerDest',   rows);
+      })
+      .catch(function(e){ console.warn('[V21_01_0] list_hauling_locations', e && e.message);
+        hideSelShowInput('haulerOriginSel','haulerOrigin');
+        hideSelShowInput('haulerDestSel','haulerDest');
+      });
+    rpc('list_hauling_customers', { p_tenant_id: TENANT_ID, p_active_only: true })
+      .then(function(rows){
+        window._haulingCusts = rows || [];
+        fillCustomerSelect(rows);
+      })
+      .catch(function(e){ console.warn('[V21_01_0] list_hauling_customers', e && e.message);
+        hideSelShowInput('haulerCustomerSel','haulerCustomer');
+      });
+    rpc('list_hauling_load_types', { p_tenant_id: TENANT_ID, p_active_only: true })
+      .then(function(rows){
+        window._haulingLoadTypes = rows || [];
+        var sel = $('haulerLoadTypeSel'); var oth = $('haulerLoadTypeOther');
+        if(!sel) return;
+        if(!rows || !rows.length){ hideSelShowInput('haulerLoadTypeSel','haulerLoadTypeOther'); return; }
+        var html = sel.options[0] ? sel.options[0].outerHTML : '';
+        var langEs = (window.CHOFER_LANG !== 'en');
+        for(var i=0;i<rows.length;i++){
+          var r = rows[i]; if(!r || !r.load_type_id) continue;
+          var lbl = langEs ? (r.label_es || r.label_en) : (r.label_en || r.label_es);
+          if(!lbl) continue;
+          html += '<option value="'+esc(r.load_type_id)+'" data-other="'+(r.is_other?'1':'0')+'">'+esc(lbl)+'</option>';
+        }
+        sel.innerHTML = html;
+        sel.onchange = function(){
+          var opt = sel.options[sel.selectedIndex];
+          var isOther = opt && opt.getAttribute('data-other') === '1';
+          if(oth){
+            if(isOther){ oth.style.display=''; oth.focus(); }
+            else      { oth.style.display='none'; oth.value=''; }
+          }
+        };
+      })
+      .catch(function(e){ console.warn('[V21_01_0] list_hauling_load_types', e && e.message);
+        hideSelShowInput('haulerLoadTypeSel','haulerLoadTypeOther');
+      });
   }
 
   C.cancelHauler = function(){
@@ -20045,19 +20195,42 @@ function checkInFaceID(){
     });
   }
   function submitFuel(){
-    if(!C.state.vehicleId){ note(t('needVehicle')); return; }
+    // V21_01_0c: detect hauler context FIRST so we can default vehicle from the active trip
+    var haulerTripId = C.state.haulerFuelTripId || null;
+    var isHauler = !!haulerTripId;
+    if(isHauler && C.state.tripDetail && C.state.tripDetail.vehicle_id){
+      C.state.vehicleId = C.state.tripDetail.vehicle_id; // V21_01_0c: lock to trip vehicle
+    }
+    if(!C.state.vehicleId){ note(t('needVehicle')||'Pick a vehicle first'); return; }
     var file = $('choferFuelFile');
     var f = file && file.files && file.files[0];
     var pendingId = uuid();
     var gallons = parseFloat(($('choferFuelGal')||{}).value) || null;
     var total = parseFloat(($('choferFuelTot')||{}).value) || null;
     var odometer = parseFloat(($('choferFuelOdo')||{}).value) || null;
-    var sub = $('choferFuelSubmit'); if(sub){ sub.disabled=true; sub.textContent=t('saving'); }
+    var sub = $('choferFuelSubmit');
+    // V21_01_0c: visible disabled styling so user sees button state change
+    var subOrigText = sub ? sub.textContent : null;
+    function lockBtn(){ if(sub){ sub.disabled=true; sub.style.opacity='0.5'; sub.style.cursor='wait'; sub.textContent=(t('saving')||'Enviando…'); } }
+    function unlockBtn(){ if(sub){ sub.disabled=false; sub.style.opacity=''; sub.style.cursor=''; if(subOrigText) sub.textContent=subOrigText; } }
+    lockBtn();
+    console.log('[submitFuel] start', { isHauler:isHauler, tripId:haulerTripId, vehicleId:C.state.vehicleId, gallons:gallons, total:total, hasFile:!!f });
 
-    function finishOk(){ note(t('receiptSent')); C.showTab('fuel'); }
+    function finishOk(){
+      unlockBtn();
+      note(t('receiptSent')||'Receipt sent');
+      // V21_01_0c: route back to the correct fuel tab based on mode
+      if(isHauler && typeof C.showHaulerTab==='function'){
+        try{ C.showHaulerTab('fuel'); }catch(_){ C.showTab('fuel'); }
+      } else { C.showTab('fuel'); }
+    }
     function fail(){ // queue offline, will retry
+      unlockBtn();
       queueFuel({ pending_id:pendingId, vehicle_id:C.state.vehicleId, gallons:gallons, total:total, odometer:odometer, photo_url:null, station_name:stationName, pump_number:pumpNumber, notes:ocrNotes });
-      note(t('queuedOffline')); C.showTab('fuel');
+      note(t('queuedOffline')||'Queued offline');
+      if(isHauler && typeof C.showHaulerTab==='function'){
+        try{ C.showHaulerTab('fuel'); }catch(_){ C.showTab('fuel'); }
+      } else { C.showTab('fuel'); }
     }
 
     if(navigator.onLine === false){ fail(); return; }
@@ -20100,8 +20273,22 @@ function checkInFaceID(){
         p_receipt_photo_url: photoUrl, p_reported_gallons: gallons, p_reported_total_amount: total, p_reported_odometer: odometer,
         p_reported_station_name: stationName, p_reported_pump_number: pumpNumber, p_notes: ocrNotes
       });
-    }).then(function(){ C.state.fuelOcrPath = null; C.state.fuelOcr = null; finishOk(); })
-      .catch(function(e){ console.warn('[Chofer] fuel', e && e.message); fail(); });
+    }).then(function(rpcResult){
+      console.log('[submitFuel] receipt RPC ok', rpcResult);
+      C.state.fuelOcrPath = null; C.state.fuelOcr = null;
+      // V21_01_0c: in hauler mode, stamp trip_id — best-effort, do not block success
+      if(isHauler && haulerTripId){
+        return rpc('fuel_pending_set_trip', { p_tenant_id: TENANT_ID, p_pending_id: pendingId, p_trip_id: haulerTripId })
+          .then(function(){ console.log('[submitFuel] trip stamped', { pendingId:pendingId, tripId:haulerTripId }); })
+          .catch(function(e){ console.warn('[submitFuel] trip stamp failed (non-fatal)', e && e.message); });
+      }
+    }).then(function(){ finishOk(); })
+      .catch(function(e){
+        console.warn('[submitFuel] failed', e && (e.message||e));
+        // V21_01_0c: surface the actual error to the user instead of silent fallback to offline queue
+        try{ note((t('error')||'Error')+': '+((e && (e.message||e.error_description||e.hint))||'submit failed')); }catch(_){}
+        fail();
+      });
   }
 
   // Tab 4: Odometer (quick reading; queued + sent via maintenance-style RPC fallback)
@@ -20811,6 +20998,7 @@ function checkInFaceID(){
   HWIRE.fuel = function(trip){ // V21_00_3:
     if(trip.vehicle_id){ C.state.vehicleId = trip.vehicle_id; }
     C.state.haulerFuelTripId = trip.trip_id;  // V21_00_3: submitFuel reads this to stamp trip_id via fuel_pending_set_trip
+    C.state.haulerFuelVehicleId = trip.vehicle_id || null; // V21_01_0c: explicit anchor for fuel-on-trip
     wireFuelControls();
     loadTripFuel(trip.trip_id);
   };
