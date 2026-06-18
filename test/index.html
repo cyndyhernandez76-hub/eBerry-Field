@@ -35,7 +35,7 @@
 </script>
 <script>
 // V20_21: check versión + ackedVersion para romper loop infinito cuando version.txt≠APP_VERSION
-window.APP_VERSION = 'V1_0_0_20';
+window.APP_VERSION = 'V1_0_0_21';
 (function(){
   // V20_77: AUTO-LIMPIEZA de _ackedVersion envenenado.
   // Bug detectado: surqueros tocaban "Actualizar ahora" pero el SW interceptaba el reload con HTML viejo.
@@ -11076,7 +11076,14 @@ function buildPDFWindow(vals, wks, ep, hp, cp, ausArr, grpActsArr){
       // puertas_=0 → continue → el grupal (ej. "Colocación de estacas") se OMITÍA del PDF aunque el
       // RESUMEN sí lo mostraba. computeQty con personas=1 da el TOTAL exacto (igual fix que VarBox V11).
       if(!puertas_ && typeof _grpUsesMotor==='function' && _grpUsesMotor(gact_)){
-        try { var _pdM_=computeQty(gact_, _grpReadMotorInputs(g_), 1); if(_pdM_!=null && !isNaN(_pdM_)) puertas_=_pdM_; } catch(ePd_){}
+        try {
+          var _inpMpd_=_grpReadMotorInputs(g_);
+          var _pdM_=computeQty(gact_, _inpMpd_, 1); if(_pdM_!=null && !isNaN(_pdM_)) puertas_=_pdM_;
+          // V1_0_0_21 FIX: si col H del MASTER es label'Acres' (input directo), los acres = input H
+          // (no calcular de puertas con FactorAcres). Ej. Tacc "Colocación de estacas": H=13.5 acres.
+          var _hAcr_=(typeof parseFormulaCell==='function' && gact_ && gact_.H)?parseFormulaCell(gact_.H):null;
+          if(_hAcr_ && _hAcr_.type==='input' && String(_hAcr_.label||'').toLowerCase().indexOf('acre')>=0){ grandAcres_=parseFloat(_inpMpd_.H)||0; }
+        } catch(ePd_){}
       }
       if(!puertas_) continue;
       var ppx_=puertas_/np_;
@@ -11497,7 +11504,11 @@ function buildPDFWindow(vals, wks, ep, hp, cp, ausArr, grpActsArr){
       var _subTotalCell='';
       if(_gp2.ct==='puertas'){
         var _acTxt='', _acCol='#0f6e56';
-        if(_subAcRes && _subAcRes.ok && _subAcRes.acres>0) _acTxt=smartNum(_subAcRes.acres)+' acres';
+        // V1_0_0_21 FIX: si col H es label'Acres' (input directo, ej. Tacc estacas), usar grandAcres
+        // del sub directamente en vez de getAcresFromPuertas (que falla sin col P → "Falta FactorAcres").
+        var _subGrAc=parseFloat(_subT.grandAcres)||0;
+        if(_subT.isAcresInput && _subGrAc>0){ _acTxt=smartNum(_subGrAc)+' acres'; }
+        else if(_subAcRes && _subAcRes.ok && _subAcRes.acres>0) _acTxt=smartNum(_subAcRes.acres)+' acres';
         else if(_subAcRes && !_subAcRes.ok && _subTotVal>0){ _acTxt=_subAcRes.error; _acCol='#c0392b'; }
         _subTotalCell=(_acTxt?'<span style="font-size:9px;color:'+_acCol+';display:block">'+_acTxt+'</span>':'')
           +'<span style="font-size:11px">'+smartNum(_subTotVal)+' puertas</span>';
@@ -15811,10 +15822,17 @@ function buildInvoiceAutoData(){
         puertas = grandPies / 100;
       }
       // V1_0_0_20 FIX: VarDoor DATA-DRIVEN (motor) guarda la cantidad en vars.inputs, no surcos legacy.
+      var _invAcrDirect=0; // V1_0_0_21: acres directos si col H = label'Acres'
       if(!puertas && typeof _grpUsesMotor==='function' && _grpUsesMotor(gact)){
-        try { var _pInv=computeQty(gact, _grpReadMotorInputs(ga), 1); if(_pInv!=null && !isNaN(_pInv)) puertas=_pInv; } catch(ePi){}
+        try {
+          var _inpInv=_grpReadMotorInputs(ga);
+          var _pInv=computeQty(gact, _inpInv, 1); if(_pInv!=null && !isNaN(_pInv)) puertas=_pInv;
+          var _hAcInv=(typeof parseFormulaCell==='function' && gact && gact.H)?parseFormulaCell(gact.H):null;
+          if(_hAcInv && _hAcInv.type==='input' && String(_hAcInv.label||'').toLowerCase().indexOf('acre')>=0){ _invAcrDirect=parseFloat(_inpInv.H)||0; }
+        } catch(ePi){}
       }
-      var rAcInv = getAcresFromPuertas(gact, puertas);
+      // V1_0_0_21: usar acres directos (col H = Acres) en vez de getAcresFromPuertas (que falla sin col P)
+      var rAcInv = (_invAcrDirect>0) ? {ok:true, acres:_invAcrDirect} : getAcresFromPuertas(gact, puertas);
       var acresLabel, blockLabelInv;
       if(rAcInv.ok){
         acresLabel = rAcInv.acres.toFixed(2);
