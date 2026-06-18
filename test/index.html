@@ -35,7 +35,7 @@
 </script>
 <script>
 // V20_21: check versión + ackedVersion para romper loop infinito cuando version.txt≠APP_VERSION
-window.APP_VERSION = 'V1_0_0_19';
+window.APP_VERSION = 'V1_0_0_20';
 (function(){
   // V20_77: AUTO-LIMPIEZA de _ackedVersion envenenado.
   // Bug detectado: surqueros tocaban "Actualizar ahora" pero el SW interceptaba el reload con HTML viejo.
@@ -11071,6 +11071,13 @@ function buildPDFWindow(vals, wks, ep, hp, cp, ausArr, grpActsArr){
         }
         puertas_ = grandPies_/100;
       }
+      // V1_0_0_20 FIX: VarDoor DATA-DRIVEN (motor V20_177) guarda la cantidad en vars.inputs (no
+      // vars.surcos legacy). grpCalcType manda VarDoor a esta rama 'puertas' que lee surcos vacíos →
+      // puertas_=0 → continue → el grupal (ej. "Colocación de estacas") se OMITÍA del PDF aunque el
+      // RESUMEN sí lo mostraba. computeQty con personas=1 da el TOTAL exacto (igual fix que VarBox V11).
+      if(!puertas_ && typeof _grpUsesMotor==='function' && _grpUsesMotor(gact_)){
+        try { var _pdM_=computeQty(gact_, _grpReadMotorInputs(g_), 1); if(_pdM_!=null && !isNaN(_pdM_)) puertas_=_pdM_; } catch(ePd_){}
+      }
       if(!puertas_) continue;
       var ppx_=puertas_/np_;
       // V20_05: guardar anchoCama en el col para evitar desalineación tras sort T1/T2
@@ -12665,6 +12672,11 @@ function _sendToSheetsCore() {
         var _acP=parseFloat(g.vars.pennAcres)||0;
         var _ancCalc=getActAncho(act);
         qtyPerPerson = _ancCalc ? (_acP*_ancCalc)/np : 0;
+      } else if(!metros && typeof _grpUsesMotor==='function' && _grpUsesMotor(act)){
+        // V1_0_0_20 FIX: VarDoor DATA-DRIVEN (motor) guarda la cantidad en vars.inputs, no surcos.
+        // Sin esto el grupal (ej "Colocación de estacas") NO llegaba a FIELD_DROP y además el bloqueo
+        // por FactorAcres de abajo podía ABORTAR TODO el envío. computeQty da la cantidad por persona.
+        try { var _qPd=computeQty(act, _grpReadMotorInputs(g), np); qtyPerPerson=(_qPd==null||isNaN(_qPd))?0:_qPd; } catch(ePd){}
       } else {
         // V20_104 FASE 2B: NO usar fallback /100 silencioso. Exigir FactorAcres del MASTER.
         var _factSend = getActFactorAcres(act);
@@ -15797,6 +15809,10 @@ function buildInvoiceAutoData(){
           console.warn('[V20_104 FASE 2B buildInvoiceAutoData] act sin FactorAcres — usando fallback /100:', gact && gact.es);
         }
         puertas = grandPies / 100;
+      }
+      // V1_0_0_20 FIX: VarDoor DATA-DRIVEN (motor) guarda la cantidad en vars.inputs, no surcos legacy.
+      if(!puertas && typeof _grpUsesMotor==='function' && _grpUsesMotor(gact)){
+        try { var _pInv=computeQty(gact, _grpReadMotorInputs(ga), 1); if(_pInv!=null && !isNaN(_pInv)) puertas=_pInv; } catch(ePi){}
       }
       var rAcInv = getAcresFromPuertas(gact, puertas);
       var acresLabel, blockLabelInv;
