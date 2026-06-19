@@ -35,7 +35,7 @@
 </script>
 <script>
 // V20_21: check versión + ackedVersion para romper loop infinito cuando version.txt≠APP_VERSION
-window.APP_VERSION = 'V1_0_0_22';
+window.APP_VERSION = 'V1_0_0_23';
 (function(){
   // V20_77: AUTO-LIMPIEZA de _ackedVersion envenenado.
   // Bug detectado: surqueros tocaban "Actualizar ahora" pero el SW interceptaba el reload con HTML viejo.
@@ -10825,13 +10825,18 @@ function buildPDFWindow(vals, wks, ep, hp, cp, ausArr, grpActsArr){
       var actName, actTipo, actPayT, actHr, actLabel;
       // V20_152: si hay metadata preservada en a_, usarla como verdad absoluta.
       if(a_._actEs || a_._payType || a_._unitPrice != null){
-        actName  = a_._actEs || a_.esName || '';
+        // V1_0_0_23: alinear name con _wActIdent (fallback a ACTS[ai].es) por si _actEs/esName quedan vacíos.
+        actName  = a_._actEs || a_.esName || (ACTS[ai] ? ACTS[ai].es : '') || '';
         // V20_179: alinear fallback con _wActIdent L10237 — si a_.tipo está vacío, usar ACTS[ai].tipo
         // (capitalizado del MASTER, ej "Hora") en lugar de 'hora' hardcoded lowercase.
         // Sin esto: colKey='hora' pero _wActIdent='Hora' → match falla → workers con tipo='' aparecen con celdas vacías en PDF
         // (caso reportado: Samuel Mecánico y Gerardo Riego del PDF Dewitt 2026-05-19).
         actTipo  = a_.tipo || (ACTS[ai] ? ACTS[ai].tipo : '') || (_stableAct && _stableAct.hr ? 'hora' : '');
-        actPayT  = a_._payType || '';
+        // V1_0_0_23 FIX: alinear payType con _wActIdent L10890 (`_payType || payType || ACTS.payType`).
+        // Antes el colKey usaba SOLO `_payType` → si la act tenía _payType='' pero payType='Hours' (o en ACTS),
+        // la columna se creaba con payType VACÍO y _colMatchesWAct no la encontraba → columna Hours creada pero
+        // VACÍA (TOTAL 0h). Caso reportado: Alberto "General Farm Labor" PDF Gadsen Tomato 2026-06-18.
+        actPayT  = a_._payType || a_.payType || (ACTS[ai] ? ACTS[ai].payType : '') || '';
         actHr    = !!(_stableAct && _stableAct.hr);
         // Para label en inglés (PDF para Cindy), intentar ALL_ACTS por nombre+payType estable
         actLabel = actName;
@@ -10858,7 +10863,7 @@ function buildPDFWindow(vals, wks, ep, hp, cp, ausArr, grpActsArr){
         if(!a_.esName) continue; // sin esName tampoco, saltar
         actName = a_.esName;
         actTipo = a_.tipo || '';
-        actPayT = a_._payType || '';
+        actPayT = a_._payType || a_.payType || ''; // V1_0_0_23: alinear con _wActIdent (fallback a payType)
         actHr   = (actTipo.toLowerCase() === 'hora');
         actLabel= a_.esName;
       }
