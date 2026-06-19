@@ -35,7 +35,7 @@
 </script>
 <script>
 // V20_21: check versión + ackedVersion para romper loop infinito cuando version.txt≠APP_VERSION
-window.APP_VERSION = 'V1_0_0_21';
+window.APP_VERSION = 'V1_0_0_22';
 (function(){
   // V20_77: AUTO-LIMPIEZA de _ackedVersion envenenado.
   // Bug detectado: surqueros tocaban "Actualizar ahora" pero el SW interceptaba el reload con HTML viejo.
@@ -10130,7 +10130,8 @@ function confirmAssignMany(){
       showTime: true,
       // V20_186: shifts ahora incluye turnos extras del modal (deep copy por worker)
       shifts: JSON.parse(JSON.stringify(_shifts)),
-      inputs: JSON.parse(JSON.stringify(commonVars))
+      inputs: JSON.parse(JSON.stringify(commonVars)),
+      lonches: JSON.parse(JSON.stringify(_assignLonches)) // V1_0_0_22 FIX: guardar el lonche en el newAct FINAL. Antes el lonche solo iba al tempAct de validación de translape (que se descarta con pop) → al ASIGNAR a varios el lonche se PERDÍA (act sin el campo). Mismo bug que V14 arregló en EDITAR, pero faltaba en ASIGNAR.
     };
     var newAi = w.acts.length;
     w.acts.push(newAct);
