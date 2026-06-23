@@ -35,7 +35,7 @@
 </script>
 <script>
 // V20_21: check versión + ackedVersion para romper loop infinito cuando version.txt≠APP_VERSION
-window.APP_VERSION = 'V1_0_0_23';
+window.APP_VERSION = 'V1_0_0_25';
 (function(){
   // V20_77: AUTO-LIMPIEZA de _ackedVersion envenenado.
   // Bug detectado: surqueros tocaban "Actualizar ahora" pero el SW interceptaba el reload con HTML viejo.
@@ -7905,7 +7905,7 @@ function showTm(wi,ai,ini,fin){
   ptm={wi:wi,ai:ai,ini:ini,fin:fin};
   var w=getW(wi); if(!w)return;
   gEl('tmS').textContent='Para "'+ACTS[w.acts[ai].ai].es+'" ya hay un horario. ¿Usarlo para '+w.name+'?';
-  gEl('tmV').textContent=to12h(ini)+' → '+to12h(fin)+'  ('+nh(ini,fin)+' h)';
+  gEl('tmV').textContent=to12h(ini)+' → '+to12h(fin)+'  ('+nh(ini,fin,(w.acts[ai]&&w.acts[ai].lonches))+' h)'; // V1_0_0_24 FIX: descontar lonche de la actividad (antes mostraba horas brutas)
   gEl('tmOv').classList.add('on');
 }
 function okTime(){
@@ -8032,7 +8032,7 @@ function buildSum(){
       // tipo equivocado (ej. Pieces aparecía con "h" en vez de cantidad).
       var act = _resolveActStable(a) || resolveAct(a, true);
       if(!act){ dets.push((a.esName||'Act.#'+a.ai)+'($'+(a.pay||0).toFixed(2)+')'); continue; }
-      var u=act.hr?(a.ini&&a.fin?to12h(a.ini)+'→'+to12h(a.fin)+'('+nh(a.ini,a.fin,a.lonches)+'h)':'sin horario'):act.tipo==='$'?'$'+smartNum(a.qty):smartNum(a.qty)+' '+(act.tipo||(act.payType||'u'));
+      var u=act.hr?(a.ini&&a.fin?to12h(a.ini)+'→'+to12h(a.fin)+'('+totalShiftHours(a)+'h)':'sin horario'):act.tipo==='$'?'$'+smartNum(a.qty):smartNum(a.qty)+' '+(act.tipo||(act.payType||'u'));
       dets.push(esc((act.es||'').split(' ').slice(0,2).join(' '))+'('+u+')'); // V9
     }
     var exD=grpPayDetail(w.id); var ex=exD.pay;
@@ -10186,7 +10186,14 @@ function renderResumenV20_126(){
         var nm = act ? (act.es||'') : (a.esName||'(act sin nombre)');
         var ini = a.ini||''; var fin = a.fin||'';
         var hh = 0;
-        try { if(typeof nh === 'function' && ini && fin) hh = nh(ini, fin, a.lonches) || 0; } catch(e){}
+        // V1_0_0_24 FIX: usar totalShiftHours(a) (IDÉNTICO al PDF) en vez de nh(a.ini,a.fin,a.lonches).
+        // El bug: el resumen mostraba horas BRUTAS (ej 6h) sin descontar el lonche mientras el PDF mostraba 5h.
+        // totalShiftHours itera a.shifts[] Y pasa a.lonches → coincide exacto con el PDF y descuenta el lonche.
+        // (nh(a.ini,a.fin,...) divergía cuando el horario vivía en a.shifts y no en a.ini/a.fin, o multi-turno).
+        try {
+          if(typeof totalShiftHours === 'function') hh = totalShiftHours(a) || 0;
+          else if(ini && fin) hh = nh(ini, fin, a.lonches) || 0;
+        } catch(e){}
         // V20_152: hr derivada de la metadata estable (payType==='Hours' es la verdad).
         var pType = (act && act.payType) || a._payType || a.payType || '';
         var hr = !!(act && act.hr) || (pType.toString().toLowerCase().trim() === 'hours');
@@ -11290,23 +11297,16 @@ function buildPDFWindow(vals, wks, ep, hp, cp, ausArr, grpActsArr){
         if(_colMatchesWAct(col4, wAct4_)){
           var act2=wks[w2].acts[a2];
           if(!unitPr){
-            // V20_99 FIX: si la columna es Hora, mostrar contractRate del primer worker representativo (puede variar entre workers)
-            if(col4.hr && wks.length){
-              var _crFirst = 0;
-              for(var _wf=0; _wf<wks.length; _wf++){
-                var _wfh = parseFloat(wks[_wf].contractRate);
-                if(_wfh > 0 && isFinite(_wfh)){ _crFirst = _wfh; break; }
-              }
-              if(_crFirst > 0) unitPr='$'+_crFirst.toFixed(2)+'/hr';
-              else if(act2.unitPrice) unitPr='$'+parseFloat(act2.unitPrice).toFixed(2);
-              else if(act2._unitPrice) unitPr='$'+parseFloat(act2._unitPrice).toFixed(2);
-              else if(ACTS[col4.ai]&&ACTS[col4.ai].p) unitPr='$'+parseFloat(ACTS[col4.ai].p).toFixed(2);
-            } else {
-              // V20_38: usar _unitPrice preservado del worker cuando ACTS[ai] no existe (admin ve otro rancho)
-              if(act2.unitPrice) unitPr='$'+parseFloat(act2.unitPrice).toFixed(2);
-              else if(act2._unitPrice) unitPr='$'+parseFloat(act2._unitPrice).toFixed(2);
-              else if(ACTS[col4.ai]&&ACTS[col4.ai].p) unitPr='$'+parseFloat(ACTS[col4.ai].p).toFixed(2);
-            }
+            // V1_0_0_25 FIX: la tarifa SIEMPRE viene del TASK del MASTER (act._unitPrice / ACTS[ai].p),
+            // NUNCA del contractRate del worker. Antes (V20_99) el PDF para Hora agarraba wks[0].contractRate
+            // — el PRIMER worker de TODA la lista, NO el de esta actividad — y mostraba $16.23 (la tarifa de un
+            // cosechador) en vez de $16.00 (la tarifa real de "Bodega Mantenimiento" del task). Regla de Serafín
+            // 2026-06-22: lo que dice el task en GoogleSheet es SIEMPRE lo correcto. El '/hr' va solo para Hora.
+            var _taskRate = 0;
+            if(act2._unitPrice != null && parseFloat(act2._unitPrice) > 0) _taskRate = parseFloat(act2._unitPrice);
+            else if(act2.unitPrice != null && parseFloat(act2.unitPrice) > 0) _taskRate = parseFloat(act2.unitPrice);
+            else if(ACTS[col4.ai] && ACTS[col4.ai].p) _taskRate = parseFloat(ACTS[col4.ai].p);
+            if(_taskRate > 0) unitPr='$'+_taskRate.toFixed(2)+(col4.hr?'/hr':'');
           }
           if(!laborLbl && act2.finca) laborLbl=act2.finca;
           if(unitPr&&laborLbl) break;
@@ -11314,19 +11314,9 @@ function buildPDFWindow(vals, wks, ep, hp, cp, ausArr, grpActsArr){
       }
       if(unitPr && laborLbl) break;
     }
-    // V20_99 FIX: fallback final también respeta Hora con contractRate
+    // V1_0_0_25 FIX: fallback final usa la tarifa del TASK del MASTER (ACTS[col4.ai].p), NUNCA contractRate.
     if(!unitPr){
-      if(col4.hr && wks.length){
-        var _crFirst2 = 0;
-        for(var _wf2=0; _wf2<wks.length; _wf2++){
-          var _wfh2 = parseFloat(wks[_wf2].contractRate);
-          if(_wfh2 > 0 && isFinite(_wfh2)){ _crFirst2 = _wfh2; break; }
-        }
-        if(_crFirst2 > 0) unitPr='$'+_crFirst2.toFixed(2)+'/hr';
-        else if(ACTS[col4.ai]&&ACTS[col4.ai].p) unitPr='$'+parseFloat(ACTS[col4.ai].p).toFixed(2);
-      } else if(ACTS[col4.ai]&&ACTS[col4.ai].p) {
-        unitPr='$'+parseFloat(ACTS[col4.ai].p).toFixed(2);
-      }
+      if(ACTS[col4.ai]&&ACTS[col4.ai].p) unitPr='$'+parseFloat(ACTS[col4.ai].p).toFixed(2)+(col4.hr?'/hr':'');
     }
     var _csp=_NS>1?' colspan="'+_NS+'"':'';
     // V20_81: detectar VarDoor con factor (col P) → emitir TOTAL como "X.XXXX acres / X puertas"
