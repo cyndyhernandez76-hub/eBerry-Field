@@ -35,7 +35,7 @@
 </script>
 <script>
 // V20_21: check versión + ackedVersion para romper loop infinito cuando version.txt≠APP_VERSION
-window.APP_VERSION = 'V1_0_0_31';
+window.APP_VERSION = 'V1_0_0_33';
 (function(){
   // V20_77: AUTO-LIMPIEZA de _ackedVersion envenenado.
   // Bug detectado: surqueros tocaban "Actualizar ahora" pero el SW interceptaba el reload con HTML viejo.
@@ -439,12 +439,14 @@ select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/
 .ac-body{padding:4px 13px 10px}
 .ac-act.cl .ac-body{display:none}
 .ac-act.cl .ac-arrow{transform:rotate(-90deg)}
-.wrow{display:flex;justify-content:space-between;align-items:center;padding:8px 2px;border-bottom:1px solid #eef0f4;font-size:13px}
-.wrow:last-child{border-bottom:none}
-.wrow .wn{font-weight:600}
-.wrow .wsub{font-size:11px;color:var(--gr)}
-.wrow .wres{font-weight:700;white-space:nowrap}
-.wres.red{color:var(--r)} .wres.green{color:var(--b)}
+/* V1_0_0_32: renombradas a ac-* para NO chocar con la clase global .wn (L296, Bebas Neue gris claro --bd)
+   que dejaba los nombres en lila pálido ilegibles. Ahora color oscuro normal explícito. */
+.ac-wrow{display:flex;justify-content:space-between;align-items:center;padding:8px 2px;border-bottom:1px solid #eef0f4;font-size:13px}
+.ac-wrow:last-child{border-bottom:none}
+.ac-wrow .ac-wn{font-family:inherit;font-weight:600;font-size:13px;color:var(--dk);letter-spacing:0;text-transform:none}
+.ac-wrow .ac-wsub{font-size:11px;color:var(--gr)}
+.ac-wrow .ac-wres{font-weight:700;white-space:nowrap}
+.ac-wres.red{color:var(--r)} .ac-wres.green{color:var(--b)}
 .an-act.gain{border-color:var(--b);background:rgba(45,122,45,.05)}
 .an-act.loss{border-color:var(--r);background:rgba(217,64,64,.05)}
 .an-step{font-size:12px;color:var(--gr);line-height:1.7;margin:4px 0}
@@ -8342,11 +8344,24 @@ function buildAnalisis(){
     +'</div>';
   }
 
-  // V6-C4: loops bi y ci eliminados — totalPerdida y wConPerdida ya se calcularon en el loop principal
+  // V1_0_0_33: el banner ahora SUMA TODAS las pérdidas individuales (sin netear), consistente con los
+  // headers por actividad y con las filas por trabajador. Antes usaba totalPerdida = neto por trabajador
+  // (las ganancias de un trabajador en una actividad tapaban su pérdida en otra → daba un número INFERIOR
+  // al real). Decisión de Serafín 2026-06-24: para PRODUCTIVIDAD, cada pérdida individual cuenta — el que
+  // hizo de más NO compensa al que hizo de menos. _perdidaReal = Σ |diff| de cada (trabajador,actividad)
+  // con diff<0. _nConPerdida = trabajadores DISTINTOS con al menos una pérdida.
+  var _perdidaReal=0, _lossWk={};
+  for(var _bk in actSummary){
+    var _bwl=actSummary[_bk].wlist||[];
+    for(var _bi=0;_bi<_bwl.length;_bi++){
+      if(_bwl[_bi].isLoss){ _perdidaReal+=Math.abs(_bwl[_bi].diff); _lossWk[_bwl[_bi].name]=1; }
+    }
+  }
+  var _nConPerdida=Object.keys(_lossWk).length;
   gEl('anBanner').innerHTML=
     '<div class="an-box"><div class="an-val" style="color:var(--g)">'+workers.length+'</div><div class="an-lbl">Trabajadores</div></div>'
-    +'<div class="an-box '+(wConPerdida>0?'loss':'')+'"><div class="an-val '+(wConPerdida>0?'red':'green')+'">'+wConPerdida+'</div><div class="an-lbl">'+(wConPerdida>0?'Con Pérdida':'Sin Pérdidas')+'</div></div>'
-    +'<div class="an-box '+(totalPerdida>0?'loss':'gain')+'"><div class="an-val '+(totalPerdida>0?'red':'green')+'">'+(totalPerdida>0?'-$'+totalPerdida.toFixed(0):'$0')+'</div><div class="an-lbl">Pérdida Empresa</div></div>';
+    +'<div class="an-box '+(_nConPerdida>0?'loss':'')+'"><div class="an-val '+(_nConPerdida>0?'red':'green')+'">'+_nConPerdida+'</div><div class="an-lbl">'+(_nConPerdida>0?'Con Pérdida':'Sin Pérdidas')+'</div></div>'
+    +'<div class="an-box '+(_perdidaReal>0.005?'loss':'gain')+'"><div class="an-val '+(_perdidaReal>0.005?'red':'green')+'">'+(_perdidaReal>0.005?'-$'+_perdidaReal.toFixed(2):'$0')+'</div><div class="an-lbl">Pérdida Empresa</div></div>';
 
   // V1_0_0_31: análisis agrupado POR ACTIVIDAD (no por trabajador). Cada actividad = acordeón con lista
   // compacta de los trabajadores que la hicieron (nombre + hizo X de Y + 🔻 pérdida o ✅ OK). Decisión de
@@ -8356,26 +8371,31 @@ function buildAnalisis(){
   if(!_agKeys.length){
     gEl('anWorkers').innerHTML='<div class="an-nodata">Sin actividades de pieza para analizar.<br>Este análisis aplica solo cuando hay actividades tipo Ficha o Caja con horas registradas.</div>';
   } else {
-    _agKeys.sort(function(a,b){ return (actSummary[a].real-actSummary[a].esperado) - (actSummary[b].real-actSummary[b].esperado); });
+    // V1_0_0_33: pérdida de la actividad = SUMA de las pérdidas individuales (NO neteo). OK solo si NADIE
+    // perdió. Antes usaba agDiff=real-esperado (neteo) → decía OK aunque un trabajador hubiera perdido,
+    // porque los que hicieron de más tapaban al que hizo de menos. Helper _agLossOf suma solo lo negativo.
+    function _agLossOf(k){ var w=actSummary[k].wlist||[]; var s=0; for(var x=0;x<w.length;x++){ if(w[x].isLoss) s+=Math.abs(w[x].diff); } return s; }
+    _agKeys.sort(function(a,b){ return _agLossOf(b)-_agLossOf(a); }); // mayor pérdida real primero
     var aHTML='';
     for(var agk=0; agk<_agKeys.length; agk++){
       var ag=actSummary[_agKeys[agk]];
-      var agDiff=ag.real-ag.esperado;
-      var agLoss=agDiff < -0.005;
       var wl=ag.wlist||[];
       var _unit=(wl[0] && wl[0].tipoLbl) ? wl[0].tipoLbl.replace(/s$/,'') : 'u';
+      var agTotalLoss=0, agNLoss=0;
+      for(var _al=0;_al<wl.length;_al++){ if(wl[_al].isLoss){ agTotalLoss+=Math.abs(wl[_al].diff); agNLoss++; } }
+      var agLoss=agTotalLoss > 0.005;
       var rows='';
       for(var wr=0; wr<wl.length; wr++){
         var e=wl[wr];
-        rows+='<div class="wrow">'
-          +'<div><span class="wn">'+esc(e.name)+'</span><div class="wsub">hizo '+smartNum(e.real)+' de '+e.esp.toFixed(0)+' '+e.tipoLbl+'</div></div>'
-          +'<span class="wres '+(e.isLoss?'red':'green')+'">'+(e.isLoss?'🔻 -$'+Math.abs(e.diff).toFixed(2):'✅ OK')+'</span>'
+        rows+='<div class="ac-wrow">'
+          +'<div><span class="ac-wn">'+esc(e.name)+'</span><div class="ac-wsub">hizo '+smartNum(e.real)+' de '+e.esp.toFixed(0)+' '+e.tipoLbl+'</div></div>'
+          +'<span class="ac-wres '+(e.isLoss?'red':'green')+'">'+(e.isLoss?'🔻 -$'+Math.abs(e.diff).toFixed(2):'✅ OK')+'</span>'
         +'</div>';
       }
       aHTML+='<div class="ac-act '+(agLoss?'loss':'gain')+'">'
         +'<div class="ac-head" onclick="this.parentNode.classList.toggle(\'cl\')">'
-          +'<div><div class="ac-name">'+esc(ag.name)+'</div><div class="ac-meta">$'+ag.price.toFixed(2)+'/'+_unit+' · '+wl.length+' trabajador(es) · '+ag.horas.toFixed(1)+' hrs</div></div>'
-          +'<div style="display:flex;align-items:center"><span class="ac-diff '+(agLoss?'red':'green')+'">'+(agLoss?'🔻 -$'+Math.abs(agDiff).toFixed(2):'✅ OK')+'</span><span class="ac-arrow">▼</span></div>'
+          +'<div><div class="ac-name">'+esc(ag.name)+'</div><div class="ac-meta">$'+ag.price.toFixed(2)+'/'+_unit+' · '+wl.length+' trabajador(es) · '+ag.horas.toFixed(1)+' hrs'+(agNLoss>0?' · '+agNLoss+' con pérdida':'')+'</div></div>'
+          +'<div style="display:flex;align-items:center"><span class="ac-diff '+(agLoss?'red':'green')+'">'+(agLoss?'🔻 -$'+agTotalLoss.toFixed(2):'✅ OK')+'</span><span class="ac-arrow">▼</span></div>'
         +'</div>'
         +'<div class="ac-body">'+rows+'</div>'
       +'</div>';
