@@ -35,7 +35,7 @@
 </script>
 <script>
 // V20_21: check versión + ackedVersion para romper loop infinito cuando version.txt≠APP_VERSION
-window.APP_VERSION = 'V1_0_0_25';
+window.APP_VERSION = 'V1_0_0_29';
 (function(){
   // V20_77: AUTO-LIMPIEZA de _ackedVersion envenenado.
   // Bug detectado: surqueros tocaban "Actualizar ahora" pero el SW interceptaba el reload con HTML viejo.
@@ -7617,10 +7617,14 @@ function onFin(wi,ai,v){
 // si no, fallback al precio default de la actividad (act.p)
 // V7: validar que el rate sea un número finito positivo
 function getHRate(w, act){
-  var cr = w ? parseFloat(w.contractRate) : 0;
-  if(cr > 0 && isFinite(cr)) return cr;
+  // V1_0_0_28: la tarifa por hora SIEMPRE viene del TASK del MASTER (act.p), NUNCA del contractRate.
+  // Regla de Serafín 2026-06-24: el precio del task YA está verificado contra el contrato de cada persona
+  // (si dice 16.00 es porque ese es su precio de contrato verificado — no hay tema legal). El contractRate
+  // ($16.23) solo se usa como ÚLTIMO respaldo si el task no tiene precio. Afecta pago, envío a Sheets y display.
   var ap = act ? parseFloat(act.p) : 0;
-  return (ap > 0 && isFinite(ap)) ? ap : 0;
+  if(ap > 0 && isFinite(ap)) return ap;
+  var cr = w ? parseFloat(w.contractRate) : 0;
+  return (cr > 0 && isFinite(cr)) ? cr : 0;
 }
 
 function recalc(wi,ai){
@@ -8069,7 +8073,17 @@ function buildAnalisis(){
     var hasAnalysis=false;
 
     // Tarifa hora del trabajador
-    var baseRate=w.contractRate||0;
+    // V1_0_0_28: tarifa = la del TASK (act.p de la actividad por hora del worker), NO contractRate.
+    // Serafín 2026-06-24: el task rate ya está verificado contra el contrato. contractRate solo respaldo
+    // si el worker no tiene ninguna actividad por hora (entonces es la única fuente de tarifa horaria).
+    var baseRate=0;
+    for(var _br=0;_br<w.acts.length;_br++){
+      var _brAct=null;
+      if(w.acts[_br].esName){ for(var _br2=0;_br2<ACTS.length;_br2++){ if(ACTS[_br2].es===w.acts[_br].esName){_brAct=ACTS[_br2];break;} } }
+      if(!_brAct && w.acts[_br].ai>=0 && w.acts[_br].ai<ACTS.length) _brAct=ACTS[w.acts[_br].ai];
+      if(_brAct && _brAct.hr && parseFloat(_brAct.p)>0){ baseRate=parseFloat(_brAct.p); break; }
+    }
+    if(!baseRate||baseRate<=0) baseRate=w.contractRate||0;
 
     for(var j=0;j<w.acts.length;j++){
       var a=w.acts[j];
@@ -8312,7 +8326,12 @@ function mkReport(){
       var a=w.acts[j],pay=a.pay||0; tot+=pay;
       var act=resolveAct(a, true); // V8
       if(!act){ acts.push((a.esName||'Act.#'+a.ai)+'(=$'+pay.toFixed(2)+')'); continue; }
-      var u=act.hr?(a.ini&&a.fin?to12h(a.ini)+'→'+to12h(a.fin)+'('+nh(a.ini,a.fin,a.lonches)+'h)':'sin horario')+'=$'+pay.toFixed(2):act.tipo==='$'?'$'+smartNum(a.qty):smartNum(a.qty)+' '+act.tipo+'=$'+pay.toFixed(2);
+      // V1_0_0_27 FIX: usar totalShiftHours(a) (descuenta lonche + itera shifts, IDÉNTICO al PDF) en vez de
+      // nh(a.ini,a.fin,a.lonches). Antes, si el horario vivía en a.shifts y a.ini/a.fin estaban vacíos, mostraba
+      // "sin horario" en el reporte WhatsApp aunque el PDF sí tenía horas. Rango con fallback a shifts[0].
+      var _rIni=a.ini||(a.shifts&&a.shifts[0]&&a.shifts[0].ini)||'';
+      var _rFin=a.fin||(a.shifts&&a.shifts[0]&&a.shifts[0].fin)||'';
+      var u=act.hr?(_rIni&&_rFin?to12h(_rIni)+'→'+to12h(_rFin)+'('+totalShiftHours(a)+'h)':'sin horario')+'=$'+pay.toFixed(2):act.tipo==='$'?'$'+smartNum(a.qty):smartNum(a.qty)+' '+act.tipo+'=$'+pay.toFixed(2);
       acts.push(act.es+'('+u+')');
     }
     var ex=grpPay(w.id); tot+=ex; grand+=tot;
@@ -10870,7 +10889,7 @@ function buildPDFWindow(vals, wks, ep, hp, cp, ausArr, grpActsArr){
         if(!a_.esName) continue; // sin esName tampoco, saltar
         actName = a_.esName;
         actTipo = a_.tipo || '';
-        actPayT = a_._payType || a_.payType || ''; // V1_0_0_23: alinear con _wActIdent (fallback a payType)
+        actPayT = a_._payType || a_.payType || (ACTS[ai] ? ACTS[ai].payType : '') || ''; // V1_0_0_23/27: alinear con _wActIdent (fallback _payType→payType→ACTS.payType, idéntico en ambos lados → evita columna creada-pero-vacía)
         actHr   = (actTipo.toLowerCase() === 'hora');
         actLabel= a_.esName;
       }
@@ -11673,17 +11692,23 @@ function buildPDFWindow(vals, wks, ep, hp, cp, ausArr, grpActsArr){
         var _fr=_fragsI[sci_];
         if(_fr.type==='start'){
           var cv='';
+          // V1_0_0_26 FIX: usar el lonche del WORKER renderizado (found2.lonches), NO el de la columna
+          // (col2._lonches, capturado del PRIMER worker que matchea L10937 → si ese tiene lonche vacío/
+          // distinto, las celdas de los demás NO descuentan el lonche). El TOTAL por sub-turno usa el
+          // lonche por worker → la celda mostraba 10h pero el total 27h (9h×3). Reportado Tacc 2026-06-23
+          // "Reparando Plastico" T2. Fallback a col2._lonches por compat.
+          var _cellLon = (found2 && Array.isArray(found2.lonches)) ? found2.lonches : col2._lonches;
           if(col2.hr){
             var _sumH=0;
             for(var kk=sci_;kk<sci_+_fr.span;kk++){
-              _sumH+=nh(col2.shifts[kk].ini||'',col2.shifts[kk].fin||'',col2._lonches)||0;
+              _sumH+=nh(col2.shifts[kk].ini||'',col2.shifts[kk].fin||'',_cellLon)||0;
             }
             if(!_sumH) _sumH=totalShiftHours(found2)||0;
             cv=smartNum(_sumH)+' h';
           } else {
             var _sumH2=0;
             for(var kk2=sci_;kk2<sci_+_fr.span;kk2++){
-              _sumH2+=nh(col2.shifts[kk2].ini||'',col2.shifts[kk2].fin||'',col2._lonches)||0;
+              _sumH2+=nh(col2.shifts[kk2].ini||'',col2.shifts[kk2].fin||'',_cellLon)||0;
             }
             if(_sumH2>0) cv=smartNum(_sumH2)+' h';
           }
@@ -11760,7 +11785,8 @@ function buildPDFWindow(vals, wks, ep, hp, cp, ausArr, grpActsArr){
     +'.meta-last td{border-bottom:2px solid #1a2b8c!important}'
     +'.ft{font-size:7px;color:#1a2b8c;text-align:center;margin-top:3px;border-top:1px solid #1a2b8c;padding-top:3px}'
     +'@media print{.nopr{display:none}thead{display:table-header-group}@page{margin:5mm;size:letter landscape}*{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}table{table-layout:fixed;-webkit-text-size-adjust:100%}th,td{word-break:break-word}tbody tr{page-break-inside:avoid;break-inside:avoid}}'
-    +'</style></head><body>'
+    +'</style><script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></scr'+'ipt></head><body>'
+    +'<div id="imgPage1">'  // V1_0_0_29: contenedor de la página NÓMINA para exportar como imagen (PNG nítido, no captura de pantalla)
     +'<div class="hdr">'
     +'<div style="display:flex;align-items:center;gap:10px">'
     +'<img src="'+EBERRY_LOGO+'" style="height:40px;width:auto" alt="eBerry">'
@@ -11778,6 +11804,7 @@ function buildPDFWindow(vals, wks, ep, hp, cp, ausArr, grpActsArr){
     +'<thead><tr style="background:#1a2b8c;color:#fff">'+th1+'</tr>'+(_hasSub?('<tr style="background:#1a2b8c;color:#fff">'+th2+'</tr>'):'')+'</thead>'
     +'<tbody>'+metaRows+rows+'</tbody>'
     +'</table>'
+    +'</div>'  // V1_0_0_29: cierra imgPage1 (página NÓMINA) antes de la página de análisis
     // V12-FIX: Ausencias removidas del PDF (solo van a Google Sheets)
     // ── V20_63: Notas + Análisis en HOJA SEPARADA con page-break-before:always ──
     // Si hay nota O análisis → ambos van en hoja nueva. Si hay ambos, nota como encabezado.
@@ -11789,7 +11816,15 @@ function buildPDFWindow(vals, wks, ep, hp, cp, ausArr, grpActsArr){
       var anRows='', totalLoss=0, wLoss=0;
       for(var wi=0;wi<wks.length;wi++){
         var w=wks[wi];
-        var baseRate=w.contractRate||0;
+        // V1_0_0_28: tarifa = la del TASK (act.p hora), NO contractRate (paridad con análisis diario).
+        var baseRate=0;
+        for(var _brS=0;_brS<w.acts.length;_brS++){
+          var _brActS=null;
+          if(w.acts[_brS].esName){ for(var _br2S=0;_br2S<ACTS.length;_br2S++){ if(ACTS[_br2S].es===w.acts[_brS].esName){_brActS=ACTS[_br2S];break;} } }
+          if(!_brActS && w.acts[_brS].ai>=0 && w.acts[_brS].ai<ACTS.length) _brActS=ACTS[w.acts[_brS].ai];
+          if(_brActS && _brActS.hr && parseFloat(_brActS.p)>0){ baseRate=parseFloat(_brActS.p); break; }
+        }
+        if(!baseRate||baseRate<=0) baseRate=w.contractRate||0;
         var wLossAmt=0, wHasAn=false, wDetails='';
         for(var aj=0;aj<w.acts.length;aj++){
           var a=w.acts[aj];
@@ -11929,13 +11964,20 @@ function buildPDFWindow(vals, wks, ep, hp, cp, ausArr, grpActsArr){
       if(!notaHTML && !analisisHTML) return '';
       // ── 4) Combinar en hoja separada con page-break-before:always ──
       // Nota arriba (encabezado), análisis abajo. Si solo hay nota, va sola.
-      return '<div style="page-break-before:always;padding-top:8px">'
+      return '<div id="imgPage2" style="page-break-before:always;padding-top:8px">'
         +(notaHTML ? notaHTML + (analisisHTML ? '<div style="height:14px"></div>' : '') : '')
         +(analisisHTML || '')
         +'</div>';
     })()
     +'<div class="ft">'+esc(vals.rancho||'')+' &nbsp;|&nbsp; '+esc(vals.fecha||'')+' &nbsp;|&nbsp; '+wks.length+' trabajadores &nbsp;|&nbsp; Bus: #'+esc(String(vals.numBus||''))+' &nbsp;|&nbsp; Surquero: '+(currentUser&&currentUser.isAdmin?esc(ADMIN_USER_NAME):esc(vals.surquero||''))+' &nbsp;|&nbsp; Generado: '+new Date().toLocaleString()+' &nbsp;|&nbsp; App: '+(window.APP_VERSION||'?')+(_readOnlyMode?' &nbsp;|&nbsp; 📖 REGENERADO DESDE SHEETS':'')+'</div>'
-    +'<div class="nopr" style="text-align:center;margin-top:16px"><button onclick="window.print()" style="background:#1a7a4a;color:#fff;border:none;padding:12px 28px;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;margin-right:10px">🖨️ Imprimir / Guardar PDF</button><button onclick="window.close()" style="background:#eee;color:#555;border:none;padding:12px 20px;border-radius:8px;font-size:14px;cursor:pointer">Cerrar</button></div>'
+    +'<div class="nopr" style="text-align:center;margin-top:16px">'
+    +'<button onclick="window.print()" style="background:#1a7a4a;color:#fff;border:none;padding:12px 24px;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;margin:4px">🖨️ Imprimir / Guardar PDF</button>'
+    +'<button onclick="_saveImg(\'imgPage1\',\''+('Nomina '+(vals.rancho||'')+' '+(vals.fecha||'')).replace(/[^a-zA-Z0-9 _-]/g,'')+'\')" style="background:#1a5a9a;color:#fff;border:none;padding:12px 24px;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;margin:4px">📷 Imagen Nómina</button>'
+    +'<button id="btnImgAnalisis" onclick="_saveImg(\'imgPage2\',\''+('Analisis '+(vals.rancho||'')+' '+(vals.fecha||'')).replace(/[^a-zA-Z0-9 _-]/g,'')+'\')" style="background:#7a3a9a;color:#fff;border:none;padding:12px 24px;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;margin:4px">📷 Imagen Análisis</button>'
+    +'<button onclick="window.close()" style="background:#eee;color:#555;border:none;padding:12px 20px;border-radius:8px;font-size:14px;cursor:pointer;margin:4px">Cerrar</button>'
+    +'</div>'
+    // V1_0_0_29: script de exportacion a imagen (PNG escala 2 = nitido, NO captura de pantalla). El tag de cierre va dividido en dos para no romper el parser del HTML padre.
+    +'<scr'+'ipt>function _saveImg(id,fn){var el=document.getElementById(id);if(!el){alert("No se encontró el contenido de esa hoja");return;}if(typeof html2canvas==="undefined"){alert("La imagen aún se está preparando — espera 2-3 segundos y vuelve a intentar (necesita internet la primera vez).");return;}var t=document.querySelectorAll(".nopr");for(var i=0;i<t.length;i++)t[i].style.display="none";html2canvas(el,{scale:2,backgroundColor:"#ffffff",useCORS:true,scrollX:0,scrollY:0,windowWidth:el.scrollWidth,width:el.scrollWidth}).then(function(c){for(var i=0;i<t.length;i++)t[i].style.display="";var a=document.createElement("a");a.download=fn+".png";a.href=c.toDataURL("image/png");document.body.appendChild(a);a.click();document.body.removeChild(a);}).catch(function(e){for(var i=0;i<t.length;i++)t[i].style.display="";alert("Error al generar imagen: "+((e&&e.message)||e));});}if(!document.getElementById("imgPage2")){var _ba=document.getElementById("btnImgAnalisis");if(_ba)_ba.style.display="none";}</scr'+'ipt>'
     +'</body></html>';
   // V20_24: window.open sin features restrictivas (Android/iOS moderno bloquea `width=1000,height=700`) + fallback Blob robusto (timeout 60s para que el browser procese)
   var win=null;
@@ -12552,10 +12594,11 @@ function _sendToSheetsCore() {
       }
     }
   }
-  if(_missingCR95.length){
-    alert('⚠️ FALTA CONTRACT RATE\n\nLos siguientes trabajadores tienen actividad por HORA pero NO tienen Contract Rate (col G del MASTER ACTIVOS):\n\n• ' + _missingCR95.join('\n• ') + '\n\nNo se puede enviar — Cindy recibiría $14 (precio del catálogo) en vez del rate real de cada uno.\n\nRevisa col G del MASTER ACTIVOS de estos trabajadores.');
-    return;
-  }
+  // V1_0_0_28: validación de contractRate DESHABILITADA (ya NO bloquea el envío). La tarifa por hora ahora
+  // viene del TASK del MASTER (act.p), que SIEMPRE existe → contractRate ya no se requiere. Antes este bloque
+  // impedía enviar si un worker no tenía col G en ACTIVOS, con un mensaje que ya es incorrecto (el precio del
+  // task ES el rate verificado, no "el catálogo"). Regla Serafín 2026-06-24.
+  if(false && _missingCR95.length){ return; }
 
   // Mapeo motivo → etiquetas ES/EN para ausencias
   var _motLabels = {
@@ -15863,6 +15906,12 @@ function buildInvoiceAutoData(){
       });
     } else {
       var qty = parseFloat(v.qty) || 0;
+      // V1_0_0_27 FIX: VarPsc (piezas genéricas) DATA-DRIVEN guarda la cantidad en vars.inputs, no v.qty.
+      // Sin esto el grupal (ej "Cosecha a mano", "Empaque mixto") salía en $0 en el INVOICE aunque el PDF
+      // Payroll y Sheets sí lo mostraban (esas ramas ya tenían el fallback V10/V11/V20). Paridad final.
+      if(!qty && typeof _grpUsesMotor==='function' && _grpUsesMotor(gact)){
+        try { var _qVp=computeQty(gact, _grpReadMotorInputs(ga), 1); if(_qVp!=null && !isNaN(_qVp)) qty=_qVp; } catch(eVp){}
+      }
       // V20_09: grupales tipo 'hora' muestran horario en el label
       var gEquip = gact.es;
       if(ct === 'hora' && (v.ini || v.fin)){
@@ -17070,14 +17119,9 @@ function generateSemPDF(){
   html += '<td style="'+metaStyle+';background:#0f1a3d;color:#fff;font-weight:900;border-top:3px solid #1a2b8c">'+smartNum(grandTotal)+'</td></tr>';
 
   // Fila Pago Unit.
-  // V20_99 FIX: en semanal Hora, mostrar contractRate del primer worker con rate>0 (representativo) en lugar del precio del catálogo
+  // V1_0_0_28: tarifa del TASK (unitPrice = selAct.p), NUNCA contractRate. Eliminado el override V20_99 que
+  // mostraba contractRate del primer worker. Serafín: el task rate es el contrato verificado. Paridad con PDF V25.
   var _semUnitDisplay = unitPrice;
-  if(_isHourSem){
-    for(var _wsf=0; _wsf<workers.length; _wsf++){
-      var _crSF = parseFloat(workers[_wsf].contractRate)||0;
-      if(_crSF > 0 && isFinite(_crSF)){ _semUnitDisplay = _crSF; break; }
-    }
-  }
   var _semUnitSuffix = _isHourSem ? '/hr' : '';
   html += '<tr style="background:#fff"><td style="'+metaEmpty+'"></td><td style="'+metaEmpty+'"></td>'
     +'<td style="'+metaLabel+';color:#000">Pago Unit.</td>';
@@ -17204,10 +17248,8 @@ function sendSemToSheets(){
         _missingCRSem99.push((typeof esc==='function'?esc(_wkSem.name):_wkSem.name)||'?');
       }
     }
-    if(_missingCRSem99.length){
-      alert('⚠️ FALTA CONTRACT RATE — SEMANAL\n\nLa actividad seleccionada es por HORA. Los siguientes trabajadores NO tienen Contract Rate (col G del MASTER ACTIVOS):\n\n• ' + _missingCRSem99.join('\n• ') + '\n\nNo se puede enviar — Cindy recibiría $14 (precio del catálogo) en vez del rate real de cada uno.\n\nRevisa col G del MASTER ACTIVOS de estos trabajadores.');
-      return;
-    }
+    // V1_0_0_28: validación contractRate semanal DESHABILITADA (paridad con diario). Tarifa = task rate (selAct.p).
+    if(false && _missingCRSem99.length){ return; }
   }
 
   var payload = {
@@ -17229,7 +17271,7 @@ function sendSemToSheets(){
     var row = {
       name: wk.name,
       empNum: wk.empNum||'',
-      contractRate: parseFloat(wk.contractRate)||0,  // V20_99 FIX: per-worker para Hora
+      contractRate: isHour ? (parseFloat(selAct && selAct.p)||0) : (parseFloat(wk.contractRate)||0),  // V1_0_0_28: para Hora manda la tarifa del TASK (selAct.p), no contractRate (regla Serafín: task rate = contrato verificado)
       days: []
     };
     var anyData = false;
