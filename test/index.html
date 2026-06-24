@@ -35,7 +35,7 @@
 </script>
 <script>
 // V20_21: check versión + ackedVersion para romper loop infinito cuando version.txt≠APP_VERSION
-window.APP_VERSION = 'V1_0_0_29';
+window.APP_VERSION = 'V1_0_0_31';
 (function(){
   // V20_77: AUTO-LIMPIEZA de _ackedVersion envenenado.
   // Bug detectado: surqueros tocaban "Actualizar ahora" pero el SW interceptaba el reload con HTML viejo.
@@ -419,6 +419,32 @@ select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/
 .an-wbody{display:none;padding:0 13px 13px;border-top:1px solid var(--bd)}
 .an-worker.op .an-wbody{display:block}
 .an-act{background:var(--lt);border:1.5px solid var(--bd);border-radius:8px;padding:10px;margin-top:8px}
+/* V1_0_0_30: acordeon por actividad — cada actividad colapsa/expande independiente sin cerrar la tarjeta del trabajador */
+.an-act-head{cursor:pointer;display:flex;justify-content:space-between;align-items:center;gap:8px}
+.an-act-arrow{font-size:11px;color:var(--gr);transition:transform .15s;flex-shrink:0}
+.an-act.open .an-act-arrow{transform:rotate(90deg)}
+.an-act-body{display:none}
+.an-act.open .an-act-body{display:block}
+.an-warrow{font-size:12px;color:var(--gr);transition:transform .15s;flex-shrink:0}
+.an-worker.op .an-warrow{transform:rotate(90deg)}
+/* V1_0_0_31: analisis agrupado POR ACTIVIDAD — acordeon por actividad con lista compacta de trabajadores */
+.ac-act{background:#fff;border:1.5px solid var(--bd);border-radius:12px;margin-bottom:12px;overflow:hidden}
+.ac-act.loss{border-color:var(--r)} .ac-act.gain{border-color:var(--b)}
+.ac-head{display:flex;align-items:center;justify-content:space-between;padding:11px 13px;cursor:pointer;background:var(--lt)}
+.ac-name{font-weight:700;font-size:14px}
+.ac-meta{font-size:11px;color:var(--gr);margin-top:2px}
+.ac-diff{font-size:16px;font-weight:700;white-space:nowrap}
+.ac-diff.red{color:var(--r)} .ac-diff.green{color:var(--b)}
+.ac-arrow{font-size:12px;color:var(--gr);margin-left:8px;transition:transform .15s;display:inline-block}
+.ac-body{padding:4px 13px 10px}
+.ac-act.cl .ac-body{display:none}
+.ac-act.cl .ac-arrow{transform:rotate(-90deg)}
+.wrow{display:flex;justify-content:space-between;align-items:center;padding:8px 2px;border-bottom:1px solid #eef0f4;font-size:13px}
+.wrow:last-child{border-bottom:none}
+.wrow .wn{font-weight:600}
+.wrow .wsub{font-size:11px;color:var(--gr)}
+.wrow .wres{font-weight:700;white-space:nowrap}
+.wres.red{color:var(--r)} .wres.green{color:var(--b)}
 .an-act.gain{border-color:var(--b);background:rgba(45,122,45,.05)}
 .an-act.loss{border-color:var(--r);background:rgba(217,64,64,.05)}
 .an-step{font-size:12px;color:var(--gr);line-height:1.7;margin:4px 0}
@@ -8131,7 +8157,7 @@ function buildAnalisis(){
 
       // Acumular por actividad para el resumen grupal
       var actKey=act.es+'|'+piecePrice;
-      if(!actSummary[actKey]) actSummary[actKey]={name:act.es,tipo:act.tipo,price:piecePrice,esperado:0,real:0,workers:0,horas:0};
+      if(!actSummary[actKey]) actSummary[actKey]={name:act.es,tipo:act.tipo,price:piecePrice,esperado:0,real:0,workers:0,horas:0,wlist:[]};
       actSummary[actKey].esperado+=esperado;
       actSummary[actKey].real+=real;
       actSummary[actKey].workers++;
@@ -8140,26 +8166,38 @@ function buildAnalisis(){
       var pct=pzasEsperadas>0?Math.min((pzasReales/pzasEsperadas)*100,150):0;
       var isLoss=diff<0;
       var tipoLbl=act.tipo==='Caja'?'cajas':'pzas';
+      // V1_0_0_31: guardar el trabajador en la actividad para el análisis agrupado POR ACTIVIDAD
+      actSummary[actKey].wlist.push({name:w.name, real:pzasReales, esp:pzasEsperadas, diff:diff, isLoss:isLoss, tipoLbl:tipoLbl});
 
       if(isLoss){
         // Pérdida real de la empresa — mostrar desglose completo
-        wDetails+='<div class="an-act loss">'
-          +'<div style="font-weight:700;font-size:13px;margin-bottom:4px">'+esc(act.es)+' — $'+piecePrice.toFixed(2)+'/'+tipoLbl+'</div>'
-          +'<div class="an-step">① $<b>'+hourlyRate.toFixed(2)+'</b>/h ÷ $<b>'+piecePrice.toFixed(2)+'</b>/'+tipoLbl+' = <b>'+pzasHora.toFixed(2)+'</b> '+tipoLbl+'/h</div>'
-          +'<div class="an-step">② '+pzasHora.toFixed(2)+' × <b>'+horas.toFixed(2)+'</b> hrs = <b>'+pzasEsperadas.toFixed(1)+'</b> '+tipoLbl+' mínimo</div>'
-          +'<div class="an-step">③ Real: <b>'+smartNum(pzasReales)+'</b> '+tipoLbl+' × $'+piecePrice.toFixed(2)+' = <b>$'+real.toFixed(2)+'</b></div>'
-          +'<div class="an-step">④ Mínimo: '+pzasEsperadas.toFixed(1)+' '+tipoLbl+' × $'+piecePrice.toFixed(2)+' = <b>$'+esperado.toFixed(2)+'</b></div>'
-          +'<div class="an-bar"><div class="an-bar-fill red" style="width:'+Math.min(pct,100)+'%"></div></div>'
-          +'<div class="an-result loss">'
-            +'🔻 PÉRDIDA: -$'+Math.abs(diff).toFixed(2)
-            +' (hizo '+smartNum(pzasReales)+' de '+pzasEsperadas.toFixed(0)+' '+tipoLbl+')'
+        wDetails+='<div class="an-act loss open">'
+          +'<div class="an-act-head" onclick="event.stopPropagation(); this.parentNode.classList.toggle(\'open\')">'
+            +'<span style="font-weight:700;font-size:13px">'+esc(act.es)+' — $'+piecePrice.toFixed(2)+'/'+tipoLbl+'</span>'
+            +'<span style="display:flex;align-items:center;gap:6px"><span style="font-weight:700;color:var(--r);font-size:12px;white-space:nowrap">🔻 -$'+Math.abs(diff).toFixed(2)+'</span><span class="an-act-arrow">▶</span></span>'
+          +'</div>'
+          +'<div class="an-act-body">'
+            +'<div class="an-step">① $<b>'+hourlyRate.toFixed(2)+'</b>/h ÷ $<b>'+piecePrice.toFixed(2)+'</b>/'+tipoLbl+' = <b>'+pzasHora.toFixed(2)+'</b> '+tipoLbl+'/h</div>'
+            +'<div class="an-step">② '+pzasHora.toFixed(2)+' × <b>'+horas.toFixed(2)+'</b> hrs = <b>'+pzasEsperadas.toFixed(1)+'</b> '+tipoLbl+' mínimo</div>'
+            +'<div class="an-step">③ Real: <b>'+smartNum(pzasReales)+'</b> '+tipoLbl+' × $'+piecePrice.toFixed(2)+' = <b>$'+real.toFixed(2)+'</b></div>'
+            +'<div class="an-step">④ Mínimo: '+pzasEsperadas.toFixed(1)+' '+tipoLbl+' × $'+piecePrice.toFixed(2)+' = <b>$'+esperado.toFixed(2)+'</b></div>'
+            +'<div class="an-bar"><div class="an-bar-fill red" style="width:'+Math.min(pct,100)+'%"></div></div>'
+            +'<div class="an-result loss">'
+              +'🔻 PÉRDIDA: -$'+Math.abs(diff).toFixed(2)
+              +' (hizo '+smartNum(pzasReales)+' de '+pzasEsperadas.toFixed(0)+' '+tipoLbl+')'
+            +'</div>'
           +'</div>'
         +'</div>';
       } else {
         // Sin pérdida — el trabajador cumplió o superó el mínimo
-        wDetails+='<div class="an-act gain">'
-          +'<div style="font-weight:700;font-size:13px;margin-bottom:4px">'+esc(act.es)+' — $'+piecePrice.toFixed(2)+'/'+tipoLbl+'</div>'
-          +'<div class="an-result gain">✅ OK — '+smartNum(pzasReales)+' de '+pzasEsperadas.toFixed(0)+' '+tipoLbl+' mínimo</div>'
+        wDetails+='<div class="an-act gain open">'
+          +'<div class="an-act-head" onclick="event.stopPropagation(); this.parentNode.classList.toggle(\'open\')">'
+            +'<span style="font-weight:700;font-size:13px">'+esc(act.es)+' — $'+piecePrice.toFixed(2)+'/'+tipoLbl+'</span>'
+            +'<span style="display:flex;align-items:center;gap:6px"><span style="font-weight:700;color:var(--b);font-size:12px">✅ OK</span><span class="an-act-arrow">▶</span></span>'
+          +'</div>'
+          +'<div class="an-act-body">'
+            +'<div class="an-result gain">✅ OK — '+smartNum(pzasReales)+' de '+pzasEsperadas.toFixed(0)+' '+tipoLbl+' mínimo</div>'
+          +'</div>'
         +'</div>';
       }
     }
@@ -8237,7 +8275,7 @@ function buildAnalisis(){
       wReal += real82;
       hasAnalysis = true;
       var actKey82 = '[GRUPAL] '+gact82.es+'|'+price82;
-      if(!actSummary[actKey82]) actSummary[actKey82] = {name:'[GRUPAL] '+gact82.es, tipo:(gact82.tipo||ct82), price:price82, esperado:0, real:0, workers:0, horas:0};
+      if(!actSummary[actKey82]) actSummary[actKey82] = {name:'[GRUPAL] '+gact82.es, tipo:(gact82.tipo||ct82), price:price82, esperado:0, real:0, workers:0, horas:0, wlist:[]};
       actSummary[actKey82].esperado += esperado82;
       actSummary[actKey82].real += real82;
       actSummary[actKey82].workers++;
@@ -8245,23 +8283,35 @@ function buildAnalisis(){
       var pct82 = pzasEsperadas82>0 ? Math.min((pzasReales82/pzasEsperadas82)*100,150) : 0;
       var isLoss82 = diff82<0;
       var tipoLbl82 = ct82==='cajas'?'cajas':(ct82==='puertas'?'puertas':'pzas');
+      // V1_0_0_31: guardar el participante en la actividad grupal para el análisis agrupado POR ACTIVIDAD
+      actSummary[actKey82].wlist.push({name:w.name, real:pzasReales82, esp:pzasEsperadas82, diff:diff82, isLoss:isLoss82, tipoLbl:tipoLbl82});
       if(isLoss82){
-        wDetails+='<div class="an-act loss">'
-          +'<div style="font-weight:700;font-size:13px;margin-bottom:4px">[GRUPAL] '+esc(gact82.es)+' — $'+price82.toFixed(2)+'/'+tipoLbl82+'</div>'
-          +'<div class="an-step">① $<b>'+hRate82.toFixed(2)+'</b>/h ÷ $<b>'+price82.toFixed(2)+'</b>/'+tipoLbl82+' = <b>'+pzasHora82.toFixed(2)+'</b> '+tipoLbl82+'/h</div>'
-          +'<div class="an-step">② '+pzasHora82.toFixed(2)+' × <b>'+horas82.toFixed(2)+'</b> hrs = <b>'+pzasEsperadas82.toFixed(1)+'</b> '+tipoLbl82+' mínimo (su porción)</div>'
-          +'<div class="an-step">③ Su porción real: <b>'+smartNum(pzasReales82)+'</b> '+tipoLbl82+' × $'+price82.toFixed(2)+' = <b>$'+real82.toFixed(2)+'</b> (de '+np82+' personas)</div>'
-          +'<div class="an-step">④ Su porción mínima: '+pzasEsperadas82.toFixed(1)+' '+tipoLbl82+' × $'+price82.toFixed(2)+' = <b>$'+esperado82.toFixed(2)+'</b></div>'
-          +'<div class="an-bar"><div class="an-bar-fill red" style="width:'+Math.min(pct82,100)+'%"></div></div>'
-          +'<div class="an-result loss">'
-            +'🔻 PÉRDIDA: -$'+Math.abs(diff82).toFixed(2)
-            +' (su porción: '+smartNum(pzasReales82)+' de '+pzasEsperadas82.toFixed(0)+' '+tipoLbl82+')'
+        wDetails+='<div class="an-act loss open">'
+          +'<div class="an-act-head" onclick="event.stopPropagation(); this.parentNode.classList.toggle(\'open\')">'
+            +'<span style="font-weight:700;font-size:13px">[GRUPAL] '+esc(gact82.es)+' — $'+price82.toFixed(2)+'/'+tipoLbl82+'</span>'
+            +'<span style="display:flex;align-items:center;gap:6px"><span style="font-weight:700;color:var(--r);font-size:12px;white-space:nowrap">🔻 -$'+Math.abs(diff82).toFixed(2)+'</span><span class="an-act-arrow">▶</span></span>'
+          +'</div>'
+          +'<div class="an-act-body">'
+            +'<div class="an-step">① $<b>'+hRate82.toFixed(2)+'</b>/h ÷ $<b>'+price82.toFixed(2)+'</b>/'+tipoLbl82+' = <b>'+pzasHora82.toFixed(2)+'</b> '+tipoLbl82+'/h</div>'
+            +'<div class="an-step">② '+pzasHora82.toFixed(2)+' × <b>'+horas82.toFixed(2)+'</b> hrs = <b>'+pzasEsperadas82.toFixed(1)+'</b> '+tipoLbl82+' mínimo (su porción)</div>'
+            +'<div class="an-step">③ Su porción real: <b>'+smartNum(pzasReales82)+'</b> '+tipoLbl82+' × $'+price82.toFixed(2)+' = <b>$'+real82.toFixed(2)+'</b> (de '+np82+' personas)</div>'
+            +'<div class="an-step">④ Su porción mínima: '+pzasEsperadas82.toFixed(1)+' '+tipoLbl82+' × $'+price82.toFixed(2)+' = <b>$'+esperado82.toFixed(2)+'</b></div>'
+            +'<div class="an-bar"><div class="an-bar-fill red" style="width:'+Math.min(pct82,100)+'%"></div></div>'
+            +'<div class="an-result loss">'
+              +'🔻 PÉRDIDA: -$'+Math.abs(diff82).toFixed(2)
+              +' (su porción: '+smartNum(pzasReales82)+' de '+pzasEsperadas82.toFixed(0)+' '+tipoLbl82+')'
+            +'</div>'
           +'</div>'
         +'</div>';
       } else {
-        wDetails+='<div class="an-act gain">'
-          +'<div style="font-weight:700;font-size:13px;margin-bottom:4px">[GRUPAL] '+esc(gact82.es)+' — $'+price82.toFixed(2)+'/'+tipoLbl82+'</div>'
-          +'<div class="an-result gain">✅ OK — '+smartNum(pzasReales82)+' de '+pzasEsperadas82.toFixed(0)+' '+tipoLbl82+' mínimo (porción)</div>'
+        wDetails+='<div class="an-act gain open">'
+          +'<div class="an-act-head" onclick="event.stopPropagation(); this.parentNode.classList.toggle(\'open\')">'
+            +'<span style="font-weight:700;font-size:13px">[GRUPAL] '+esc(gact82.es)+' — $'+price82.toFixed(2)+'/'+tipoLbl82+'</span>'
+            +'<span style="display:flex;align-items:center;gap:6px"><span style="font-weight:700;color:var(--b);font-size:12px">✅ OK</span><span class="an-act-arrow">▶</span></span>'
+          +'</div>'
+          +'<div class="an-act-body">'
+            +'<div class="an-result gain">✅ OK — '+smartNum(pzasReales82)+' de '+pzasEsperadas82.toFixed(0)+' '+tipoLbl82+' mínimo (porción)</div>'
+          +'</div>'
         +'</div>';
       }
     }
@@ -8274,13 +8324,18 @@ function buildAnalisis(){
     var wDiff=wReal-wEsperado;
     if(wDiff<0){ totalPerdida+=Math.abs(wDiff); wConPerdida++; }
     var wIsLoss=wDiff<0;
-    wHTML+='<div class="an-worker '+(wIsLoss?'loss':'gain')+'" onclick="this.classList.toggle(\'op\')">'
-      +'<div class="an-whead">'
+    // V1_0_0_30: el toggle del trabajador va SOLO en el header (.an-whead), NO en toda la tarjeta.
+    // Antes el onclick estaba en .an-worker → al tocar una actividad adentro, el clic burbujeaba y
+    // COLAPSABA toda la tarjeta (parecía que la 2da actividad "no desplegaba"). Ahora cada actividad
+    // es su propio acordeón (an-act-head con stopPropagation) y el header del worker abre/cierra solo él.
+    wHTML+='<div class="an-worker '+(wIsLoss?'loss':'gain')+'">'
+      +'<div class="an-whead" onclick="this.parentNode.classList.toggle(\'op\')">'
         +'<div><span class="an-wname">'+(i+1)+'. '+esc(w.name)+'</span>'
           +'<div class="an-wrate">Tarifa: $'+(baseRate>0?baseRate.toFixed(2):'—')+'/h</div>'
         +'</div>'
-        +'<span class="an-wdiff '+(wIsLoss?'red':'green')+'">'
-          +(wIsLoss?'🔻 -$'+Math.abs(wDiff).toFixed(2):'✅ OK')
+        +'<span style="display:flex;align-items:center;gap:8px">'
+          +'<span class="an-wdiff '+(wIsLoss?'red':'green')+'">'+(wIsLoss?'🔻 -$'+Math.abs(wDiff).toFixed(2):'✅ OK')+'</span>'
+          +'<span class="an-warrow">▶</span>'
         +'</span>'
       +'</div>'
       +'<div class="an-wbody">'+wDetails+'</div>'
@@ -8293,27 +8348,39 @@ function buildAnalisis(){
     +'<div class="an-box '+(wConPerdida>0?'loss':'')+'"><div class="an-val '+(wConPerdida>0?'red':'green')+'">'+wConPerdida+'</div><div class="an-lbl">'+(wConPerdida>0?'Con Pérdida':'Sin Pérdidas')+'</div></div>'
     +'<div class="an-box '+(totalPerdida>0?'loss':'gain')+'"><div class="an-val '+(totalPerdida>0?'red':'green')+'">'+(totalPerdida>0?'-$'+totalPerdida.toFixed(0):'$0')+'</div><div class="an-lbl">Pérdida Empresa</div></div>';
 
-  // Workers
-  gEl('anWorkers').innerHTML=wHTML||'<div class="an-nodata">Sin actividades de pieza para analizar.<br>Este análisis aplica solo cuando hay actividades tipo Ficha o Caja con horas registradas.</div>';
-
-  // Resumen por tipo de actividad individual
-  var actKeys=Object.keys(actSummary);
-  if(actKeys.length>0){
-    var gHTML='<div class="card"><div class="ct">📋 RESUMEN POR ACTIVIDAD</div>';
-    for(var ak=0;ak<actKeys.length;ak++){
-      var s=actSummary[actKeys[ak]];
-      var sDiff=s.real-s.esperado;
-      var sIsLoss=sDiff<0;
-      gHTML+='<div style="padding:8px 0;border-bottom:1px solid var(--bd)">'
-        +'<div style="display:flex;justify-content:space-between;align-items:center">'
-          +'<span style="font-weight:600;font-size:13px">'+esc(s.name)+' ($'+s.price.toFixed(2)+'/'+s.tipo+')</span>'
-          +'<span style="font-family:\'Bebas Neue\',sans-serif;font-size:17px;color:'+(sIsLoss?'var(--r)':'var(--b)')+'">'+(sIsLoss?'🔻 -$'+Math.abs(sDiff).toFixed(2):'✅ OK')+'</span>'
+  // V1_0_0_31: análisis agrupado POR ACTIVIDAD (no por trabajador). Cada actividad = acordeón con lista
+  // compacta de los trabajadores que la hicieron (nombre + hizo X de Y + 🔻 pérdida o ✅ OK). Decisión de
+  // Serafín 2026: más útil para ver QUÉ actividad tuvo bajo rendimiento y QUIÉNES. Default: todas abiertas.
+  // Las de mayor pérdida van primero. Aplica a individuales y grupales (mismo actSummary).
+  var _agKeys = Object.keys(actSummary);
+  if(!_agKeys.length){
+    gEl('anWorkers').innerHTML='<div class="an-nodata">Sin actividades de pieza para analizar.<br>Este análisis aplica solo cuando hay actividades tipo Ficha o Caja con horas registradas.</div>';
+  } else {
+    _agKeys.sort(function(a,b){ return (actSummary[a].real-actSummary[a].esperado) - (actSummary[b].real-actSummary[b].esperado); });
+    var aHTML='';
+    for(var agk=0; agk<_agKeys.length; agk++){
+      var ag=actSummary[_agKeys[agk]];
+      var agDiff=ag.real-ag.esperado;
+      var agLoss=agDiff < -0.005;
+      var wl=ag.wlist||[];
+      var _unit=(wl[0] && wl[0].tipoLbl) ? wl[0].tipoLbl.replace(/s$/,'') : 'u';
+      var rows='';
+      for(var wr=0; wr<wl.length; wr++){
+        var e=wl[wr];
+        rows+='<div class="wrow">'
+          +'<div><span class="wn">'+esc(e.name)+'</span><div class="wsub">hizo '+smartNum(e.real)+' de '+e.esp.toFixed(0)+' '+e.tipoLbl+'</div></div>'
+          +'<span class="wres '+(e.isLoss?'red':'green')+'">'+(e.isLoss?'🔻 -$'+Math.abs(e.diff).toFixed(2):'✅ OK')+'</span>'
+        +'</div>';
+      }
+      aHTML+='<div class="ac-act '+(agLoss?'loss':'gain')+'">'
+        +'<div class="ac-head" onclick="this.parentNode.classList.toggle(\'cl\')">'
+          +'<div><div class="ac-name">'+esc(ag.name)+'</div><div class="ac-meta">$'+ag.price.toFixed(2)+'/'+_unit+' · '+wl.length+' trabajador(es) · '+ag.horas.toFixed(1)+' hrs</div></div>'
+          +'<div style="display:flex;align-items:center"><span class="ac-diff '+(agLoss?'red':'green')+'">'+(agLoss?'🔻 -$'+Math.abs(agDiff).toFixed(2):'✅ OK')+'</span><span class="ac-arrow">▼</span></div>'
         +'</div>'
-        +'<div style="font-size:11px;color:var(--gr)">'+s.workers+' trabajadores · '+s.horas.toFixed(2)+' hrs totales'+(sIsLoss?' · Pérdida: $'+Math.abs(sDiff).toFixed(2):'')+'</div>'
+        +'<div class="ac-body">'+rows+'</div>'
       +'</div>';
     }
-    gHTML+='</div>';
-    gEl('anWorkers').innerHTML+=gHTML;
+    gEl('anWorkers').innerHTML=aHTML;
   }
 }
 
