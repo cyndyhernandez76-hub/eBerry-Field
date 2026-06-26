@@ -35,7 +35,7 @@
 </script>
 <script>
 // V20_21: check versión + ackedVersion para romper loop infinito cuando version.txt≠APP_VERSION
-window.APP_VERSION = 'V1_0_0_33';
+window.APP_VERSION = 'V1_0_0_36';
 (function(){
   // V20_77: AUTO-LIMPIEZA de _ackedVersion envenenado.
   // Bug detectado: surqueros tocaban "Actualizar ahora" pero el SW interceptaba el reload con HTML viejo.
@@ -2943,9 +2943,24 @@ function onRanchoChange(){
   }
 
   // Gamma2: Sincronizar rancho → Semanal tab en tiempo real
+  // V1_0_0_36 FIX: usar el valor ORIGINAL (gVal('rancho'), con mayúsculas) — NO la variable `rancho`
+  // que está en minúsculas (L2920). Las opciones del dropdown semanal tienen el nombre original
+  // ("Tacc", "Pennrose"), así que value='tacc' no matcheaba → el rancho semanal quedaba en blanco al
+  // cambiar el rancho en Parámetros. Además garantizamos que la opción exista (por si initSemTab aún
+  // no pobló el dropdown). Así el semanal queda vinculado directo a Parámetros, igual que el diario.
+  var _ranchoOrig = gVal('rancho');
   var semRanchoSel = gEl('semRancho');
-  if(rancho && semRanchoSel){
-    semRanchoSel.value = rancho;
+  if(_ranchoOrig && semRanchoSel){
+    var _soExists = false;
+    for(var _so=0; _so<semRanchoSel.options.length; _so++){
+      if(semRanchoSel.options[_so].value === _ranchoOrig){ _soExists = true; break; }
+    }
+    if(!_soExists){
+      var _soOpt = document.createElement('option');
+      _soOpt.value = _ranchoOrig; _soOpt.textContent = _ranchoOrig;
+      semRanchoSel.appendChild(_soOpt);
+    }
+    semRanchoSel.value = _ranchoOrig;
     semRanchoSel.disabled = true;
     semRanchoSel.style.opacity = '0.7';
     semRanchoSel.title = 'Rancho tomado de Parámetros';
@@ -12926,6 +12941,7 @@ function _sendToSheetsCore() {
   submitViaIframe(SHEETS_URL, payload,
     function(){ // onDone
       recordLastSend(); checkDaysWithoutSend();
+      _clearQueueForPayload(payload); // V1_0_0_34: barrer el duplicado encolado de un intento previo que timeouteó pero sí llegó → arregla el foquito atorado
       var msg = '✅ ' + workers.length + ' trabajador(es)';
       if (grpSent) msg += ' + ' + grpSent + ' grupal(es)';
       if (ausSent) msg += ' + ' + ausSent + ' ausencia(s)';
@@ -12933,7 +12949,7 @@ function _sendToSheetsCore() {
       toast(msg);
       if(btn){ btn.textContent='✅ Enviado'; btn.style.background='#2d7a2d'; btn.disabled=false;
         setTimeout(function(){ btn.textContent='📊 Enviar a Payroll Field Master'; btn.style.background='#1a3a5c'; },5000); }
-    }, 30000, // V12-BUG: 15s→30s — cuadrillas grandes necesitan más tiempo
+    }, 45000, // V1_0_0_34: 30s→45s — el cold-start del Apps Script + cuadrillas grandes tardan; menos timeouts falsos
     function(){ // onTimeout
       addToOfflineQueue(payload);
       if(btn){ btn.textContent='📥 Timeout — guardado offline'; btn.style.background='#ff9800'; btn.disabled=false;
@@ -16558,6 +16574,16 @@ function initSemTab(){
     semRanchoSel.disabled = true;
     semRanchoSel.style.opacity = '0.7';
     if(paramRancho){
+      // V1_0_0_36: garantizar que la opción exista antes de setear el valor (paridad con onRanchoChange)
+      var _siExists = false;
+      for(var _si=0; _si<semRanchoSel.options.length; _si++){
+        if(semRanchoSel.options[_si].value === paramRancho){ _siExists = true; break; }
+      }
+      if(!_siExists){
+        var _siOpt = document.createElement('option');
+        _siOpt.value = paramRancho; _siOpt.textContent = paramRancho;
+        semRanchoSel.appendChild(_siOpt);
+      }
       semRanchoSel.value = paramRancho;
       semRanchoSel.title = 'Rancho tomado de Parámetros';
       onSemRanchoChange(); // ← puebla semActivity con las actividades del rancho
@@ -17084,7 +17110,7 @@ function generateSemPDF(){
     +'.grand{font-weight:900;background:#1a2b8c;color:#fff}'
     +'.ft{font-size:8px;color:#1a2b8c;text-align:center;margin-top:6px;border-top:1px solid #1a2b8c;padding-top:5px}'
     +'@media print{.nopr{display:none}@page{size:landscape;margin:10mm}*{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}table{table-layout:fixed;-webkit-text-size-adjust:100%}th,td{white-space:nowrap}.name{white-space:normal!important;word-break:break-word}}'
-    +'</style></head><body>';
+    +'</style><script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></scr'+'ipt></head><body><div id="imgPageW">';  // V1_0_0_35: contenedor de la hoja semanal para exportar como imagen PNG (mismo flujo que el PDF diario V29)
 
   // Gamma2: Header con logo eBerry (igual que Daily Payroll)
   html += '<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px;border-bottom:3px solid #1a2b8c;padding-bottom:8px">'
@@ -17275,7 +17301,14 @@ function generateSemPDF(){
   html += '</tbody></table>';
   // Gamma2: Footer + botones Imprimir/Cerrar
   html += '<div class="ft">'+(gVal('semRancho')||'—')+' &nbsp;|&nbsp; Semana: '+dates[0]+' al '+dates[6]+' &nbsp;|&nbsp; '+workers.length+' trabajadores &nbsp;|&nbsp; Surquero: '+surqueroName+' &nbsp;|&nbsp; Generado: '+new Date().toLocaleString()+' &nbsp;|&nbsp; App: '+(window.APP_VERSION||'?')+'</div>';
-  html += '<div class="nopr" style="text-align:center;margin-top:16px"><button onclick="window.print()" style="background:#1a7a4a;color:#fff;border:none;padding:12px 28px;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;margin-right:10px">🖨️ Imprimir / Guardar PDF</button><button onclick="window.close()" style="background:#eee;color:#555;border:none;padding:12px 20px;border-radius:8px;font-size:14px;cursor:pointer">Cerrar</button></div>';
+  html += '</div>';  // V1_0_0_35: cierra imgPageW (hoja semanal) antes de la barra de botones
+  html += '<div class="nopr" style="text-align:center;margin-top:16px">'
+    +'<button onclick="window.print()" style="background:#1a7a4a;color:#fff;border:none;padding:12px 24px;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;margin:4px">🖨️ Imprimir / Guardar PDF</button>'
+    +'<button onclick="_saveImg(\'imgPageW\',\''+('Semanal '+(gVal('semRancho')||'')+' '+(dates[0]||'')).replace(/[^a-zA-Z0-9 _-]/g,'')+'\')" style="background:#1a5a9a;color:#fff;border:none;padding:12px 24px;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;margin:4px">📷 Imagen Semanal</button>'
+    +'<button onclick="window.close()" style="background:#eee;color:#555;border:none;padding:12px 20px;border-radius:8px;font-size:14px;cursor:pointer;margin:4px">Cerrar</button>'
+    +'</div>';
+  // V1_0_0_35: script de exportación a imagen (PNG escala 2, nítido). El tag de cierre va dividido en dos para no romper el parser del HTML padre.
+  html += '<scr'+'ipt>function _saveImg(id,fn){var el=document.getElementById(id);if(!el){alert("No se encontró el contenido");return;}if(typeof html2canvas==="undefined"){alert("La imagen aún se está preparando — espera 2-3 segundos y vuelve a intentar (necesita internet la primera vez).");return;}var t=document.querySelectorAll(".nopr");for(var i=0;i<t.length;i++)t[i].style.display="none";html2canvas(el,{scale:2,backgroundColor:"#ffffff",useCORS:true,scrollX:0,scrollY:0,windowWidth:el.scrollWidth,width:el.scrollWidth}).then(function(c){for(var i=0;i<t.length;i++)t[i].style.display="";var a=document.createElement("a");a.download=fn+".png";a.href=c.toDataURL("image/png");document.body.appendChild(a);a.click();document.body.removeChild(a);}).catch(function(e){for(var i=0;i<t.length;i++)t[i].style.display="";alert("Error al generar imagen: "+((e&&e.message)||e));});}</scr'+'ipt>';
   html += '</body></html>';
 
   // Abrir PDF (misma lógica que buildPDFWindow con fallback iOS)
@@ -17414,8 +17447,8 @@ function sendSemToSheets(){
   }
   // V8: usa submitViaIframe unificado
   submitViaIframe(SHEETS_URL, payload,
-    function(){ recordLastSend(); toast('✅ ' + payload.workers.length + ' trabajador(es) semanal enviado a Sheets'); },
-    30000, // V12-SEMFIX: 15s→30s (7 días × N workers necesita más tiempo)
+    function(){ recordLastSend(); _clearQueueForPayload(payload); toast('✅ ' + payload.workers.length + ' trabajador(es) semanal enviado a Sheets'); }, // V1_0_0_34: barrer duplicado encolado
+    45000, // V1_0_0_34: 30s→45s — cold-start + 7 días × N workers
     function(){ addToOfflineQueue(payload); toast('📦 Timeout — semanal guardado en cola offline'); },
     '_gsSemFrame');
 }
@@ -17515,6 +17548,31 @@ function updateQueueBadge(){
   } else {
     badge.style.display = 'none';
   }
+}
+
+// V1_0_0_34: limpiar de la cola offline el item del MISMO día/rancho/surquero cuando un envío DIRECTO
+// tiene éxito. Causa del bug del "foquito": el 1er envío timeoutea (cold-start lento del Apps Script) y
+// se encola, pero el dato SÍ llegó al servidor. El 2do envío (directo) tiene éxito pero NO borraba el item
+// encolado → el foquito quedaba atorado y se acumulaba 1 item por día (parecía "30 pendientes"). Ahora un
+// envío directo exitoso barre su duplicado de la cola. FieldSync ya deduplica por contenido, así que aunque
+// el timeout-pero-procesado y el reintento lleguen, no hay fila doble en FIELD_DROP.
+function _clearQueueForPayload(payload){
+  try {
+    if(!payload) return;
+    var queue = getOfflineQueue();
+    if(!queue.length) return;
+    var key = (payload.action||'')+'_'+(payload.fecha||payload.weekStart||'')+'_'+(payload.rancho||'')+'_'+(payload.surquero||'');
+    var before = queue.length;
+    queue = queue.filter(function(q){
+      var qk = (q.action||'')+'_'+(q.fecha||q.weekStart||'')+'_'+(q.rancho||'')+'_'+(q.surquero||'');
+      return qk !== key;
+    });
+    if(queue.length !== before){
+      saveOfflineQueue(queue);
+      updateQueueBadge();
+      console.log('[V1_0_0_34] Envío directo OK → limpiados '+(before-queue.length)+' de la cola. Quedan '+queue.length);
+    }
+  } catch(e){}
 }
 
 function flushOfflineQueue(){
