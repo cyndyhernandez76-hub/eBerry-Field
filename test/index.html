@@ -35,7 +35,7 @@
 </script>
 <script>
 // V20_21: check versión + ackedVersion para romper loop infinito cuando version.txt≠APP_VERSION
-window.APP_VERSION = 'V1_0_0_38';
+window.APP_VERSION = 'V1_0_0_39';
 (function(){
   // V20_77: AUTO-LIMPIEZA de _ackedVersion envenenado.
   // Bug detectado: surqueros tocaban "Actualizar ahora" pero el SW interceptaba el reload con HTML viejo.
@@ -12824,8 +12824,11 @@ function _sendToSheetsCore() {
         finca:      a.finca || gVal('finca'),
         hEnt:       a.ini || '',
         hSal:       a.fin || '',
-        hLIni:      gVal('lIni') || '',
-        hLFin:      gVal('lFin') || '',
+        // V1_0_0_39 FIX: el lonche ahora vive POR ACTIVIDAD (a.lonches), ya NO en Parámetros (global vacío).
+        // Mandar el horario del lonche de la actividad para que llegue a FIELD_DROP (cols L.Inicio/L.Fin).
+        // Fallback al global por retrocompat. Multi-turno: se manda el 1er lonche (las horas ya descuentan todos).
+        hLIni:      (a.lonches && a.lonches[0] && a.lonches[0].ini) ? a.lonches[0].ini : (gVal('lIni') || ''),
+        hLFin:      (a.lonches && a.lonches[0] && a.lonches[0].fin) ? a.lonches[0].fin : (gVal('lFin') || ''),
         localRowId: a.localRowId // V20_127: ID único para UPSERT en FIELD_DROP (col 21 backend v5.30)
       });
     }
@@ -12965,8 +12968,10 @@ function _sendToSheetsCore() {
         finca:      g.vars.finca || gVal('finca'),
         hEnt:       g.vars.ini || '',   // V12-BUG2: horarios grupales (antes no se enviaban)
         hSal:       g.vars.fin || '',
-        hLIni:      gVal('lIni') || '',
-        hLFin:      gVal('lFin') || '',
+        // V1_0_0_39 FIX: el lonche grupal ahora vive en g.vars.lonches (por actividad), ya NO en Parámetros.
+        // Mandar el horario del lonche del grupal para que llegue a FIELD_DROP (L.Inicio/L.Fin). Fallback global.
+        hLIni:      (g.vars.lonches && g.vars.lonches[0] && g.vars.lonches[0].ini) ? g.vars.lonches[0].ini : (gVal('lIni') || ''),
+        hLFin:      (g.vars.lonches && g.vars.lonches[0] && g.vars.lonches[0].fin) ? g.vars.lonches[0].fin : (gVal('lFin') || ''),
         isGrupal:   true,               // V20_56: flag para FieldSync v5.15 col 20 Is_grupal
         localRowId: rowLrid             // V20_127: ID único determinístico por (grupal,participante)
       });
