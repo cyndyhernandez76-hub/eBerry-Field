@@ -35,7 +35,7 @@
 </script>
 <script>
 // V20_21: check versión + ackedVersion para romper loop infinito cuando version.txt≠APP_VERSION
-window.APP_VERSION = 'V1_0_0_36';
+window.APP_VERSION = 'V1_0_0_38';
 (function(){
   // V20_77: AUTO-LIMPIEZA de _ackedVersion envenenado.
   // Bug detectado: surqueros tocaban "Actualizar ahora" pero el SW interceptaba el reload con HTML viejo.
@@ -666,6 +666,12 @@ html.login-locked{overflow:hidden!important;height:100%!important}
 .sem-time-cell input{font-size:10px;padding:2px 3px}
 .sem-time-cell label{font-size:8px;color:var(--gr);font-weight:600;text-align:left}
 .sem-hrs-val{font-weight:700;color:var(--dk);font-size:13px;text-align:center;margin-top:2px}
+/* V1_0_0_38: selector de Labor por celda (persona × día). Verde=usando default de Parámetros, naranja=cambiada */
+.sem-labor{margin-top:4px;border-top:1px dashed #cdd5e6;padding-top:3px}
+.sem-labor-lbl{font-size:8px;color:#1a6b3a;font-weight:700;text-align:left}
+.sem-labor-sel,.sem-labor-txt{width:100%;padding:2px 3px;border:1.5px solid #1a6b3a;border-radius:4px;font-size:10px;background:#f2fbf5;color:#0d3d22;font-weight:700;box-sizing:border-box}
+.sem-labor.changed .sem-labor-lbl{color:#c47f00}
+.sem-labor.changed .sem-labor-sel,.sem-labor.changed .sem-labor-txt{border-color:#c47f00;background:#fff7e6;color:#7a4f00}
 .sem-foot{background:#d0d8ff;font-weight:700;color:var(--g);font-size:12px;border:1px solid #aab}
 .queue-badge{display:none;background:rgba(255,152,0,.9);color:#fff;padding:2px 8px;border-radius:12px;font-size:10px;font-weight:700;cursor:pointer}
 .days-warn{display:none;background:rgba(204,34,34,.9);color:#fff;padding:2px 8px;border-radius:12px;font-size:10px;font-weight:700;animation:offPulse 2s infinite}
@@ -6093,7 +6099,61 @@ function onSemFincaChange(){
     if(sel) hidden.value = sel.value || '';
     else if(txt) hidden.value = txt.value || '';
   }
+  // V1_0_0_38: propagar el nuevo default a las celdas que estaban en el default ANTERIOR (no a las cambiadas)
+  try { _semPropagateDefault(_semPrevFinca, (hidden?hidden.value:'')); } catch(e){}
+  _semPrevFinca = hidden ? hidden.value : '';
   if(typeof saveSemData === 'function') saveSemData();
+}
+
+// ════════ V1_0_0_38: LABOR POR CELDA (persona × día) en la hoja semanal ════════
+// Default = la labor/finca de Parámetros (semFinca), editable por celda para cuando un mismo grupo
+// trabajó en lugares distintos. Verde=default, naranja=cambiada. Catálogo del rancho (FINCAS_POR_RANCHO),
+// texto libre si el rancho no tiene catálogo.
+var _semPrevFinca = ''; // rastrea el default global anterior para propagarlo a celdas no cambiadas
+
+function _semLaborCellHTML(cellId){
+  var def = gVal('semFinca') || '';
+  var rancho = (gVal('semRancho')||'').toLowerCase();
+  var fincas = (typeof FINCAS_POR_RANCHO!=='undefined' && rancho && FINCAS_POR_RANCHO[rancho]) ? FINCAS_POR_RANCHO[rancho] : null;
+  var h = '<div class="sem-labor" id="'+cellId+'_laborWrap"><div class="sem-labor-lbl">🏷️ Labor</div>';
+  if(fincas && fincas.length){
+    h += '<select class="sem-labor-sel" id="'+cellId+'_labor" onchange="onSemCellLabor(this,\''+cellId+'\')">';
+    var has = false;
+    for(var i=0;i<fincas.length;i++){ var s=(fincas[i]===def)?' selected':''; if(s)has=true; h+='<option value="'+esc(fincas[i])+'"'+s+'>'+esc(fincas[i])+'</option>'; }
+    if(def && !has){ h += '<option value="'+esc(def)+'" selected>'+esc(def)+'</option>'; }
+    h += '</select>';
+  } else {
+    h += '<input type="text" class="sem-labor-txt" id="'+cellId+'_labor" value="'+esc(def)+'" placeholder="Labor" oninput="onSemCellLabor(this,\''+cellId+'\')">';
+  }
+  return h + '</div>';
+}
+
+function onSemCellLabor(el, cellId){
+  var def = gVal('semFinca') || '';
+  var wrap = gEl(cellId+'_laborWrap');
+  if(wrap){
+    if((el.value||'') && (el.value||'') !== def) wrap.classList.add('changed');
+    else wrap.classList.remove('changed');
+  }
+  if(typeof saveSemData === 'function') saveSemData();
+}
+
+// Al cambiar el default global (semFinca), poner el nuevo default SOLO en las celdas que tenían el
+// default anterior (o estaban vacías) — las celdas cambiadas a mano se respetan.
+function _semPropagateDefault(oldDef, newDef){
+  if(!workers || !workers.length) return;
+  for(var w=0; w<workers.length; w++){
+    for(var d=0; d<7; d++){
+      var base = 'sem_'+workers[w].id+'_d'+d;
+      var el = gEl(base+'_labor');
+      if(!el) continue;
+      if((el.value||'') === (oldDef||'') || !(el.value||'')){
+        el.value = newDef;
+        var wrap = gEl(base+'_laborWrap');
+        if(wrap) wrap.classList.remove('changed');
+      }
+    }
+  }
 }
 
 function updBanner(){
@@ -16734,6 +16794,8 @@ function buildSemTable(){
       tbody += '<div class="sem-hrs-val" id="'+cellId+'_hrs">0</div>';
       // Gamma2: Pago diario (solo visual)
       tbody += '<div id="'+cellId+'_dpay" style="font-size:9px;color:#1a6b3a;font-weight:700;margin-top:2px"></div>';
+      // V1_0_0_38: selector de Labor por celda (default = finca de Parámetros, editable por persona×día)
+      tbody += _semLaborCellHTML(cellId);
       tbody += '</div></td>';
     }
     tbody += '<td class="sem-total sem-td" id="'+rowId+'_total">0</td>';
@@ -16756,6 +16818,8 @@ function buildSemTable(){
 
   // Restaurar datos si existen
   restoreSemInputs();
+  // V1_0_0_38: registrar el default global actual para la propagación de labor por celda
+  _semPrevFinca = gVal('semFinca') || '';
 
   // V20_47/V20_50: en modo lectura, popular columnas desde Sheets.
   // V20_50: condición ampliada — basta con que haya _readOnlyPayload (1 día) o _readOnlyWeekPayloads (semana).
@@ -16965,7 +17029,8 @@ function saveSemData(){
         ini: gVal(cellId+'_ini'),
         fin: gVal(cellId+'_fin'),
         lIni: gVal(cellId+'_li'),
-        lFin: gVal(cellId+'_lf')
+        lFin: gVal(cellId+'_lf'),
+        labor: gVal(cellId+'_labor') // V1_0_0_38: labor por celda (persona×día)
       };
       if(!isHour) dayObj.qty = gVal(cellId+'_qty');
       row.days.push(dayObj);
@@ -16995,7 +17060,11 @@ function loadSemData(){
         if(d && d.weekStart){
           gEl('semWeekStart').value = d.weekStart;
           gEl('semActivity').value = d.actIdx || '';
-          gEl('semRancho').value = d.rancho || '';
+          // V1_0_0_37 FIX: el rancho semanal SIEMPRE viene de Parámetros (está bloqueado). NO dejar que el
+          // valor guardado lo sobreescriba — versiones pre-V36 guardaban el rancho en BLANCO (por el bug de
+          // minúsculas en onRanchoChange) y ese blanco persiste en localStorage; al restaurarlo aquí volvía a
+          // vaciar el rancho aunque V36 ya lo vinculaba. Preferimos siempre el rancho de Parámetros.
+          gEl('semRancho').value = gVal('rancho') || d.rancho || '';
           gEl('semFinca').value = d.finca || '';
           // V20_101 MANZANITA 2: refrescar slot tras restaurar el hidden
           try { if(typeof renderSemFinca === 'function') renderSemFinca(); } catch(e){}
@@ -17013,7 +17082,11 @@ function loadSemData(){
         if(d && d.weekStart && (d.rancho||'') === paramRancho){
           gEl('semWeekStart').value = d.weekStart;
           gEl('semActivity').value = d.actIdx || '';
-          gEl('semRancho').value = d.rancho || '';
+          // V1_0_0_37 FIX: el rancho semanal SIEMPRE viene de Parámetros (está bloqueado). NO dejar que el
+          // valor guardado lo sobreescriba — versiones pre-V36 guardaban el rancho en BLANCO (por el bug de
+          // minúsculas en onRanchoChange) y ese blanco persiste en localStorage; al restaurarlo aquí volvía a
+          // vaciar el rancho aunque V36 ya lo vinculaba. Preferimos siempre el rancho de Parámetros.
+          gEl('semRancho').value = gVal('rancho') || d.rancho || '';
           gEl('semFinca').value = d.finca || '';
           // V20_101 MANZANITA 2: refrescar slot tras restaurar el hidden
           try { if(typeof renderSemFinca === 'function') renderSemFinca(); } catch(e){}
@@ -17057,6 +17130,17 @@ function restoreSemInputs(){
         var finEl = gEl(cellId+'_fin'); if(finEl && dayData.fin) finEl.value = dayData.fin;
         var liEl = gEl(cellId+'_li'); if(liEl && dayData.lIni) liEl.value = dayData.lIni;
         var lfEl = gEl(cellId+'_lf'); if(lfEl && dayData.lFin) lfEl.value = dayData.lFin;
+        // V1_0_0_38: restaurar labor por celda + marcar naranja si está cambiada (distinta al default)
+        var labEl = gEl(cellId+'_labor');
+        if(labEl){
+          var _labVal = (dayData.labor != null && dayData.labor !== '') ? dayData.labor : (gVal('semFinca')||'');
+          labEl.value = _labVal;
+          var _labWrap = gEl(cellId+'_laborWrap');
+          if(_labWrap){
+            if(_labVal && _labVal !== (gVal('semFinca')||'')) _labWrap.classList.add('changed');
+            else _labWrap.classList.remove('changed');
+          }
+        }
         calcSemHours(wk.id, d);
         // Para no-Hora: también restaurar qty
         if(!isHour){
@@ -17418,7 +17502,8 @@ function sendSemToSheets(){
         ini: ini,
         fin: fin,
         lIni: lIni,
-        lFin: lFin
+        lFin: lFin,
+        finca: gVal(cellId+'_labor') || gVal('semFinca') || '' // V1_0_0_38: labor por día (cae al default de Parámetros)
       };
       if(!isHour){
         dayObj.qty = parseFloat(gVal(cellId+'_qty')) || 0;
