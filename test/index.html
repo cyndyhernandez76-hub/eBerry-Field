@@ -35,7 +35,7 @@
 </script>
 <script>
 // V20_21: check versión + ackedVersion para romper loop infinito cuando version.txt≠APP_VERSION
-window.APP_VERSION = 'V1_0_0_39';
+window.APP_VERSION = 'V1_0_0_41';
 (function(){
   // V20_77: AUTO-LIMPIEZA de _ackedVersion envenenado.
   // Bug detectado: surqueros tocaban "Actualizar ahora" pero el SW interceptaba el reload con HTML viejo.
@@ -8296,7 +8296,18 @@ function buildAnalisis(){
       var price82 = gact82.p;
       var np82 = ga82.participantes.length;
       var qtyPP82 = 0;
-      if(ct82 === 'puertas'){
+      // V1_0_0_41 FIX: las grupales del MOTOR guardan la cantidad en vars.inputs, NO en los campos
+      // legacy vars.surcos/totalC/totalP. Sin esta rama, buildAnalisis leía los legacy VACÍOS →
+      // qtyPP82=0 → L8327 continue → la grupal se SALTABA del Análisis de Rendimiento (mismo bug
+      // motor→legacy que ya se arregló en PDF/Sheets/Invoice, pero el Análisis quedó sin cubrir).
+      // computeQty(inputs, 1) = cantidad TOTAL del grupal; ÷ np82 = porción por persona (igual que
+      // las ramas legacy que hacen total/np). Para cajas con precio custom se respeta vars.precioC.
+      if(typeof _grpUsesMotor === 'function' && _grpUsesMotor(gact82)){
+        var _mInp82 = (typeof _grpReadMotorInputs === 'function') ? _grpReadMotorInputs(ga82) : {};
+        var _mTot82 = computeQty(gact82, _mInp82, 1);
+        qtyPP82 = (_mTot82 != null && isFinite(_mTot82) && np82 > 0) ? (_mTot82 / np82) : 0;
+        if(ct82 === 'cajas') price82 = parseFloat(ga82.vars && ga82.vars.precioC) || gact82.p || price82;
+      } else if(ct82 === 'puertas'){
         var metros82 = 0;
         var surcos82 = (ga82.vars && ga82.vars.surcos) || [];
         for(var si82=0; si82<surcos82.length; si82++){
@@ -9514,6 +9525,21 @@ function onActQtyChange(wid_, actIdx, val, inpEl){
         if(!a.inputs) a.inputs = {};
         var firstCol = reqInputs[0].column;
         if(firstCol){ a.inputs[firstCol] = qty; }
+        // V1_0_0_40 FIX VarDoor "Asignar a varios": el cuadrito por persona captura la col H (Pies o
+        // Acres), pero a.qty DEBE ser PUERTAS = fórmula del MASTER (ej. pies×surcos÷100). Antes
+        // onActQtyChange guardaba el valor CRUDO en a.qty (arriba) y recalc lo pagaba 1:1 →
+        // 1000 pies = "1000 piezas" $800 en vez de 10 pzas $8.
+        // Se usa computeQty pasando H=valor del cuadrito e I=SURCOS del modal (a.inputs.I o 1).
+        // Esto funciona TANTO si col I está vacía (surcos ignorado, pies÷L) COMO si col I=label'Surcos'
+        // (formula (pies×surcos)÷L). Verificado con jsdom: 1000 pies → 10, 100 → 1, ×2 surcos → 20.
+        if((actDef.variable||'').toLowerCase().trim() === 'vardoor'
+           && (actDef.modo||'Individual').toLowerCase() !== 'grupal'
+           && typeof computeQty === 'function'){
+          var _surcosVD = parseFloat(a.inputs && a.inputs.I) || 1;
+          a.indPies = qty; // backward-compat con recalc (rama compat a.indPies)
+          var _vdQ = computeQty(actDef, { H: qty, I: _surcosVD }, 1);
+          a.qty = (_vdQ === null || !isFinite(_vdQ)) ? 0 : Math.round(_vdQ * 1000) / 1000;
+        }
       }
     }
   } catch(e){ console.warn('[V20_134_b1] feed a.inputs fallo:', e); }
