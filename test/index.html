@@ -35,7 +35,7 @@
 </script>
 <script>
 // V20_21: check versión + ackedVersion para romper loop infinito cuando version.txt≠APP_VERSION
-window.APP_VERSION = 'V1_0_0_41';
+window.APP_VERSION = 'V1_0_0_42';
 (function(){
   // V20_77: AUTO-LIMPIEZA de _ackedVersion envenenado.
   // Bug detectado: surqueros tocaban "Actualizar ahora" pero el SW interceptaba el reload con HTML viejo.
@@ -13198,6 +13198,19 @@ function getAcresFromPuertas(act, puertas){
   var factor = (typeof getActFactorAcres==='function') ? getActFactorAcres(act) : null;
   if(factor && factor>0){
     return {acres: p/factor, factor: factor, ok:true, source:'col_P'};
+  }
+  // V1_0_0_42: Prioridad 1.5 — VarDoor con col H = label'Acres' (input directo de acres, ej. TACC
+  // "Amarre de chile morron"). Ahí puertas = acres × factor(col I) → acres = puertas / factor. El factor
+  // se obtiene con computeQty(act,{H:1},1) = puertas por 1 acre (lee las cols del MASTER). Antes esto caía
+  // al error "Falta FactorAcres" porque getAcresFromPuertas solo conocía col P y Pennrose. Serafín 2026-07-12:
+  // "solo es sumar los acres" → acres totales = puertas ÷ factor (ej. 420 ÷ 60 = 7 acres).
+  var _hCellAcr = (typeof parseFormulaCell === 'function' && act && act.H) ? parseFormulaCell(act.H) : null;
+  var _isAcresInputAcr = !!(_hCellAcr && _hCellAcr.type === 'input' && String(_hCellAcr.label||'').toLowerCase() === 'acres');
+  if(_isAcresInputAcr && typeof computeQty === 'function'){
+    var _perAcre = computeQty(act, {H:1}, 1); // puertas por 1 acre = factor (col I)
+    if(_perAcre && _perAcre > 0 && isFinite(_perAcre)){
+      return {acres: p/_perAcre, factor: _perAcre, ok:true, source:'col_I_acres'};
+    }
   }
   // V20_143 FIX A: Prioridad 2 — Pennrose usa col I (data-driven existente)
   // En Pennrose: puertas = acres × col_I → acres = puertas / col_I
