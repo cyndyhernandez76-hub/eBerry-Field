@@ -35,7 +35,7 @@
 </script>
 <script>
 // V20_21: check versión + ackedVersion para romper loop infinito cuando version.txt≠APP_VERSION
-window.APP_VERSION = 'V1_0_0_42';
+window.APP_VERSION = 'V1_0_0_43';
 (function(){
   // V20_77: AUTO-LIMPIEZA de _ackedVersion envenenado.
   // Bug detectado: surqueros tocaban "Actualizar ahora" pero el SW interceptaba el reload con HTML viejo.
@@ -9850,7 +9850,10 @@ function _saveEditedActivityGroup(){
   }
   var fincaSel = gEl('assignFincaSel'); var fincaInp = gEl('assignFincaInput');
   var newFinca = fincaSel ? (fincaSel.value||'') : (fincaInp ? (fincaInp.value||'') : '');
-  if(!newFinca){ toast && toast('⚠️ Selecciona finca'); return; }
+  // V1_0_0_43: finca obligatoria SOLO si el rancho tiene catálogo (paridad con confirmAssignMany).
+  var _rEG = (gVal('rancho')||'').trim();
+  var _fincasCatEG = (typeof FINCAS_POR_RANCHO !== 'undefined' && FINCAS_POR_RANCHO && FINCAS_POR_RANCHO[_rEG]) ? FINCAS_POR_RANCHO[_rEG] : null;
+  if(!!(_fincasCatEG && _fincasCatEG.length) && !newFinca){ toast && toast('⚠️ Selecciona finca'); return; }
   var newWorkerIds = _assignSelectedIds.slice();
   if(!newWorkerIds.length){
     if(!confirm('No seleccionaste ningún trabajador. Esto eliminará la actividad del grupo. ¿Continuar?')) return;
@@ -10275,7 +10278,14 @@ function confirmAssignMany(){
   }
   var fincaSel = gEl('assignFincaSel'); var fincaInp = gEl('assignFincaInput');
   var finca = fincaSel ? (fincaSel.value||'') : (fincaInp ? (fincaInp.value||'') : '');
-  if(!finca){ toast && toast('⚠️ Selecciona finca'); return; }
+  // V1_0_0_43: la finca solo es OBLIGATORIA si el rancho tiene catálogo de labores.
+  // Si el rancho NO tiene fincas en FINCAS_POR_RANCHO (ej: Pitts Creek recién dado de alta),
+  // _renderAssignFinca oculta el bloque (regla V20_91_13) → no hay dropdown que llenar →
+  // dejar continuar sin finca en vez de bloquear con "⚠️ Selecciona finca".
+  var _rAM = (gVal('rancho')||'').trim();
+  var _fincasCatAM = (typeof FINCAS_POR_RANCHO !== 'undefined' && FINCAS_POR_RANCHO && FINCAS_POR_RANCHO[_rAM]) ? FINCAS_POR_RANCHO[_rAM] : null;
+  var _fincaReqAM = !!(_fincasCatAM && _fincasCatAM.length);
+  if(_fincaReqAM && !finca){ toast && toast('⚠️ Selecciona finca'); return; }
 
   // VALIDACIÓN TRANSLAPE — usar checkOverlapsInWorker existente (regresa {ok:true/false,...})
   // V20_186: usar TODOS los shifts (incluye extras) al validar
