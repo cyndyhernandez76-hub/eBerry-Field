@@ -35,7 +35,7 @@
 </script>
 <script>
 // V20_21: check versión + ackedVersion para romper loop infinito cuando version.txt≠APP_VERSION
-window.APP_VERSION = 'V1_0_0_43';
+window.APP_VERSION = 'V1_0_0_44';
 (function(){
   // V20_77: AUTO-LIMPIEZA de _ackedVersion envenenado.
   // Bug detectado: surqueros tocaban "Actualizar ahora" pero el SW interceptaba el reload con HTML viejo.
@@ -4514,7 +4514,24 @@ function resolveAct(a, assign){
   // Sin esto, dos filas del MASTER con mismo nombre colapsaban en la primera (típicamente Hours)
   // → PDF mostraba la fila equivocada después de cualquier reload de la app.
   var _aPT = a._payType || a.payType || '';
-  if(a.esName && _aPT){
+  // V1_0_0_44: desambiguar tasks HOMÓNIMOS con distinto precio (ej 2 "Cosecha de elote"
+  // mismo nombre + mismo payType Pieces pero $0.80 vs $1.00). El match por nombre+payType
+  // devolvía SIEMPRE el primero ($0.80) → análisis y cualquier re-resolución de a.ai usaban
+  // el precio equivocado. Pase PRIORITARIO por nombre+payType+PRECIO usando el precio
+  // congelado del worker-act (a._unitPrice, seteado = act.p al asignar). Si no matchea
+  // (precio ausente/desactualizado) cae a los pases existentes → sin regresión.
+  var _aPrice = (a._unitPrice != null && a._unitPrice !== '') ? parseFloat(a._unitPrice)
+              : (a.p != null && a.p !== '') ? parseFloat(a.p) : NaN;
+  if(a.esName && !isNaN(_aPrice) && _aPrice > 0){
+    for(var akPr=0; akPr<ACTS.length; akPr++){
+      if(ACTS[akPr].es===a.esName
+         && (!_aPT || (ACTS[akPr].payType||'')===_aPT)
+         && Math.round((parseFloat(ACTS[akPr].p)||0)*100)===Math.round(_aPrice*100)){
+        act=ACTS[akPr]; if(assign) a.ai=akPr; break;
+      }
+    }
+  }
+  if(!act && a.esName && _aPT){
     for(var akP=0;akP<ACTS.length;akP++){
       if(ACTS[akP].es===a.esName && (ACTS[akP].payType||'')===_aPT){ act=ACTS[akP]; if(assign) a.ai=akP; break; }
     }
@@ -11099,13 +11116,19 @@ function buildPDFWindow(vals, wks, ep, hp, cp, ausArr, grpActsArr){
       // V1_0_0_10: quitar 'tipo' del colKey. 'tipo' tiene 2 vocabularios ('pieza' en vivo vs 'Ficha'
       // serializado) → con el fix V1_0_0_9 (matching por payType) se DUPLICABAN columnas Pieces (una por
       // cada vocabulario de tipo, ambas llenas con los mismos datos). name+finca+payType discrimina solo.
-      colKey = actName + '|' + _fincaKey + '|' + (actPayT||'');
+      // V1_0_0_44: agregar el PRECIO al colKey para separar tasks HOMÓNIMOS con distinto rate
+      // (ej 2 "Cosecha de elote" mismo nombre + finca + Pieces pero $0.80 vs $1.00). Sin esto
+      // se fusionaban en 1 columna con el precio del primero. _waPriceKey usa el precio congelado
+      // (a_._unitPrice = act.p al asignar) → mismo task = mismo precio = 1 columna (sin regresión);
+      // devuelve '' si el precio es 0/ausente → NO parte columnas Hours con rate 0.
+      var _kPrice = _waPriceKey(a_);
+      colKey = actName + '|' + _fincaKey + '|' + (actPayT||'') + '|' + _kPrice;
       var found=false;
       for(var k=0;k<actCols.length;k++){ if(actCols[k].colKey===colKey){found=true;break;} }
       if(!found) actCols.push({
         ai:ai, colKey:colKey, wid:null,
         label:actLabel, tipo:actTipo, payType:actPayT, hr:actHr,
-        esName:actName, finca:_fincaKey
+        esName:actName, finca:_fincaKey, keyPrice:_kPrice
       });
     }
   }
@@ -11119,6 +11142,18 @@ function buildPDFWindow(vals, wks, ep, hp, cp, ausArr, grpActsArr){
     var payT = wa._payType || wa.payType || (ACTS[wa.ai]?ACTS[wa.ai].payType:'') || '';
     return {name:name, tipo:tipo, finca:finca, payType:payT};
   }
+  // V1_0_0_44: clave de precio estable de un worker-act para desambiguar tasks homónimos.
+  // Prefiere el precio congelado (_unitPrice = act.p al asignar) → mismo task = mismo precio.
+  // Devuelve '' si el precio es 0/ausente para NO partir columnas (ej Hours rate 0).
+  function _waPriceKey(wa){
+    if(!wa) return '';
+    var p = (wa._unitPrice != null && wa._unitPrice !== '') ? wa._unitPrice
+          : (wa.p != null && wa.p !== '') ? wa.p
+          : (ACTS[wa.ai] ? ACTS[wa.ai].p : '');
+    var n = parseFloat(p);
+    if(isNaN(n) || n <= 0) return '';
+    return (Math.round(n*100)/100).toFixed(2);
+  }
   // V20_152: comparación columna-vs-worker-act incluyendo payType para separar Hours/Pieces homónimas.
   function _colMatchesWAct(col, wa){
     var ident = _wActIdent(wa);
@@ -11128,6 +11163,11 @@ function buildPDFWindow(vals, wks, ep, hp, cp, ausArr, grpActsArr){
     var cPT = col.payType || '';
     if(ident.name !== cName) return false;
     if(ident.finca !== cFinca) return false;
+    // V1_0_0_44: separar tasks HOMÓNIMOS con distinto precio (misma columna solo si mismo rate).
+    // Solo filtra cuando AMBOS lados tienen precio >0 y difieren → una act sin precio no se
+    // descarta (cae a payType) y las columnas Hours rate 0 (keyPrice '') no filtran por precio.
+    var _waP = _waPriceKey(wa);
+    if(col.keyPrice && _waP && _waP !== col.keyPrice) return false;
     // V1_0_0_9 FIX: payType es el discriminador ESTABLE (Pieces/Hours/Daywork). El campo 'tipo'
     // tiene 2 vocabularios ('pieza' de _derivarTipoActividad en vivo vs 'Ficha' del MASTER al
     // serializar/cargar); compararlo estricto rompía el match para Pieces (columna 'Ficha' vs
