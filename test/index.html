@@ -35,7 +35,7 @@
 </script>
 <script>
 // V20_21: check versión + ackedVersion para romper loop infinito cuando version.txt≠APP_VERSION
-window.APP_VERSION = 'V1_0_0_44';
+window.APP_VERSION = 'V1_0_0_45';
 (function(){
   // V20_77: AUTO-LIMPIEZA de _ackedVersion envenenado.
   // Bug detectado: surqueros tocaban "Actualizar ahora" pero el SW interceptaba el reload con HTML viejo.
@@ -7319,6 +7319,7 @@ function addAct(wid_){
     initIni = w.checkInTime;
     lockIni = true;
   }
+  var _defAct45 = ACTS.length>0 ? ACTS[0] : null; // V1_0_0_45: congelar precio del task default (ACTS[0])
   w.acts.push({
     localRowId: _genRowId(), // V20_127: ID único para UPSERT en FIELD_DROP
     ai:0, esName:defName, tipo:defTipo, qty:'',
@@ -7326,6 +7327,12 @@ function addAct(wid_){
     showTime: !!initIni, // abrir reloj si ya tenemos hora del check-in
     pay:0, finca:gVal('finca'),
     _iniLocked: lockIni, // V20_91_05: marca para readonly del primer shift
+    // V1_0_0_45: metadata congelada del task (evita que homónimos con distinto precio se guarden mal)
+    _actEs: defName,
+    _payType: _defAct45 ? (_defAct45.payType||'') : '',
+    _unitPrice: _defAct45 && _defAct45.p != null ? _defAct45.p : 0,
+    _variable: _defAct45 ? (_defAct45.variable||'') : '',
+    p: _defAct45 ? _defAct45.p : 0,
     lonches: [{ini:'12:00', fin:'12:30'}] // V1_0_0_6: lonche POR ACTIVIDAD (default 12:00-12:30, editable/quitable, soporta varios)
   });
   mkActRow(wid_,ai);
@@ -7961,6 +7968,18 @@ function chAct(wi,ai,nai){
   // V20_28: al cambiar actividad, limpiar a.inputs (fix frontend/QA — inputs de act viejo no son válidos para nuevo)
   // V20_76: limpia bloques también al cambiar actividad
   w.acts[ai]={ai:nai,esName:actName,tipo:actTipo,qty:'',ini:preservedIni,fin:'',showTime:preservedShowTime,pay:0,finca:prevFinca,inputs:{},bloques:[{pies:'',surcos:''}],_iniLocked:preservedIniLocked};
+  // V1_0_0_45: congelar metadata del task seleccionado (paridad con confirmAssignMany "Asignar a varios").
+  // Sin esto el flujo individual creaba el act SIN _unitPrice → 2 tasks homónimos con distinto precio
+  // (ej "Cosecha de elote" $0.80 y $1.00) se guardaban con el precio del PRIMERO y al recargar del
+  // historial reaparecían mal. Congelar aquí hace el act auto-descriptivo (análisis, PDF, save, reload).
+  if(nai>=0 && nai<ACTS.length){
+    var _selAct45 = ACTS[nai];
+    w.acts[ai]._actEs     = _selAct45.es || actName;
+    w.acts[ai]._payType   = _selAct45.payType || '';
+    w.acts[ai]._unitPrice = (_selAct45.p != null) ? _selAct45.p : 0;
+    w.acts[ai]._variable  = _selAct45.variable || '';
+    w.acts[ai].p          = _selAct45.p;
+  }
   var old=gEl('ar'+wi+'_'+ai); if(old)old.parentNode.removeChild(old);
   var cont=gEl('ac'+wi); if(!cont)return;
   cont.innerHTML='';
@@ -8656,8 +8675,14 @@ function _serializeState(){
       // Fallback: si el act no los tiene, usar sact (resuelto por nombre+payType arriba) o el sa directo.
       actSv._actEs     = sa._actEs || (sact ? (sact.es||'') : (sa.esName||''));
       actSv._payType   = sa._payType || (sact ? (sact.payType||'') : (sa.payType||''));
+      // V1_0_0_45: blindar el precio contra HOMÓNIMOS. Antes el fallback usaba `sact.p` donde
+      // sact se resolvía por nombre+payType (L8636) = PRIMER homónimo → si había 2 tasks con el
+      // mismo nombre y distinto precio ($0.80 vs $1.00), guardaba el del primero. Ahora prefiere
+      // el precio congelado (sa._unitPrice/sa.p) y luego el del ÍNDICE REAL ACTS[sa.ai] antes que sact.
       actSv._unitPrice = (sa._unitPrice != null && sa._unitPrice !== '') ? sa._unitPrice
-                        : (sact ? (parseFloat(sact.p)||0) : (parseFloat(sa.p)||0));
+                        : (sa.p != null && sa.p !== '') ? sa.p
+                        : (sa.ai != null && ACTS[sa.ai] && ACTS[sa.ai].p != null) ? (parseFloat(ACTS[sa.ai].p)||0)
+                        : (sact ? (parseFloat(sact.p)||0) : 0);
       actSv._variable  = sa._variable || (sact ? (sact.variable||'') : '');
       if(sa.surcos&&sa.surcos.length) actSv.surcos=sa.surcos;
       if(sa.anchoCama) actSv.anchoCama=sa.anchoCama;
