@@ -35,7 +35,7 @@
 </script>
 <script>
 // V20_21: check versión + ackedVersion para romper loop infinito cuando version.txt≠APP_VERSION
-window.APP_VERSION = 'V1_0_0_45';
+window.APP_VERSION = 'V1_0_0_47';
 (function(){
   // V20_77: AUTO-LIMPIEZA de _ackedVersion envenenado.
   // Bug detectado: surqueros tocaban "Actualizar ahora" pero el SW interceptaba el reload con HTML viejo.
@@ -3028,7 +3028,7 @@ function showWelcomeModal(user, ioe, defaultRancho){
   _rejectedWorkers = [];
   var contratosLoaded = Object.keys(CONTRATOS).length > 0; // V8-C7: detectar si Sheets respondió
   for(var i=0;i<NAMES.length;i++){
-    var wk=findInArr(ALL_WORKERS,NAMES[i]); // V12-FIX1
+    var wk=_resolveWorkerRow(NAMES[i], null); // V1_0_0_47: prefiere el homónimo del crew actual (no el primero)
     if(!wk) { accepted++; continue; }
     if(!wk.ioe){ _rejectedWorkers.push({name:wk.name,empNum:wk.empNum,reason:'Sin contrato IOE'}); rejected++; continue; }
     var allowed = CONTRATOS[wk.ioe];
@@ -4492,6 +4492,28 @@ function findInArr(arr,name,key){
   return null;
 }
 function nameInArr(arr,name,key){ return findInArr(arr,name,key)!==null; }
+// V1_0_0_47: resolver la fila de ALL_WORKERS de un trabajador desambiguando HOMÓNIMOS
+// (ej 2 "Mauricio Nava Nava" en distinto crew, distinto empNum/contrato). Orden:
+//  1) por empNum (ÚNICO) si se conoce (viene del QR) → siempre correcto.
+//  2) por nombre PREFIRIENDO el que pertenece al crew actual (currentUser.crew) → desambigua
+//     los 2 homónimos cuando están en crews distintos, aunque no haya empNum (add manual/FaceID).
+//  3) último recurso: primer match por nombre (comportamiento viejo).
+// Antes TODO resolvía por nombre → agarraba al primer homónimo → falso "contrato no incluye
+// este rancho" Y guardaba el empNum/contractRate de la persona EQUIVOCADA (riesgo de nómina).
+function _resolveWorkerRow(name, empNum){
+  if(empNum){
+    var byEmp = findInArr(ALL_WORKERS, String(empNum).trim(), 'empNum');
+    if(byEmp) return byEmp;
+  }
+  if(name && currentUser && currentUser.crew && typeof _normCrew === 'function'){
+    var _cn = _normCrew(currentUser.crew);
+    for(var _i=0; _i<ALL_WORKERS.length; _i++){
+      if(ALL_WORKERS[_i].name && nameMatch(ALL_WORKERS[_i].name, name)
+         && _normCrew(ALL_WORKERS[_i].crew) === _cn) return ALL_WORKERS[_i];
+    }
+  }
+  return findInArr(ALL_WORKERS, name);
+}
 function findInStrArr(arr,name){
   for(var i=0;i<arr.length;i++){ if(nameMatch(arr[i],name))return arr[i]; }
   return null;
@@ -4633,6 +4655,12 @@ function nh(a,b,lonches){
     var li=t2m(_lon[_lx].ini), lf=t2m(_lon[_lx].fin);
     if(li!==null && lf!==null){
       if(lf<=li) lf+=1440; // lonche que cruza medianoche (defensivo)
+      // V1_0_0_46 FIX medianoche: si el TURNO cruza medianoche (s>1440) y el lonche cae en la
+      // parte de DESPUÉS de medianoche (su hora-del-día es menor que la entrada), moverlo +24h
+      // para ubicarlo en la misma línea de tiempo del turno. Sin esto un lonche 5:00 AM en un
+      // turno 11:30 PM→9:30 AM NO se descontaba (se comparaba 300 min vs turno 1410-2010) → pagaba
+      // esos 30 min de más. Con el fix: lonche pasa a 1740-1770 → solapa → se descuenta (9.5 h).
+      if(s>1440 && li<e){ li+=1440; lf+=1440; }
       var ov=Math.min(s,lf)-Math.max(e,li);
       if(ov>0) w-=ov;
     }
@@ -6920,7 +6948,8 @@ function onQRSuccess(decoded){
   }
 
   // Validar contrato IOE — usar modal real
-  var ioeCheck = checkContrato(officialName);
+  // V1_0_0_47: pasar el empNum del QR (wkMatch) para validar el contrato de la persona CORRECTA (homónimos).
+  var ioeCheck = checkContrato(officialName, wkMatch && wkMatch.empNum);
   if(ioeCheck){
     pauseQR();
     showIoeBlock(ioeCheck, officialName);
@@ -6965,7 +6994,7 @@ function onQRSuccess(decoded){
   }
 
   if(inCrew){
-    doAddConfirmed(officialName);
+    doAddConfirmed(officialName, wkMatch && wkMatch.empNum); // V1_0_0_47: empNum del QR
     qrSessionCount++;
     updQRCount();
     setQRStatus('✓ ' + officialName + ' agregado','ok');
@@ -6979,7 +7008,7 @@ function onQRSuccess(decoded){
   //  - !wkMatch (no en DB) → rechazar con setQRStatus (anomalía real, QR no oficial).
   if(_qrMode === 'trabajador'){
     if(wkMatch){
-      doAddConfirmed(officialName);
+      doAddConfirmed(officialName, wkMatch.empNum); // V1_0_0_47: empNum del QR
       qrSessionCount++;
       updQRCount();
       var _crewTxt = wkMatch.crew ? ' (crew: '+wkMatch.crew+')' : '';
@@ -7005,7 +7034,7 @@ function onQRSuccess(decoded){
     // Forzar modo trabajador para que doAddConfirmed aplique role correcto
     _qrMode = 'trabajador';
     if(wkMatch){
-      doAddConfirmed(officialName);
+      doAddConfirmed(officialName, wkMatch.empNum); // V1_0_0_47: empNum del QR
       qrSessionCount++;
       updQRCount();
       var _crewTxtFB = wkMatch.crew ? ' (crew: '+wkMatch.crew+')' : '';
@@ -7039,11 +7068,11 @@ function onQRSuccess(decoded){
 }
 
 // ── Validación de contrato IOE vs rancho ──
-function checkContrato(name){
+function checkContrato(name, empNum){
   var rancho = (gVal('rancho')||'').trim().toLowerCase();
   if(!rancho) return null; // sin rancho configurado, no validar
-  // Buscar worker en ALL_WORKERS para obtener su IOE
-  var wk=findInArr(ALL_WORKERS,name); // V12-FIX1
+  // V1_0_0_47: resolver por empNum/crew para no agarrar al homónimo equivocado (2 "Mauricio Nava Nava").
+  var wk=_resolveWorkerRow(name, empNum);
   if(!wk) return null; // no está en DB, dejar pasar (manual entry)
   // 🚫 Sin número de contrato IOE — bloquear
   if(!wk.ioe) return { noIoe: true, rancho: gVal('rancho').trim() };
@@ -7176,7 +7205,7 @@ function okUnk(){
   }
 }
 function noUnk(){ pendingUnk=null; gEl('unkOv').classList.remove('on'); if(qrActive) resumeQR(); }
-function doAddConfirmed(name){
+function doAddConfirmed(name, empNum){
   // V20_91_01: capturar el modo de escaneo ANTES de cualquier cosa (evita reset por otros flujos)
   var _modeAtAdd = _qrMode || 'trabajador';
   // V20_91_09: bloquear si el día ya fue cerrado (no se pueden agregar más trabajadores)
@@ -7189,7 +7218,9 @@ function doAddConfirmed(name){
     if(!checkHorarioBeforeAdd()) return;
   }
   // Buscar empNum y contractRate del worker en ALL_WORKERS
-  var _w9=findInArr(ALL_WORKERS,name); var _empNum=_w9?_w9.empNum||'':''; var _cRate=_w9?_w9.contractRate||0:0; // V12-FIX1
+  // V1_0_0_47: resolver por empNum/crew (no primer homónimo) → el worker agregado guarda el
+  // empNum y contractRate de la persona CORRECTA (crítico para nómina — evita pagar al Mauricio equivocado).
+  var _w9=_resolveWorkerRow(name, empNum); var _empNum=_w9?_w9.empNum||'':''; var _cRate=_w9?_w9.contractRate||0:0;
   // V20_91_01: campos check-in/check-out + V20_91_02: canUndoUntil (ventana 60s)
   var w={id:wid++,name:name,empNum:_empNum,contractRate:_cRate,open:true,acts:[],totalPay:0,
     role:'trabajador', checkInTime:'', checkInTs:0, checkInLocked:false,
