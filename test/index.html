@@ -35,7 +35,7 @@
 </script>
 <script>
 // V20_21: check versión + ackedVersion para romper loop infinito cuando version.txt≠APP_VERSION
-window.APP_VERSION = 'V1_0_0_47';
+window.APP_VERSION = 'V1_0_0_48';
 (function(){
   // V20_77: AUTO-LIMPIEZA de _ackedVersion envenenado.
   // Bug detectado: surqueros tocaban "Actualizar ahora" pero el SW interceptaba el reload con HTML viejo.
@@ -14453,8 +14453,9 @@ function getAusenciaCandidates(){
     if(nameInArr(workers,name)) continue;
     if(_isInAnyGrpAct(name)) continue; // V20_84: trabajador en grupal NO es ausente
     if(nameInArr(ausencias,name)) continue;
-    // Buscar empNum en ALL_WORKERS
-    var dbW = findInArr(ALL_WORKERS,name);
+    // Buscar empNum en ALL_WORKERS — V1_0_0_48: usar _resolveWorkerRow para preferir el
+    // homónimo del crew actual (empNum CORRECTO) en vez del primer match por nombre.
+    var dbW = _resolveWorkerRow(name, null);
     var empNum = dbW ? (dbW.empNum||"") : "";
     result.push({name:name, empNum:empNum});
   }
@@ -14630,14 +14631,42 @@ function onAusAC(v){
   if(!res.length){ dr.classList.remove("on"); return; }
   dr.innerHTML = "";
   for(var k=0;k<res.length;k++){
-    var d = document.createElement("div"); d.className="di";
+    var d = document.createElement("div"); d.className="di"; d.style.cssText="padding:8px 10px";
     (function(nm, en){
-      d.innerHTML = esc(nm) + (en ? " <span style=\"font-size:10px;color:var(--gr)\">#"+esc(en)+"</span>" : ""); // V9
-      d.addEventListener("mousedown", function(){ addAusenciaConfirmed(nm, en); gEl("ausSearch").value=""; dr.classList.remove("on"); });
+      // V1_0_0_48: cada fila con 2 botones — ✓ Check-in (agrega como presente) y 🏁 Ausente.
+      var nameLine = document.createElement("div");
+      nameLine.innerHTML = esc(nm) + (en ? " <span style=\"font-size:10px;color:var(--gr)\">#"+esc(en)+"</span>" : ""); // V9
+      nameLine.style.cssText = "margin-bottom:6px;font-size:14px;font-weight:600";
+      var btnRow = document.createElement("div");
+      btnRow.style.cssText = "display:flex;gap:6px";
+      var ciBtn = document.createElement("button");
+      ciBtn.textContent = "✓ Check-in";
+      ciBtn.style.cssText = "flex:1;background:var(--g);color:#fff;border:none;border-radius:6px;padding:7px;font-family:'DM Sans',sans-serif;font-size:12px;font-weight:700;cursor:pointer;min-height:38px";
+      // mousedown (no click): el input tiene onblur=closeAusAC → click dispararía después de cerrar el dropdown
+      ciBtn.addEventListener("mousedown", function(ev){ ev.preventDefault(); ausCheckIn(nm, en); });
+      var auBtn = document.createElement("button");
+      auBtn.textContent = "🏁 Ausente";
+      auBtn.style.cssText = "flex:1;background:#ececec;color:#555;border:none;border-radius:6px;padding:7px;font-family:'DM Sans',sans-serif;font-size:12px;font-weight:700;cursor:pointer;min-height:38px";
+      auBtn.addEventListener("mousedown", function(ev){ ev.preventDefault(); addAusenciaConfirmed(nm, en); var s=gEl("ausSearch"); if(s)s.value=""; dr.classList.remove("on"); });
+      btnRow.appendChild(ciBtn); btnRow.appendChild(auBtn);
+      d.appendChild(nameLine); d.appendChild(btnRow);
     })(res[k].name, res[k].empNum||"");
     dr.appendChild(d);
   }
   dr.classList.add("on");
+}
+
+// V1_0_0_48: 4to modo de alta — Check-in desde la pestaña Check-in/Ausencias.
+// Reusa doAddConfirmed (mismo path que el QR). Fuerza _qrMode='trabajador' por si quedó un
+// modo stale (chofer/surquero) de un escaneo previo → evita asignar rol equivocado. El empNum
+// viene del candidato (ya resuelto por crew en getAusenciaCandidates) → agrega al worker CORRECTO.
+function ausCheckIn(nm, en){
+  if(nameInArr(workers, nm)){ toast("⚠️ "+nm+" ya está en la lista"); var _dr=gEl("ausDrop"); if(_dr)_dr.classList.remove("on"); return; }
+  _qrMode = 'trabajador';
+  doAddConfirmed(nm, en); // aplica check-in (si día iniciado) + toast + tarjeta + autoSave
+  var s = gEl("ausSearch"); if(s) s.value = "";
+  var dr = gEl("ausDrop"); if(dr) dr.classList.remove("on");
+  try { renderAusencias(); } catch(e){} // refresca "Trabajadores Activos Hoy" + candidatos
 }
 
 function closeAusAC(){ setTimeout(function(){ var dr=gEl("ausDrop"); if(dr)dr.classList.remove("on"); },200); }
