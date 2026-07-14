@@ -35,7 +35,7 @@
 </script>
 <script>
 // V20_21: check versión + ackedVersion para romper loop infinito cuando version.txt≠APP_VERSION
-window.APP_VERSION = 'V1_0_0_48';
+window.APP_VERSION = 'V1_0_0_50';
 (function(){
   // V20_77: AUTO-LIMPIEZA de _ackedVersion envenenado.
   // Bug detectado: surqueros tocaban "Actualizar ahora" pero el SW interceptaba el reload con HTML viejo.
@@ -512,6 +512,9 @@ html.login-locked{overflow:hidden!important;height:100%!important}
 .aus-chip.notrabajo{background:#fff8e1;color:#f39c12}
 .aus-arrow{font-size:13px;color:var(--gr);transition:transform .2s;flex-shrink:0}
 .aus-card.open .aus-arrow{transform:rotate(180deg)}
+/* V1_0_0_50: botón CHECK IN dentro de cada tarjeta de ausencia (4to modo de alta) */
+.btn-checkin{background:var(--g);color:#fff;border:none;border-radius:7px;padding:6px 10px;font-family:'DM Sans',sans-serif;font-weight:800;font-size:12px;letter-spacing:.3px;cursor:pointer;flex-shrink:0;white-space:nowrap;min-height:34px;box-shadow:0 1px 2px rgba(0,0,0,.12)}
+.btn-checkin:active{transform:scale(.96)}
 .aus-opts{display:none;flex-direction:column;gap:0;border-top:1px solid var(--bd)}
 .aus-card.open .aus-opts{display:flex}
 .aus-opt{display:flex;align-items:center;gap:10px;padding:10px 13px;cursor:pointer;background:#fff;border-bottom:1px solid var(--bd);-webkit-tap-highlight-color:transparent}
@@ -2075,18 +2078,8 @@ body.readOnly [onclick*="openNewDay"]{display:none !important}
       Esto se exige para cumplir con la <b>garantía 3/4</b> del contrato H-2A.
     </div>
   </div>
-  <!-- Search bar same style as workers tab -->
-  <div style="position:fixed;bottom:70px;left:0;right:0;z-index:150;background:#fff;border-top:1px solid var(--bd);padding:8px 12px 4px;display:none" id="ausBar">
-    <div style="position:relative">
-      <div class="drop on" id="ausDrop" style="display:none;position:absolute;bottom:100%;left:0;right:0;background:#fff;border:1.5px solid var(--g);border-bottom:none;border-radius:8px 8px 0 0;z-index:300;max-height:190px;overflow-y:auto"></div>
-      <div style="display:flex;gap:8px;align-items:center">
-        <input type="text" id="ausSearch" placeholder="🔍 Buscar ausente..." autocomplete="off"
-          style="flex:1;padding:11px 12px;border:1.5px solid var(--bd);border-radius:8px;font-family:'DM Sans',sans-serif;font-size:15px"
-          oninput="onAusAC(this.value)" onblur="closeAusAC()">
-        <button onclick="addAusenciaFromBar()" style="background:var(--g);color:#fff;border:none;border-radius:8px;padding:11px 15px;font-family:'DM Sans',sans-serif;font-size:14px;font-weight:700;cursor:pointer;flex-shrink:0">+ Agregar</button>
-      </div>
-    </div>
-  </div>
+  <!-- V1_0_0_50: barra "+ Agregar / Buscar ausente" ELIMINADA a pedido de Serafín.
+       El alta a activos ahora es el botón "✓ CHECK IN" en cada tarjeta (renderAusencias). -->
 </div>
 
 <div class="pg" id="p5">
@@ -14660,13 +14653,24 @@ function onAusAC(v){
 // Reusa doAddConfirmed (mismo path que el QR). Fuerza _qrMode='trabajador' por si quedó un
 // modo stale (chofer/surquero) de un escaneo previo → evita asignar rol equivocado. El empNum
 // viene del candidato (ya resuelto por crew en getAusenciaCandidates) → agrega al worker CORRECTO.
+// V1_0_0_50: check-in desde el botón de la tarjeta de ausencia (por índice, evita escapar comillas del nombre).
+function ausCheckInIdx(i){
+  var a = (ausencias && ausencias[i]) ? ausencias[i] : null;
+  if(!a) return;
+  ausCheckIn(a.name, a.empNum || "");
+}
 function ausCheckIn(nm, en){
-  if(nameInArr(workers, nm)){ toast("⚠️ "+nm+" ya está en la lista"); var _dr=gEl("ausDrop"); if(_dr)_dr.classList.remove("on"); return; }
+  if(nameInArr(workers, nm)){ toast("⚠️ "+nm+" ya está en la lista"); return; }
   _qrMode = 'trabajador';
   doAddConfirmed(nm, en); // aplica check-in (si día iniciado) + toast + tarjeta + autoSave
-  var s = gEl("ausSearch"); if(s) s.value = "";
-  var dr = gEl("ausDrop"); if(dr) dr.classList.remove("on");
-  try { renderAusencias(); } catch(e){} // refresca "Trabajadores Activos Hoy" + candidatos
+  // V1_0_0_50: quitar a la persona de la lista de ausencias (ya es activo) — syncAusencias filtra
+  // los que están en workers[]. Sin esto aparecería en ambos lados (activos Y la grid de ausencias).
+  try { syncAusencias(); } catch(e){}
+  // V1_0_0_49 FIX: refrescar "Trabajadores Activos Hoy" DIRECTAMENTE. renderAusencias() se sale
+  // temprano cuando no hay ausencias → si hacías check-in sin ausencias, la lista de activos NO se
+  // actualizaba y parecía que "no se agregó nada" (sí estaba en workers[]).
+  try { renderActiveWorkersInAbsences(); } catch(e){} // activos SIEMPRE se refresca
+  try { renderAusencias(); } catch(e){} // re-pinta la grid sin la persona que ya entró
 }
 
 function closeAusAC(){ setTimeout(function(){ var dr=gEl("ausDrop"); if(dr)dr.classList.remove("on"); },200); }
@@ -14735,6 +14739,9 @@ function renderAusencias(){
     card.innerHTML = "<div class=\"aus-header\" onclick=\"toggleAusCard(this)\">"
       +"<span class=\"aus-name\">👤 "+esc(a.name)+"</span>"
       +(a.empNum ? "<span class=\"aus-empnum\">#"+esc(a.empNum)+"</span>" : "")
+      // V1_0_0_50: botón CHECK IN — sube a la persona a "Trabajadores Activos Hoy".
+      // event.stopPropagation para NO abrir el acordeón de motivos del header.
+      +"<button class=\"btn-checkin\" onclick=\"event.stopPropagation();ausCheckInIdx("+i+")\">✓ CHECK IN</button>"
       +chipHtml
       +"<span class=\"aus-arrow\">▼</span>"
       +"</div>"
