@@ -35,7 +35,7 @@
 </script>
 <script>
 // V20_21: check versión + ackedVersion para romper loop infinito cuando version.txt≠APP_VERSION
-window.APP_VERSION = 'V1_0_0_50';
+window.APP_VERSION = 'V1_0_0_51';
 (function(){
   // V20_77: AUTO-LIMPIEZA de _ackedVersion envenenado.
   // Bug detectado: surqueros tocaban "Actualizar ahora" pero el SW interceptaba el reload con HTML viejo.
@@ -501,8 +501,11 @@ html.login-locked{overflow:hidden!important;height:100%!important}
 .aus-card{background:#fff;border:1.5px solid var(--bd);border-radius:12px;margin-bottom:8px;overflow:hidden;transition:border-color .2s}
 .aus-card.open{border-color:var(--g)}
 .aus-card.has-motivo{border-color:var(--bd)}
-.aus-header{display:flex;align-items:center;padding:11px 13px;cursor:pointer;gap:8px;-webkit-tap-highlight-color:transparent;user-select:none}
-.aus-name{font-weight:700;font-size:14px;color:var(--dk);flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* V1_0_0_51: header en 2 renglones — arriba el nombre, abajo CHECK IN + motivo (el nombre ya se ve) */
+.aus-header{display:flex;flex-direction:column;align-items:stretch;padding:9px 11px;cursor:pointer;gap:6px;-webkit-tap-highlight-color:transparent;user-select:none}
+.aus-toprow{display:flex;align-items:center;gap:6px;min-width:0}
+.aus-botrow{display:flex;align-items:center;gap:6px}
+.aus-name{font-weight:700;font-size:13px;color:var(--dk);flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .aus-empnum{font-size:10px;font-weight:600;color:var(--gr);background:var(--gp);border-radius:5px;padding:2px 7px;flex-shrink:0}
 .aus-chip{font-size:11px;font-weight:700;border-radius:20px;padding:3px 9px;flex-shrink:0;white-space:nowrap}
 .aus-chip.none{background:var(--rp);color:var(--r)}
@@ -510,10 +513,11 @@ html.login-locked{overflow:hidden!important;height:100%!important}
 .aus-chip.enfermedad{background:var(--bp);color:var(--b)}
 .aus-chip.injustificada{background:var(--rp);color:var(--r)}
 .aus-chip.notrabajo{background:#fff8e1;color:#f39c12}
-.aus-arrow{font-size:13px;color:var(--gr);transition:transform .2s;flex-shrink:0}
+/* V1_0_0_51: la flecha va a la derecha del renglón de abajo */
+.aus-arrow{font-size:13px;color:var(--gr);transition:transform .2s;flex-shrink:0;margin-left:auto}
 .aus-card.open .aus-arrow{transform:rotate(180deg)}
-/* V1_0_0_50: botón CHECK IN dentro de cada tarjeta de ausencia (4to modo de alta) */
-.btn-checkin{background:var(--g);color:#fff;border:none;border-radius:7px;padding:6px 10px;font-family:'DM Sans',sans-serif;font-weight:800;font-size:12px;letter-spacing:.3px;cursor:pointer;flex-shrink:0;white-space:nowrap;min-height:34px;box-shadow:0 1px 2px rgba(0,0,0,.12)}
+/* V1_0_0_50: botón CHECK IN dentro de cada tarjeta de ausencia (4to modo de alta). V51: más chico */
+.btn-checkin{background:var(--g);color:#fff;border:none;border-radius:7px;padding:5px 10px;font-family:'DM Sans',sans-serif;font-weight:800;font-size:11px;letter-spacing:.3px;cursor:pointer;flex-shrink:0;white-space:nowrap;min-height:32px;box-shadow:0 1px 2px rgba(0,0,0,.12)}
 .btn-checkin:active{transform:scale(.96)}
 .aus-opts{display:none;flex-direction:column;gap:0;border-top:1px solid var(--bd)}
 .aus-card.open .aus-opts{display:flex}
@@ -14736,14 +14740,18 @@ function renderAusencias(){
         +"<span class=\"aus-lbl\">"+m.label+"</span>"
         +"</div>";
     }
+    // V1_0_0_51: header en 2 renglones — arriba nombre+#, abajo CHECK IN + motivo + flecha.
+    // event.stopPropagation en el botón para NO abrir el acordeón de motivos del header.
     card.innerHTML = "<div class=\"aus-header\" onclick=\"toggleAusCard(this)\">"
-      +"<span class=\"aus-name\">👤 "+esc(a.name)+"</span>"
-      +(a.empNum ? "<span class=\"aus-empnum\">#"+esc(a.empNum)+"</span>" : "")
-      // V1_0_0_50: botón CHECK IN — sube a la persona a "Trabajadores Activos Hoy".
-      // event.stopPropagation para NO abrir el acordeón de motivos del header.
-      +"<button class=\"btn-checkin\" onclick=\"event.stopPropagation();ausCheckInIdx("+i+")\">✓ CHECK IN</button>"
-      +chipHtml
-      +"<span class=\"aus-arrow\">▼</span>"
+      +"<div class=\"aus-toprow\">"
+        +"<span class=\"aus-name\">👤 "+esc(a.name)+"</span>"
+        +(a.empNum ? "<span class=\"aus-empnum\">#"+esc(a.empNum)+"</span>" : "")
+      +"</div>"
+      +"<div class=\"aus-botrow\">"
+        +"<button class=\"btn-checkin\" onclick=\"event.stopPropagation();ausCheckInIdx("+i+")\">✓ CHECK IN</button>"
+        +chipHtml
+        +"<span class=\"aus-arrow\">▼</span>"
+      +"</div>"
       +"</div>"
       +"<div class=\"aus-opts\">"+optsHtml+"</div>";
     list.appendChild(card);
