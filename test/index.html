@@ -35,7 +35,7 @@
 </script>
 <script>
 // V20_21: check versión + ackedVersion para romper loop infinito cuando version.txt≠APP_VERSION
-window.APP_VERSION = 'V1_0_0_56';
+window.APP_VERSION = 'V1_0_0_57';
 (function(){
   // V20_77: AUTO-LIMPIEZA de _ackedVersion envenenado.
   // Bug detectado: surqueros tocaban "Actualizar ahora" pero el SW interceptaba el reload con HTML viejo.
@@ -5612,6 +5612,10 @@ function _enterReadOnly(payload){
         showTime: true,
         finca: pa.finca||'',
         shifts: (pa.hEnt||pa.hSal) ? [{ini:pa.hEnt||'', fin:pa.hSal||''}] : [],
+        // V1_0_0_57: hidratar el LONCHE por actividad desde el backend (cols L.Inicio/L.Fin del FIELD_DROP).
+        // Sin esto, al cargar el día `a.lonches` quedaba vacío → totalShiftHours no descontaba el lonche →
+        // las HORAS salían completas (ej. Luis Javier Jarquin no se le quitaba el lonche). Reportado 2026-07-14.
+        lonches: (pa.hLIni && pa.hLFin) ? [{ini: pa.hLIni, fin: pa.hLFin}] : [],
         bloques: _bloquesRO, // V20_76: bloques reconstruidos para VarDoor (null si no aplica)
         pay: payEst,
         // V20_180: preservar _actEs y _variable cuando admin carga día desde Sheets.
@@ -5689,7 +5693,8 @@ function _enterReadOnly(payload){
     }).filter(function(x){ return x!=null; });
     // V20_57: detectar tipo y mapear qty al campo correcto
     var _qtyT = parseFloat(pg.qtyTotal || pg.qty || 0) || 0;  // backend v5.16+ manda qtyTotal sumado; fallback a qty (v5.15)
-    var _vars = { ini: pg.hEnt||'', fin: pg.hSal||'', finca: pg.finca||'', qtyTotal: _qtyT };
+    var _vars = { ini: pg.hEnt||'', fin: pg.hSal||'', finca: pg.finca||'', qtyTotal: _qtyT,
+      lonches: (pg.hLIni && pg.hLFin) ? [{ini: pg.hLIni, fin: pg.hLFin}] : [] }; // V1_0_0_57: hidratar lonche grupal (Hora)
     var _grpAct = (gaiIdx>=0) ? GRUPAL_ACTS[gaiIdx] : null;
     var _ct = _grpAct ? grpCalcType(_grpAct) : '';
     if(_ct==='cajas'){
