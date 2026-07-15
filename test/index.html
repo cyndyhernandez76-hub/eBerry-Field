@@ -35,7 +35,7 @@
 </script>
 <script>
 // V20_21: check versión + ackedVersion para romper loop infinito cuando version.txt≠APP_VERSION
-window.APP_VERSION = 'V1_0_0_53';
+window.APP_VERSION = 'V1_0_0_54';
 (function(){
   // V20_77: AUTO-LIMPIEZA de _ackedVersion envenenado.
   // Bug detectado: surqueros tocaban "Actualizar ahora" pero el SW interceptaba el reload con HTML viejo.
@@ -5511,11 +5511,18 @@ function _enterReadOnly(payload){
         return String(s||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').trim();
       };
       var _paActNorm = _normActName(pa.actEs);
-      var aiIdx=-1;
+      var aiIdx=-1, _aiFb=-1;
       for(var i=0;i<ACTS.length;i++){
-        // V20_181: match tolerante (antes era === estricto)
-        if(_normActName(ACTS[i].es)===_paActNorm){ aiIdx=i; break; }
+        // V20_181: match tolerante (antes era === estricto).
+        // V1_0_0_54: con 2 homónimos ("Cosecha de elote" uno $1 y otro con precio en blanco),
+        // preferir el que SÍ tiene precio (>0). Sin esto aiIdx caía en el de p=0 → cualquier
+        // recálculo (recalc usa ACTS[ai].p) ponía el PAGO en $0 aunque el precio mostrado fuera $1.
+        if(_normActName(ACTS[i].es)===_paActNorm){
+          if(_aiFb<0) _aiFb=i;
+          if((parseFloat(ACTS[i].p)||0)>0){ aiIdx=i; break; }
+        }
       }
+      if(aiIdx<0) aiIdx=_aiFb;
       var qty = (typeof pa.qty==='number') ? pa.qty : parseFloat(pa.qty)||0;
       var price = parseFloat(pa.unitPrice)||0;
       // V1_0_0_17 FIX: si el backend NO mandó unitPrice (pa.unitPrice vacío/0) → fallback al precio
@@ -5525,11 +5532,30 @@ function _enterReadOnly(payload){
       // fallaba porque su pago usa getHRate (contractRate del worker, sí hidratado). Reportado por
       // Serafín 2026-06-15 (día 2026-06-14, Cosecha de tomate bola, admin en modo lectura).
       if(!price){
-        if(aiIdx>=0 && ACTS[aiIdx]) price = parseFloat(ACTS[aiIdx].p)||0;
-        if(!price){
-          for(var _aaiP=0; _aaiP<ALL_ACTS.length; _aaiP++){
-            if(_normActName(ALL_ACTS[_aaiP].es) === _paActNorm){ price = parseFloat(ALL_ACTS[_aaiP].p)||0; break; }
+        // V1_0_0_54: recuperación ROBUSTA del precio de Pieces en modo lectura. El backend manda
+        // unitPrice=0 para Pieces → hay que sacarlo del catálogo. Reportado por Serafín 2026-07-14:
+        // "Cosecha" (Pieces) cargaba con precio $0 aunque el task es $1. Dos mejoras vs antes:
+        //  (a) matchear por nombre ES **o** EN (por si FIELD_DROP guardó el inglés o el catálogo difiere);
+        //  (b) preferir un match con precio NO-CERO — con 2 homónimos ("Cosecha de elote" $1 y otro con
+        //      precio en blanco) el primer match podía ser el de precio 0 → precio $0 en el resumen/PDF.
+        var _paEnNorm = _normActName(pa.actEn);
+        var _findActPrice = function(pool){
+          var _fb = 0;
+          for(var _z=0; _z<pool.length; _z++){
+            if(!pool[_z]) continue;
+            var _es = _normActName(pool[_z].es), _en = _normActName(pool[_z].en);
+            if(_es===_paActNorm || (_paEnNorm && _en===_paEnNorm)){
+              var _pz = parseFloat(pool[_z].p)||0;
+              if(_pz>0) return _pz;        // preferir el que SÍ tiene precio
+              if(!_fb) _fb = _pz;
+            }
           }
+          return _fb;
+        };
+        price = _findActPrice(ACTS);
+        if(!price) price = _findActPrice(ALL_ACTS);
+        if(!price && qty>0){
+          console.warn('[V1_0_0_54] Pieces sin precio en modo lectura — no se halló en catálogo. actEs="'+(pa.actEs||'')+'" actEn="'+(pa.actEn||'')+'" qty='+qty);
         }
       }
       // V20_37 FIX: fallback robusto — 0 es valor válido, no caer a (qty*price) si payEst fue explícitamente 0
