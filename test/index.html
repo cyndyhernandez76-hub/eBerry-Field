@@ -35,7 +35,7 @@
 </script>
 <script>
 // V20_21: check versión + ackedVersion para romper loop infinito cuando version.txt≠APP_VERSION
-window.APP_VERSION = 'V1_0_0_55';
+window.APP_VERSION = 'V1_0_0_56';
 (function(){
   // V20_77: AUTO-LIMPIEZA de _ackedVersion envenenado.
   // Bug detectado: surqueros tocaban "Actualizar ahora" pero el SW interceptaba el reload con HTML viejo.
@@ -7827,6 +7827,12 @@ function getHRate(w, act){
 function recalc(wi,ai){
   var w=getW(wi); if(!w||!w.acts[ai])return;
   var a=w.acts[ai]; var pay=0;
+  // V1_0_0_56: en MODO LECTURA no recalcular acts congelados. El pago/precio ya vienen del payload
+  // (frozen). Reportado por Serafín 2026-07-14: al cargar día, la Cosecha (Pieces) mostraba precio $1
+  // (recuperado) pero PAGO $0. Causa: en el catálogo del rancho (ACTS) la "Cosecha de elote" tiene el
+  // precio EN BLANCO ($0) — el $1 vino de ALL_ACTS. recalc usa ACTS[a.ai].p=0 → pay = qty×0 = 0,
+  // pisando el pago congelado bueno. Saltar recalc en readonly preserva a.pay = payEst hidratado.
+  if(typeof _readOnlyMode !== 'undefined' && _readOnlyMode && a && a._frozen) return;
   // V20_151 FIX 2: resolver act preferiendo metadata preservada antes que ACTS[a.ai].
   // Si MASTER se reordenó entre asignación y recalc, ai puede apuntar a otra actividad.
   var act = (a.ai != null && ACTS[a.ai]) ? ACTS[a.ai] : null;
