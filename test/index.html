@@ -35,7 +35,7 @@
 </script>
 <script>
 // V20_21: check versión + ackedVersion para romper loop infinito cuando version.txt≠APP_VERSION
-window.APP_VERSION = 'V1_0_0_57';
+window.APP_VERSION = 'V1_0_0_58';
 (function(){
   // V20_77: AUTO-LIMPIEZA de _ackedVersion envenenado.
   // Bug detectado: surqueros tocaban "Actualizar ahora" pero el SW interceptaba el reload con HTML viejo.
@@ -12121,7 +12121,11 @@ function buildPDFWindow(vals, wks, ep, hp, cp, ausArr, grpActsArr){
   }
 
   // V20_37 FIX XSS: esc() en todos los valores inyectados al HTML del PDF
-  var html='<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="color-scheme" content="only light"><title>Payroll '+esc(vals.rancho||'')+' '+esc(vals.fecha||'')+'</title>'
+  // V1_0_0_58: incluir el nombre del surquero en el título del PDF → nombre del archivo:
+  // "Payroll {rancho} {surquero} {fecha}" (ej. "Payroll Pitts Creek Jorge Serafin Perez 2026-07-12").
+  // Pedido de Serafín 2026-07-14. Solo se agrega si hay surquero (evita doble espacio).
+  var _fnSurq = (vals.surquero||'').trim();
+  var html='<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="color-scheme" content="only light"><title>Payroll '+esc(vals.rancho||'')+(_fnSurq?' '+esc(_fnSurq):'')+' '+esc(vals.fecha||'')+'</title>'
     +'<style>'
     +':root{color-scheme:only light}'
     +'html,body{background:#fff !important;color:#000 !important}'
@@ -12324,8 +12328,8 @@ function buildPDFWindow(vals, wks, ep, hp, cp, ausArr, grpActsArr){
     +'<div class="ft">'+esc(vals.rancho||'')+' &nbsp;|&nbsp; '+esc(vals.fecha||'')+' &nbsp;|&nbsp; '+wks.length+' trabajadores &nbsp;|&nbsp; Bus: #'+esc(String(vals.numBus||''))+' &nbsp;|&nbsp; Surquero: '+(currentUser&&currentUser.isAdmin?esc(ADMIN_USER_NAME):esc(vals.surquero||''))+' &nbsp;|&nbsp; Generado: '+new Date().toLocaleString()+' &nbsp;|&nbsp; App: '+(window.APP_VERSION||'?')+(_readOnlyMode?' &nbsp;|&nbsp; 📖 REGENERADO DESDE SHEETS':'')+'</div>'
     +'<div class="nopr" style="text-align:center;margin-top:16px">'
     +'<button onclick="window.print()" style="background:#1a7a4a;color:#fff;border:none;padding:12px 24px;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;margin:4px">🖨️ Imprimir / Guardar PDF</button>'
-    +'<button onclick="_saveImg(\'imgPage1\',\''+('Nomina '+(vals.rancho||'')+' '+(vals.fecha||'')).replace(/[^a-zA-Z0-9 _-]/g,'')+'\')" style="background:#1a5a9a;color:#fff;border:none;padding:12px 24px;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;margin:4px">📷 Imagen Nómina</button>'
-    +'<button id="btnImgAnalisis" onclick="_saveImg(\'imgPage2\',\''+('Analisis '+(vals.rancho||'')+' '+(vals.fecha||'')).replace(/[^a-zA-Z0-9 _-]/g,'')+'\')" style="background:#7a3a9a;color:#fff;border:none;padding:12px 24px;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;margin:4px">📷 Imagen Análisis</button>'
+    +'<button onclick="_saveImg(\'imgPage1\',\''+('Nomina '+(vals.rancho||'')+(_fnSurq?' '+_fnSurq:'')+' '+(vals.fecha||'')).replace(/[^a-zA-Z0-9 _-]/g,'')+'\')" style="background:#1a5a9a;color:#fff;border:none;padding:12px 24px;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;margin:4px">📷 Imagen Nómina</button>'
+    +'<button id="btnImgAnalisis" onclick="_saveImg(\'imgPage2\',\''+('Analisis '+(vals.rancho||'')+(_fnSurq?' '+_fnSurq:'')+' '+(vals.fecha||'')).replace(/[^a-zA-Z0-9 _-]/g,'')+'\')" style="background:#7a3a9a;color:#fff;border:none;padding:12px 24px;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;margin:4px">📷 Imagen Análisis</button>'
     +'<button onclick="window.close()" style="background:#eee;color:#555;border:none;padding:12px 20px;border-radius:8px;font-size:14px;cursor:pointer;margin:4px">Cerrar</button>'
     +'</div>'
     // V1_0_0_29: script de exportacion a imagen (PNG escala 2 = nitido, NO captura de pantalla). El tag de cierre va dividido en dos para no romper el parser del HTML padre.
