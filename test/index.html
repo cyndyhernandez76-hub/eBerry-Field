@@ -35,7 +35,7 @@
 </script>
 <script>
 // V20_21: check versión + ackedVersion para romper loop infinito cuando version.txt≠APP_VERSION
-window.APP_VERSION = 'V1_0_0_59';
+window.APP_VERSION = 'V1_0_0_60';
 (function(){
   // V20_77: AUTO-LIMPIEZA de _ackedVersion envenenado.
   // Bug detectado: surqueros tocaban "Actualizar ahora" pero el SW interceptaba el reload con HTML viejo.
@@ -4893,10 +4893,36 @@ function onGrpMotorInput(inp){
   var g = grpActs[gi]; if(!g) return;
   if(!g.vars) g.vars = {};
   if(!g.vars.inputs) g.vars.inputs = {};
+  var _prevGrpVal = (g.vars.inputs[col]!=null) ? g.vars.inputs[col] : null; // V1_0_0_60: para revertir
   var v = parseFloat(inp.value);
   g.vars.inputs[col] = isNaN(v) ? null : v;
   try { calcGrpAct(gi); } catch(e){}
   try { autoSave(); } catch(e){}
+  // V1_0_0_60: candado de sensatez de PIEZAS (grupal — por persona = total ÷ participantes)
+  try {
+    var _gAct = (typeof GRUPAL_ACTS!=='undefined' && GRUPAL_ACTS[g.gai]) ? GRUPAL_ACTS[g.gai] : null;
+    var _ptG = (_gAct&&_gAct.payType)||g._payType||'';
+    var _varG = (_gAct&&_gAct.variable)||'';
+    if(_gAct && _esPiezasActivity(_ptG, _varG)){
+      var _npG = (g.participantes||[]).length;
+      var _hoursG = (typeof nh==='function') ? nh(g.vars.ini||'', g.vars.fin||'', g.vars.lonches) : 0;
+      var _perPersG = (typeof computeQty==='function' && _npG>0) ? computeQty(_gAct, _grpReadMotorInputs(g), _npG) : 0;
+      var _priceG = parseFloat(g.vars.precioC)||parseFloat(_gAct.p)||0;
+      var _hrRefG = 0; // referencia = mayor contractRate entre participantes (menos falsas alarmas)
+      for(var _pi=0;_pi<(g.participantes||[]).length;_pi++){ var _wp=getW(g.participantes[_pi]); var _cr=_wp?(parseFloat(_wp.contractRate)||0):0; if(_cr>_hrRefG) _hrRefG=_cr; }
+      var _sanG = _piezasSanity(_perPersG, _priceG, _hrRefG, _hoursG);
+      if(!_sanG.ok){
+        _sanG.quien = 'cada persona ('+_npG+')';
+        _showPiezasAlert(_sanG, null, function(){
+          g.vars.inputs[col] = _prevGrpVal;
+          try{ inp.value = (_prevGrpVal==null?'':_prevGrpVal); }catch(e){}
+          try{ calcGrpAct(gi); }catch(e){}
+          try{ autoSave(); }catch(e){}
+          try{ if(typeof renderGrpActs==='function') renderGrpActs(); }catch(e){}
+        });
+      }
+    }
+  } catch(e){ console.warn('[V60 piezas sanity grp]', e); }
 }
 
 // validateWorkerHasHorario: TODA actividad debe tener ENT/SAL (regla V20_27)
@@ -9630,11 +9656,81 @@ function toggleAccAct(el){
   if(arrow) arrow.textContent = p.classList.contains('open') ? '▼' : '▶';
 }
 
+// ── V1_0_0_60: CANDADO DE SENSATEZ para cantidades de PIEZAS ──────────────────
+// Pedido de Serafín 2026-07-16: alguien registró 1565 piezas en 2h. Si la cantidad supera el
+// DOBLE del ritmo esperado (jornal por hora ÷ precio de pieza), pedir el PIN del surquero para
+// autorizar. Solo Pieces (excluye VarDoor=fórmula, Hours, cajas). Aplica en individual/grupal/semanal.
+function _esPiezasActivity(payType, variable){
+  var v = (variable||'').toString().toLowerCase().trim();
+  if(v === 'vardoor') return false; // puertas = fórmula pies/acres, no es cuenta de piezas a mano
+  return (payType||'').toString().toLowerCase().trim() === 'pieces';
+}
+function _piezasSanity(pieces, price, hourlyRef, hours){
+  pieces = parseFloat(pieces)||0; price = parseFloat(price)||0;
+  hourlyRef = parseFloat(hourlyRef)||0; hours = parseFloat(hours)||0;
+  if(pieces<=0 || price<=0 || hourlyRef<=0 || hours<=0) return {ok:true}; // sin datos suficientes → no bloquear
+  var maxPerHour = 2*(hourlyRef/price);            // el DOBLE del ritmo para empatar el jornal
+  var maxPieces = maxPerHour*hours;
+  if(pieces > maxPieces){
+    return {ok:false, pieces:pieces, hours:hours, maxPieces:maxPieces, maxPerHour:maxPerHour, impliedHours: pieces/maxPerHour};
+  }
+  return {ok:true};
+}
+function _validaSurqueroPin(pin){
+  pin = String(pin||'').trim();
+  if(!pin || !currentUser) return false;
+  return String(currentUser.pin||'').trim() === pin; // PIN plano del surquero/admin logueado (L2647)
+}
+// Modal genérico. info={pieces,hours,maxPieces,impliedHours,quien}. Callbacks: onConfirm (autorizado con PIN), onReview.
+function _showPiezasAlert(info, onConfirm, onReview){
+  var old = document.getElementById('piezasAlertOv'); if(old && old.parentNode) old.parentNode.removeChild(old);
+  var ov = document.createElement('div');
+  ov.id = 'piezasAlertOv';
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:99999;display:flex;align-items:center;justify-content:center;padding:16px';
+  var card = document.createElement('div');
+  card.style.cssText = 'background:#fff;border-radius:16px;max-width:420px;width:100%;padding:22px;box-shadow:0 20px 60px rgba(0,0,0,.4);font-family:\'DM Sans\',sans-serif';
+  var _q = info.quien ? (' de <b>'+esc(info.quien)+'</b>') : '';
+  card.innerHTML =
+     '<div style="font-size:38px;text-align:center;line-height:1">😱</div>'
+    +'<div style="font-family:\'Bebas Neue\',sans-serif;font-size:24px;letter-spacing:.5px;color:#e05353;text-align:center;margin:8px 0 4px">Cantidad fuera de rango</div>'
+    +'<div style="font-size:14px;color:#1c2a3a;line-height:1.55;margin:10px 0">Registraste <b>'+smartNum(info.pieces)+' piezas</b>'+_q+' para un turno de <b>'+smartNum(info.hours)+' h</b>. Al <b>doble</b> del ritmo esperado, esa cantidad equivale a haber trabajado:</div>'
+    +'<div style="background:#fff4f4;border:1.5px solid #f3caca;border-radius:10px;padding:11px 13px;margin:12px 0;font-size:13px;color:#7a2e2e;line-height:1.5">'
+      +'<span style="font-size:20px;font-weight:900;color:#e05353">≈ '+smartNum(info.impliedHours)+' horas</span><br>'
+      +'Máximo razonable para '+smartNum(info.hours)+' h: <b>'+smartNum(info.maxPieces)+' piezas</b>'
+    +'</div>'
+    +'<div style="font-size:14px;font-weight:700;color:#1c2a3a;margin:8px 0">¿Seguro que deseas registrar esta cantidad?</div>'
+    +'<div style="display:flex;flex-direction:column;gap:9px;margin-top:14px">'
+      +'<button id="_paOk" style="background:#1f9d55;color:#fff;border:none;border-radius:10px;padding:13px;font-family:\'DM Sans\',sans-serif;font-size:15px;font-weight:800;cursor:pointer;min-height:48px">✅ Sí, la cantidad es correcta</button>'
+      +'<button id="_paRev" style="background:#eef1f6;color:#1c2a3a;border:none;border-radius:10px;padding:13px;font-family:\'DM Sans\',sans-serif;font-size:15px;font-weight:800;cursor:pointer;min-height:48px">🔎 Revisar / corregir cantidad</button>'
+    +'</div>'
+    +'<div id="_paPin" style="display:none;margin-top:12px;border-top:1px dashed #e2e5ea;padding-top:12px">'
+      +'<label style="font-size:12px;font-weight:700;color:#8a94a6;display:block;margin-bottom:5px">PIN del surquero activo'+(currentUser&&currentUser.name?(' ('+esc(currentUser.name.split(' ')[0])+')'):'')+'</label>'
+      +'<input id="_paPinInp" type="password" inputmode="numeric" maxlength="8" placeholder="••••" style="width:100%;padding:12px;border:1.5px solid #e2e5ea;border-radius:8px;font-size:18px;text-align:center;letter-spacing:6px">'
+      +'<div id="_paPinErr" style="display:none;color:#e05353;font-size:12px;text-align:center;margin-top:6px;font-weight:700">PIN incorrecto</div>'
+    +'</div>';
+  ov.appendChild(card); document.body.appendChild(ov);
+  function _close(){ if(ov.parentNode) ov.parentNode.removeChild(ov); }
+  var okBtn = card.querySelector('#_paOk');
+  var revBtn = card.querySelector('#_paRev');
+  var pinWrap = card.querySelector('#_paPin');
+  var pinInp = card.querySelector('#_paPinInp');
+  var pinErr = card.querySelector('#_paPinErr');
+  var _pinMode = false;
+  okBtn.addEventListener('click', function(){
+    if(!_pinMode){ _pinMode = true; pinWrap.style.display='block'; okBtn.textContent='🔒 Confirmar con PIN'; setTimeout(function(){ try{ pinInp.focus(); }catch(e){} },60); return; }
+    if(_validaSurqueroPin(pinInp.value)){ _close(); try{ if(typeof onConfirm==='function') onConfirm(); }catch(e){ console.warn(e); } }
+    else { pinErr.style.display='block'; pinInp.value=''; try{ pinInp.focus(); }catch(e){} }
+  });
+  if(pinInp) pinInp.addEventListener('keydown', function(e){ if(e.key==='Enter'){ okBtn.click(); } });
+  revBtn.addEventListener('click', function(){ _close(); try{ if(typeof onReview==='function') onReview(); }catch(e){ console.warn(e); } });
+}
+
 function onActQtyChange(wid_, actIdx, val, inpEl){
   if(_readOnlyMode){ toast && toast('🔒 Modo lectura'); return; }
   var w = getW(wid_); if(!w) return;
   if(!w.acts || !w.acts[actIdx]) return;
   var a = w.acts[actIdx];
+  var _prevQty = parseFloat(a.qty)||0; // V1_0_0_60: valor previo para revertir si el surquero elige "Revisar"
   var qty = parseFloat(val) || 0;
   a.qty = qty;
   // V20_134_b1: alimentar a.inputs[primer_col_motor] para que computePay del motor V20_27 funcione.
@@ -9668,6 +9764,28 @@ function onActQtyChange(wid_, actIdx, val, inpEl){
   } catch(e){ console.warn('[V20_134_b1] feed a.inputs fallo:', e); }
   try { recalc(wid_, actIdx); } catch(e){ console.warn('onActQtyChange recalc fallo:', e); }
   try { autoSave(); } catch(e){}
+  // V1_0_0_60: candado de sensatez de PIEZAS (individual)
+  try {
+    var _actSan = (typeof _resolveActStable==='function' ? _resolveActStable(a) : null) || ((a.ai!=null && typeof ACTS!=='undefined' && ACTS[a.ai])?ACTS[a.ai]:null);
+    var _ptSan = (_actSan&&_actSan.payType)||a._payType||a.payType||'';
+    var _varSan = (_actSan&&_actSan.variable)||a._variable||'';
+    if(_esPiezasActivity(_ptSan, _varSan)){
+      var _priceSan = (a._unitPrice!=null && a._unitPrice!=='') ? a._unitPrice : (_actSan?_actSan.p:0);
+      var _hoursSan = (typeof totalShiftHours==='function') ? totalShiftHours(a) : 0;
+      var _san = _piezasSanity(a.qty, _priceSan, w.contractRate, _hoursSan);
+      if(!_san.ok){
+        _san.quien = w.name;
+        var _fc = (typeof firstCol!=='undefined') ? firstCol : null;
+        _showPiezasAlert(_san, null, function(){
+          a.qty = _prevQty; if(a.inputs && _fc) a.inputs[_fc]=_prevQty;
+          try{ recalc(wid_, actIdx); }catch(e){}
+          try{ autoSave(); }catch(e){}
+          if(inpEl){ inpEl.value = (_prevQty||_prevQty===0)?_prevQty:''; try{ inpEl.focus(); if(inpEl.select) inpEl.select(); }catch(e){} }
+          try{ if(typeof renderWlistByActivity==='function') renderWlistByActivity(); }catch(e){}
+        });
+      }
+    }
+  } catch(e){ console.warn('[V60 piezas sanity ind]', e); }
   // Bug 6: NO llamar renderWlistByActivity() completo — destruía el DOM y cerraba todos los acordeones.
   // Actualizar quirúrgicamente solo el pago del worker afectado, manteniendo el acordeón abierto.
   // V20_163: ahora .pay-act muestra QTY con unidad; el $pay vive en .pay-aside.
@@ -17047,7 +17165,7 @@ function buildSemTable(){
       tbody += '<td class="sem-td"><div class="sem-time-cell">';
       // Para no-Hora: agregar input de cantidad arriba del reloj
       if(!isHrAct){
-        tbody += '<input type="text" inputmode="decimal" class="sem-input" id="'+cellId+'_qty" onchange="calcSemRow(\''+wk.id+'\')" placeholder="0" style="width:50px;margin-bottom:4px;border:1.5px solid #1a2b8c;font-weight:700">';
+        tbody += '<input type="text" inputmode="decimal" class="sem-input" id="'+cellId+'_qty" onchange="onSemQty(\''+wk.id+'\','+d+',this)" placeholder="0" style="width:50px;margin-bottom:4px;border:1.5px solid #1a2b8c;font-weight:700">';
       }
       // V18: placeholders en 12h AM/PM
       tbody += '<label>ENT</label><input type="text" inputmode="text" class="sem-input sem-time-txt" id="'+cellId+'_ini" placeholder="7:00 AM" onblur="normTimeInput(this);calcSemHours(\''+wk.id+'\','+d+');semAutoFill(\''+wk.id+'\','+d+',\'ini\')">';
@@ -17204,6 +17322,34 @@ function semAutoFill(wid, dayIdx, field){
     // Recalcular ese worker para ese día
     calcSemHours(String(workers[w].id), dayIdx);
   }
+}
+
+// V1_0_0_60: candado de sensatez de PIEZAS en el SEMANAL (por celda persona×día).
+function onSemQty(wid, day, inp){
+  if(typeof _readOnlyMode!=='undefined' && _readOnlyMode){ return; }
+  var cellId = 'sem_'+wid+'_d'+day;
+  var _prevQ = (inp && inp.dataset && inp.dataset.prev!=null && inp.dataset.prev!=='') ? inp.dataset.prev : '';
+  try {
+    var selAct = ALL_ACTS[parseInt(gVal('semActivity'))];
+    if(selAct && _esPiezasActivity(selAct.payType, selAct.variable)){
+      var _pieces = parseFloat(inp.value)||0;
+      var _hrsEl = gEl(cellId+'_hrs');
+      var _hours = parseFloat(_hrsEl?_hrsEl.textContent:'0')||0;
+      var _wp = getW(wid);
+      var _hrRef = _wp ? (parseFloat(_wp.contractRate)||0) : 0;
+      var _san = _piezasSanity(_pieces, selAct.p, _hrRef, _hours);
+      if(!_san.ok){
+        _san.quien = _wp ? _wp.name : '';
+        _showPiezasAlert(_san,
+          function(){ inp.dataset.prev = inp.value; calcSemRow(wid); },        // autorizado con PIN
+          function(){ inp.value = _prevQ; try{ inp.focus(); }catch(e){} calcSemRow(wid); } // revisar → revertir
+        );
+        return; // esperar la decisión antes de recalcular la fila
+      }
+    }
+  } catch(e){ console.warn('[V60 piezas sanity sem]', e); }
+  if(inp && inp.dataset) inp.dataset.prev = inp.value;
+  calcSemRow(wid);
 }
 
 function calcSemRow(wid){
