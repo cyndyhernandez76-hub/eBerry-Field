@@ -35,7 +35,7 @@
 </script>
 <script>
 // V20_21: check versión + ackedVersion para romper loop infinito cuando version.txt≠APP_VERSION
-window.APP_VERSION = 'V1_0_0_58';
+window.APP_VERSION = 'V1_0_0_59';
 (function(){
   // V20_77: AUTO-LIMPIEZA de _ackedVersion envenenado.
   // Bug detectado: surqueros tocaban "Actualizar ahora" pero el SW interceptaba el reload con HTML viejo.
@@ -17505,7 +17505,11 @@ function generateSemPDF(){
         ent: gVal(cellId+'_ini')||'',
         sal: gVal(cellId+'_fin')||'',
         lIni: gVal(cellId+'_li')||'',
-        lFin: gVal(cellId+'_lf')||''
+        lFin: gVal(cellId+'_lf')||'',
+        // V1_0_0_59: labor POR CELDA (persona×día). Antes el PDF/imagen solo mostraba la finca global
+        // de Parámetros; ahora lee la labor de cada celda (default = semFinca si no se cambió). El dato
+        // ya llegaba a FIELD_DROP pero no al PDF. Reportado por Serafín 2026-07-16.
+        labor: (gVal(cellId+'_labor')||gVal('semFinca')||'')
       });
     }
     workerData.push({wk:wk, days:days, scheds:scheds, total:rowTotal});
@@ -17521,7 +17525,9 @@ function generateSemPDF(){
       var wd = workerData[w];
       if(wd.days[d] === 0) continue;
       var sc = wd.scheds[d];
-      var key = sc.ent+'|'+sc.sal+'|'+sc.lIni+'|'+sc.lFin;
+      // V1_0_0_59: incluir la labor en la clave → cada columna tiene una labor consistente y correcta
+      // (si 2 personas tienen mismo horario pero distinta labor, salen en sub-columnas separadas).
+      var key = sc.ent+'|'+sc.sal+'|'+sc.lIni+'|'+sc.lFin+'|'+sc.labor;
       if(!groups[key]){
         groups[key] = {sched:sc, vals:{}, total:0};
         groupOrder.push(key);
@@ -17598,8 +17604,9 @@ function generateSemPDF(){
   html += '<tr style="background:#f5f8ff"><td style="'+metaEmpty+'"></td><td style="'+metaEmpty+'"></td>'
     +'<td style="'+metaLabel+';color:#000">Labor</td>';
   for(var c=0;c<dayCols.length;c++){
-    // V16-FIX: finca vacía → celda en blanco (no "G.L")
-    html += '<td style="'+metaStyle+';color:#3a7fd4;font-size:9px">'+(gVal('semFinca')||'')+'</td>';
+    // V1_0_0_59: mostrar la labor POR COLUMNA (de cada celda), no la finca global de Parámetros.
+    // V16-FIX: labor vacía → celda en blanco (no "G.L").
+    html += '<td style="'+metaStyle+';color:#3a7fd4;font-size:9px">'+esc(dayCols[c].sched.labor||'')+'</td>';
   }
   html += '<td style="'+metaEmpty+'"></td></tr>';
 
