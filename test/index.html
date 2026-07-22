@@ -35,7 +35,7 @@
 </script>
 <script>
 // V20_21: check versión + ackedVersion para romper loop infinito cuando version.txt≠APP_VERSION
-window.APP_VERSION = 'V1_0_0_60';
+window.APP_VERSION = 'V1_0_0_61';
 (function(){
   // V20_77: AUTO-LIMPIEZA de _ackedVersion envenenado.
   // Bug detectado: surqueros tocaban "Actualizar ahora" pero el SW interceptaba el reload con HTML viejo.
@@ -9669,10 +9669,19 @@ function _piezasSanity(pieces, price, hourlyRef, hours){
   pieces = parseFloat(pieces)||0; price = parseFloat(price)||0;
   hourlyRef = parseFloat(hourlyRef)||0; hours = parseFloat(hours)||0;
   if(pieces<=0 || price<=0 || hourlyRef<=0 || hours<=0) return {ok:true}; // sin datos suficientes → no bloquear
-  var maxPerHour = 2*(hourlyRef/price);            // el DOBLE del ritmo para empatar el jornal
+  var breakEven = hourlyRef/price;                 // piezas/hora para EMPATAR el jornal
+  var maxPerHour = 2*breakEven;                    // tope ALTO = el DOBLE del ritmo
   var maxPieces = maxPerHour*hours;
+  // CASO ALTO: cantidad absurdamente alta (ni Flash) → equivale a demasiadas horas
   if(pieces > maxPieces){
-    return {ok:false, pieces:pieces, hours:hours, maxPieces:maxPieces, maxPerHour:maxPerHour, impliedHours: pieces/maxPerHour};
+    return {ok:false, tipo:'alto', pieces:pieces, hours:hours, maxPieces:maxPieces, maxPerHour:maxPerHour, impliedHours: pieces/maxPerHour};
+  }
+  // CASO BAJO: las piezas valen MUCHO MENOS que el horario → make-up pay (paga el mínimo por horas no producidas).
+  // V1_0_0_61 (Serafín): alerta si la diferencia (horas del horario − horas que valen las piezas) es ≥ 1.5 h.
+  var impliedHours = pieces/breakEven;             // horas que "valen" las piezas al jornal (ej 30 pzs $1 / $12 = 2.5h)
+  var gap = hours - impliedHours;
+  if(gap >= 1.5){
+    return {ok:false, tipo:'bajo', pieces:pieces, hours:hours, impliedHours:impliedHours, gap:gap, expectedPieces: breakEven*hours};
   }
   return {ok:true};
 }
@@ -9690,15 +9699,30 @@ function _showPiezasAlert(info, onConfirm, onReview){
   var card = document.createElement('div');
   card.style.cssText = 'background:#fff;border-radius:16px;max-width:420px;width:100%;padding:22px;box-shadow:0 20px 60px rgba(0,0,0,.4);font-family:\'DM Sans\',sans-serif';
   var _q = info.quien ? (' de <b>'+esc(info.quien)+'</b>') : '';
+  // V1_0_0_61: dos variantes — 'alto' (😱 rojo, demasiadas piezas) y 'bajo' (⏱️ ámbar, make-up pay).
+  var _bajo = (info.tipo === 'bajo');
+  var _emoji = _bajo ? '⏱️' : '😱';
+  var _color = _bajo ? '#e8890a' : '#e05353';
+  var _titulo = _bajo ? 'Cantidad baja para el horario' : 'Cantidad fuera de rango';
+  var _boxBg = _bajo ? '#fff8ec' : '#fff4f4';
+  var _boxBd = _bajo ? '#f0d5a0' : '#f3caca';
+  var _boxTx = _bajo ? '#7a5a1e' : '#7a2e2e';
+  var _bodyHtml, _boxHtml, _pregunta;
+  if(_bajo){
+    _bodyHtml = 'Registraste <b>'+smartNum(info.pieces)+' piezas</b>'+_q+', que equivalen a <b>≈ '+smartNum(info.impliedHours)+' h</b> de trabajo. Pero el horario marca <b>'+smartNum(info.hours)+' h</b>:';
+    _boxHtml = '<span style="font-size:20px;font-weight:900;color:'+_color+'">Diferencia ≈ '+smartNum(info.gap)+' h</span><br>Esas horas se pagarían al <b>mínimo</b> aunque no se produjeron. (Para '+smartNum(info.hours)+' h se esperarían ~'+smartNum(info.expectedPieces)+' piezas.)';
+    _pregunta = '¿El horario y la cantidad son correctos?';
+  } else {
+    _bodyHtml = 'Registraste <b>'+smartNum(info.pieces)+' piezas</b>'+_q+' para un turno de <b>'+smartNum(info.hours)+' h</b>. Al <b>doble</b> del ritmo esperado, esa cantidad equivale a haber trabajado:';
+    _boxHtml = '<span style="font-size:20px;font-weight:900;color:'+_color+'">≈ '+smartNum(info.impliedHours)+' horas</span><br>Máximo razonable para '+smartNum(info.hours)+' h: <b>'+smartNum(info.maxPieces)+' piezas</b>';
+    _pregunta = '¿Seguro que deseas registrar esta cantidad?';
+  }
   card.innerHTML =
-     '<div style="font-size:38px;text-align:center;line-height:1">😱</div>'
-    +'<div style="font-family:\'Bebas Neue\',sans-serif;font-size:24px;letter-spacing:.5px;color:#e05353;text-align:center;margin:8px 0 4px">Cantidad fuera de rango</div>'
-    +'<div style="font-size:14px;color:#1c2a3a;line-height:1.55;margin:10px 0">Registraste <b>'+smartNum(info.pieces)+' piezas</b>'+_q+' para un turno de <b>'+smartNum(info.hours)+' h</b>. Al <b>doble</b> del ritmo esperado, esa cantidad equivale a haber trabajado:</div>'
-    +'<div style="background:#fff4f4;border:1.5px solid #f3caca;border-radius:10px;padding:11px 13px;margin:12px 0;font-size:13px;color:#7a2e2e;line-height:1.5">'
-      +'<span style="font-size:20px;font-weight:900;color:#e05353">≈ '+smartNum(info.impliedHours)+' horas</span><br>'
-      +'Máximo razonable para '+smartNum(info.hours)+' h: <b>'+smartNum(info.maxPieces)+' piezas</b>'
-    +'</div>'
-    +'<div style="font-size:14px;font-weight:700;color:#1c2a3a;margin:8px 0">¿Seguro que deseas registrar esta cantidad?</div>'
+     '<div style="font-size:38px;text-align:center;line-height:1">'+_emoji+'</div>'
+    +'<div style="font-family:\'Bebas Neue\',sans-serif;font-size:24px;letter-spacing:.5px;color:'+_color+';text-align:center;margin:8px 0 4px">'+_titulo+'</div>'
+    +'<div style="font-size:14px;color:#1c2a3a;line-height:1.55;margin:10px 0">'+_bodyHtml+'</div>'
+    +'<div style="background:'+_boxBg+';border:1.5px solid '+_boxBd+';border-radius:10px;padding:11px 13px;margin:12px 0;font-size:13px;color:'+_boxTx+';line-height:1.5">'+_boxHtml+'</div>'
+    +'<div style="font-size:14px;font-weight:700;color:#1c2a3a;margin:8px 0">'+_pregunta+'</div>'
     +'<div style="display:flex;flex-direction:column;gap:9px;margin-top:14px">'
       +'<button id="_paOk" style="background:#1f9d55;color:#fff;border:none;border-radius:10px;padding:13px;font-family:\'DM Sans\',sans-serif;font-size:15px;font-weight:800;cursor:pointer;min-height:48px">✅ Sí, la cantidad es correcta</button>'
       +'<button id="_paRev" style="background:#eef1f6;color:#1c2a3a;border:none;border-radius:10px;padding:13px;font-family:\'DM Sans\',sans-serif;font-size:15px;font-weight:800;cursor:pointer;min-height:48px">🔎 Revisar / corregir cantidad</button>'
