@@ -35,7 +35,7 @@
 </script>
 <script>
 // V20_21: check versión + ackedVersion para romper loop infinito cuando version.txt≠APP_VERSION
-window.APP_VERSION = 'V1_0_0_61';
+window.APP_VERSION = 'V1_0_0_62';
 (function(){
   // V20_77: AUTO-LIMPIEZA de _ackedVersion envenenado.
   // Bug detectado: surqueros tocaban "Actualizar ahora" pero el SW interceptaba el reload con HTML viejo.
@@ -12291,7 +12291,7 @@ function buildPDFWindow(vals, wks, ep, hp, cp, ausArr, grpActsArr){
     +'<div>'
     +'<div style="font-size:13px;font-weight:700;color:#1a2b8c;line-height:1.1">eberry harvest company llc</div>'
     +'<div style="font-size:11px;font-weight:900;letter-spacing:.5px">DAILY PAYROLL SHEET</div>'
-    +'<div style="font-size:9px;color:#000;margin-top:1px">Farm: '+esc(vals.rancho||'')+' &nbsp;|&nbsp; Bus #'+esc(String(vals.numBus||''))+' &nbsp;|&nbsp; '+(currentUser&&currentUser.isAdmin?esc(ADMIN_USER_NAME):esc(vals.surquero||''))+' &nbsp;|&nbsp; Lunch: '+lunchMin+' min</div>'
+    +'<div style="font-size:9px;color:#000;margin-top:1px">Farm: '+esc(vals.rancho||'')+' &nbsp;|&nbsp; Bus #'+esc(String(vals.numBus||''))+' &nbsp;|&nbsp; '+(currentUser&&currentUser.isAdmin?esc(ADMIN_USER_NAME):esc(vals.surquero||''))+' &nbsp;|&nbsp; Lunch: '+lunchMin+' min &nbsp;|&nbsp; App: '+(window.APP_VERSION||'?')+'</div>'  // V1_0_0_62: versión en el header (dentro de imgPage1) para que salga también en la IMAGEN, no solo en el PDF'
     +'</div></div>'
     +'<div style="text-align:right">'
     +'<div style="font-size:7px;font-weight:700;color:#ff1900;text-transform:uppercase;letter-spacing:1px">DATE / FECHA</div>'
@@ -17012,6 +17012,20 @@ var SEM_KEY = 'eb_semanal_v1';
 var semData = {}; // {weekStart:'2026-03-23', actIdx:0, rancho:'', finca:'', rows:[{wid, name, empNum, days:[{ini,fin,lIni,lFin}x7]}]}
 var SEM_DAYS = ['Lun','Mar','Mié','Jue','Vie','Sáb','Dom'];
 var SEM_DAYS_FULL = ['Lunes','Martes','Miércoles','Jueves','Viernes','Sábado','Domingo'];
+// V1_0_0_62: la semana SIEMPRE va de lunes a domingo. Devuelve el LUNES de la semana de cualquier fecha.
+// Reportado por Serafín 2026-08-06: seleccionó martes 07-28 por error y la tabla/PDF lo rotuló "Lun 07/28"
+// (corrió todo un día). onSemWeekChange ajustaba al lunes, pero solo al usar el selector; cuando la fecha
+// llegaba por otro camino (dato guardado/cargado) NO se ajustaba. Este helper blinda buildSemTable + el PDF.
+function _semMondayOf(dateStr){
+  if(!dateStr) return dateStr;
+  var d = new Date(dateStr + 'T12:00:00');
+  if(isNaN(d.getTime())) return dateStr;
+  var dow = d.getDay();               // 0=domingo
+  var diff = dow === 0 ? -6 : 1 - dow; // domingo → -6; martes(2) → -1; lunes(1) → 0
+  d.setDate(d.getDate() + diff);
+  var mo = d.getMonth()+1, dy = d.getDate();
+  return d.getFullYear()+'-'+(mo<10?'0'+mo:mo)+'-'+(dy<10?'0'+dy:dy);
+}
 
 function initSemTab(){
   // V12-FIX4: usa getRanchoList() compartido (antes era lógica duplicada de populateRanchoDropdown)
@@ -17137,6 +17151,14 @@ function buildSemTable(){
   var weekStart = gVal('semWeekStart');
   var actIdx = gVal('semActivity');
   if(!weekStart || actIdx==='') { gEl('semTableWrap').style.display='none'; return; }
+  // V1_0_0_62: blindar — la semana SIEMPRE arranca en lunes. Si la fecha no es lunes (seleccionada por
+  // error o cargada de un dato viejo), ajustar al lunes de esa semana y AVISAR (así "Lun" no queda mal).
+  var _monBS = _semMondayOf(weekStart);
+  if(_monBS && _monBS !== weekStart){
+    var _wkEl = gEl('semWeekStart'); if(_wkEl) _wkEl.value = _monBS;
+    weekStart = _monBS;
+    if(typeof toast === 'function') toast('📅 La semana va de LUNES a domingo — ajusté al lunes ' + _monBS);
+  }
 
   gEl('semTableWrap').style.display='block';
 
@@ -17593,6 +17615,13 @@ function restoreSemInputs(){
 function generateSemPDF(){
   var weekStart = gVal('semWeekStart');
   if(!weekStart){ toast('⚠️ Selecciona la semana primero'); return; }
+  // V1_0_0_62: blindar el PDF — SIEMPRE lunes a domingo (por si semWeekStart quedó en un día que no es lunes)
+  var _monPDF = _semMondayOf(weekStart);
+  if(_monPDF && _monPDF !== weekStart){
+    var _wkElP = gEl('semWeekStart'); if(_wkElP) _wkElP.value = _monPDF;
+    weekStart = _monPDF;
+    if(typeof toast === 'function') toast('📅 Ajusté la semana al lunes ' + _monPDF + ' (va de lunes a domingo)');
+  }
   if(!workers.length){ toast('⚠️ No hay trabajadores'); return; }
 
   var selAct = ALL_ACTS[parseInt(gVal('semActivity'))];
@@ -17640,7 +17669,7 @@ function generateSemPDF(){
     +'<div>'
     +'<div style="font-size:16px;font-weight:700;color:#1a2b8c;line-height:1.1">eberry harvest company llc</div>'
     +'<div style="font-size:13px;font-weight:900;letter-spacing:.5px">'+actName+' &mdash; Hoja Semanal</div>'
-    +'<div style="font-size:10px;color:#000;margin-top:2px">Rancho: '+(gVal('semRancho')||'—')+' &nbsp;|&nbsp; Finca: '+(gVal('semFinca')||'—')+' &nbsp;|&nbsp; Surquero: '+surqueroName+'</div>'
+    +'<div style="font-size:10px;color:#000;margin-top:2px">Rancho: '+(gVal('semRancho')||'—')+' &nbsp;|&nbsp; Finca: '+(gVal('semFinca')||'—')+' &nbsp;|&nbsp; Surquero: '+surqueroName+' &nbsp;|&nbsp; App: '+(window.APP_VERSION||'?')+'</div>'  // V1_0_0_62: versión también en el header (top) de la imagen semanal'
     +'</div></div>'
     +'<div style="text-align:right">'
     +'<div style="font-size:8px;font-weight:700;color:#ff1900;text-transform:uppercase;letter-spacing:1px">SEMANA</div>'
