@@ -35,7 +35,7 @@
 </script>
 <script>
 // V20_21: check versión + ackedVersion para romper loop infinito cuando version.txt≠APP_VERSION
-window.APP_VERSION = 'V1_0_0_62';
+window.APP_VERSION = 'V1_0_0_64';
 (function(){
   // V20_77: AUTO-LIMPIEZA de _ackedVersion envenenado.
   // Bug detectado: surqueros tocaban "Actualizar ahora" pero el SW interceptaba el reload con HTML viejo.
@@ -12291,7 +12291,7 @@ function buildPDFWindow(vals, wks, ep, hp, cp, ausArr, grpActsArr){
     +'<div>'
     +'<div style="font-size:13px;font-weight:700;color:#1a2b8c;line-height:1.1">eberry harvest company llc</div>'
     +'<div style="font-size:11px;font-weight:900;letter-spacing:.5px">DAILY PAYROLL SHEET</div>'
-    +'<div style="font-size:9px;color:#000;margin-top:1px">Farm: '+esc(vals.rancho||'')+' &nbsp;|&nbsp; Bus #'+esc(String(vals.numBus||''))+' &nbsp;|&nbsp; '+(currentUser&&currentUser.isAdmin?esc(ADMIN_USER_NAME):esc(vals.surquero||''))+' &nbsp;|&nbsp; Lunch: '+lunchMin+' min &nbsp;|&nbsp; App: '+(window.APP_VERSION||'?')+'</div>'  // V1_0_0_62: versión en el header (dentro de imgPage1) para que salga también en la IMAGEN, no solo en el PDF'
+    +'<div style="font-size:9px;color:#000;margin-top:1px">Farm: '+esc(vals.rancho||'')+' &nbsp;|&nbsp; Bus #'+esc(String(vals.numBus||''))+' &nbsp;|&nbsp; '+(currentUser&&currentUser.isAdmin?esc(ADMIN_USER_NAME):esc(vals.surquero||''))+' &nbsp;|&nbsp; Lunch: '+lunchMin+' min &nbsp;|&nbsp; App: '+(window.APP_VERSION||'?')+'</div>'  // V1_0_0_63: versión en el header (dentro de imgPage1) para que salga también en la IMAGEN, no solo en el PDF'
     +'</div></div>'
     +'<div style="text-align:right">'
     +'<div style="font-size:7px;font-weight:700;color:#ff1900;text-transform:uppercase;letter-spacing:1px">DATE / FECHA</div>'
@@ -17026,6 +17026,45 @@ function _semMondayOf(dateStr){
   var mo = d.getMonth()+1, dy = d.getDate();
   return d.getFullYear()+'-'+(mo<10?'0'+mo:mo)+'-'+(dy<10?'0'+dy:dy);
 }
+// V1_0_0_64: firma del contexto actualmente RENDERIZADO en la tabla semanal (rancho|semana-lunes|actividad).
+// buildSemTable lo setea al FINAL (tras restaurar las celdas). saveSemData sólo guarda si el contexto actual
+// coincide con lo renderizado → evita pisar datos buenos con una tabla que aún no es de este contexto.
+var _semRenderedKey = '';
+function _semCtxKey(){
+  return (gVal('semRancho')||'') + '|' + _semMondayOf(gVal('semWeekStart')) + '|' + (gVal('semActivity')||'');
+}
+// V1_0_0_64: clave de localStorage UNIFICADA para la semanal — SIEMPRE normaliza la semana al LUNES,
+// para que guardar y restaurar usen la MISMA gaveta aunque semWeekStart quede momentáneamente en otro día
+// (el ajuste al lunes de V62 movía el input y descolocaba la key). Rancho: semRancho, con respaldo a rancho.
+function _semStoreKey(weekStart){
+  var user = currentUser ? currentUser.name : '';
+  var rancho = gVal('semRancho') || gVal('rancho') || '';
+  return SEM_KEY + '_' + user + '_' + rancho + '_' + _semMondayOf(weekStart || gVal('semWeekStart'));
+}
+// V1_0_0_64: migración única — datos viejos guardados bajo una fecha que NO era lunes quedaron huérfanos
+// (la key nueva normaliza a lunes). Los re-copia a la key-lunes, SIN pisar si ya existe una key-lunes buena.
+// No borra los viejos (seguro/reversible). Idempotente: si la key-lunes ya existe, no hace nada.
+function _semMigrateKeys(){
+  try {
+    var mig = [];
+    for(var i=0;i<localStorage.length;i++){
+      var k = localStorage.key(i);
+      if(!k || k.indexOf(SEM_KEY+'_') !== 0) continue;
+      var idx = k.lastIndexOf('_');
+      if(idx < 0) continue;
+      var wk = k.substring(idx+1);
+      if(!/^\d{4}-\d{2}-\d{2}$/.test(wk)) continue; // el sufijo debe ser una fecha
+      var mon = _semMondayOf(wk);
+      if(mon && mon !== wk) mig.push({old:k, neu:k.substring(0, idx+1) + mon});
+    }
+    for(var m=0;m<mig.length;m++){
+      if(localStorage.getItem(mig[m].neu)) continue; // ya existe key-lunes → no pisar
+      var v = localStorage.getItem(mig[m].old); if(!v) continue;
+      try{ var dd = JSON.parse(v); if(dd){ dd.weekStart = _semMondayOf(dd.weekStart||''); v = JSON.stringify(dd); } }catch(e){}
+      localStorage.setItem(mig[m].neu, v);
+    }
+  } catch(e){ console.warn('[V1_0_0_64] _semMigrateKeys:', e.message); }
+}
 
 function initSemTab(){
   // V12-FIX4: usa getRanchoList() compartido (antes era lógica duplicada de populateRanchoDropdown)
@@ -17081,8 +17120,13 @@ function initSemTab(){
 
 // Gamma2-V5: Mostrar TODAS las actividades individuales del rancho (no solo Hora)
 function onSemRanchoChange(){
-  // V20-FIX5: guardar datos semanales ANTES de cambiar rancho semanal
-  saveSemData();
+  // V1_0_0_64: QUITADO el saveSemData() que corría aquí. CAUSA RAÍZ de "la semanal borra datos":
+  // esta función solo repuebla el dropdown de actividades y se invoca SOLO por código (semRancho está
+  // disabled) — al ENTRAR a la pestaña (initSemTab, ANTES de restaurar) y al cambiar rancho en Parámetros.
+  // En ambos momentos la KEY se arma con el rancho/semana NUEVOS pero el cuerpo se lee de celdas VACÍAS
+  // o del rancho VIEJO → guardaba filas en blanco/ajenas ENCIMA de los datos buenos, y loadSemData ya no
+  // los encontraba → "datos eliminados". El guardado real ya lo cubren onblur de celdas + onSemActivityChange
+  // + onSemWeekChange + el save-on-leave de go(). Diagnóstico confirmado por 3 agentes 2026-08-06.
   var rancho = gVal('semRancho');
   var sel = gEl('semActivity');
   sel.innerHTML = '<option value="">— Selecciona actividad —</option>';
@@ -17245,6 +17289,9 @@ function buildSemTable(){
 
   // Restaurar datos si existen
   restoreSemInputs();
+  // V1_0_0_64: la tabla YA está armada y restaurada para este contexto → registrar la firma.
+  // A partir de aquí saveSemData sí puede guardar sin miedo a pisar (el contexto coincide).
+  _semRenderedKey = _semCtxKey();
   // V1_0_0_38: registrar el default global actual para la propagación de labor por celda
   _semPrevFinca = gVal('semFinca') || '';
 
@@ -17467,11 +17514,18 @@ function saveSemData(){
   // y, peor, un guardado con celdas vacías que podía pisar datos buenos si corría en mal momento
   // (ej. onSemRanchoChange al re-entrar a la pestaña antes de restaurar la tabla).
   if(!gVal('semWeekStart')) return;
+  // V1_0_0_64: NO pisar datos buenos con una tabla que no es de este contexto o que aún no se armó.
+  // (1) La firma del contexto actual debe coincidir con la RENDERIZADA (rancho|semana|actividad).
+  // (2) Debe existir físicamente la celda del 1er worker (tabla montada para estos ids).
+  // Sin esto, un saveSemData en mal momento (entrada a la pestaña, cambio de rancho, restore fallido)
+  // guardaba filas VACÍAS sobre la key buena → "datos eliminados". Causa raíz confirmada por 3 agentes.
+  if(_semRenderedKey && _semCtxKey() !== _semRenderedKey) return;
+  if(workers.length && !gEl('sem_'+workers[0].id+'_d0_ini')) return;
   var selAct = ALL_ACTS[parseInt(gVal('semActivity'))];
   var isHour = selAct && isHourAct(selAct); // V8
 
   var data = {
-    weekStart: gVal('semWeekStart'),
+    weekStart: _semMondayOf(gVal('semWeekStart')), // V1_0_0_64: normalizar a lunes (coherente con la key)
     actIdx: gVal('semActivity'),
     rancho: gVal('semRancho'),
     finca: gVal('semFinca'),
@@ -17498,8 +17552,8 @@ function saveSemData(){
   }
 
   try {
-    // Gamma2-V3: Key incluye rancho+surquero para que cada combo tenga su propia data
-    var key = SEM_KEY + '_' + (currentUser?currentUser.name:'') + '_' + (data.rancho||'') + '_' + data.weekStart;
+    // V1_0_0_64: key unificada (semana normalizada a lunes) — misma gaveta que restoreSemInputs
+    var key = _semStoreKey(data.weekStart);
     localStorage.setItem(key, JSON.stringify(data));
   } catch(e){ console.warn('[eBerry] Error guardando datos semanales:', e.message); } // V9
 }
@@ -17507,6 +17561,7 @@ function saveSemData(){
 function loadSemData(){
   // Gamma2-V3: Restaurar solo la data del rancho+surquero actual
   try {
+    _semMigrateKeys(); // V1_0_0_64: recuperar datos viejos bajo keys de día-no-lunes → key-lunes
     var userName = currentUser ? currentUser.name : '';
     var paramRancho = gVal('rancho') || '';
     // Buscar key que coincida con usuario + rancho actual
@@ -17559,8 +17614,8 @@ function loadSemData(){
 
 function restoreSemInputs(){
   try {
-    // Gamma2-V3: Key incluye rancho para data por rancho+surquero
-    var key = SEM_KEY + '_' + (currentUser?currentUser.name:'') + '_' + (gVal('semRancho')||'') + '_' + gVal('semWeekStart');
+    // V1_0_0_64: misma key unificada (semana normalizada a lunes) que saveSemData → siempre coinciden
+    var key = _semStoreKey(gVal('semWeekStart'));
     var raw = localStorage.getItem(key);
     if(!raw) return;
     // V20_91 (V9-FIX10): try/catch para evitar crash visible si storage corrupto
@@ -17669,7 +17724,7 @@ function generateSemPDF(){
     +'<div>'
     +'<div style="font-size:16px;font-weight:700;color:#1a2b8c;line-height:1.1">eberry harvest company llc</div>'
     +'<div style="font-size:13px;font-weight:900;letter-spacing:.5px">'+actName+' &mdash; Hoja Semanal</div>'
-    +'<div style="font-size:10px;color:#000;margin-top:2px">Rancho: '+(gVal('semRancho')||'—')+' &nbsp;|&nbsp; Finca: '+(gVal('semFinca')||'—')+' &nbsp;|&nbsp; Surquero: '+surqueroName+' &nbsp;|&nbsp; App: '+(window.APP_VERSION||'?')+'</div>'  // V1_0_0_62: versión también en el header (top) de la imagen semanal'
+    +'<div style="font-size:10px;color:#000;margin-top:2px">Rancho: '+(gVal('semRancho')||'—')+' &nbsp;|&nbsp; Finca: '+(gVal('semFinca')||'—')+' &nbsp;|&nbsp; Surquero: '+surqueroName+' &nbsp;|&nbsp; App: '+(window.APP_VERSION||'?')+'</div>'  // V1_0_0_63: versión también en el header (top) de la imagen semanal'
     +'</div></div>'
     +'<div style="text-align:right">'
     +'<div style="font-size:8px;font-weight:700;color:#ff1900;text-transform:uppercase;letter-spacing:1px">SEMANA</div>'
