@@ -35,7 +35,7 @@
 </script>
 <script>
 // V20_21: check versión + ackedVersion para romper loop infinito cuando version.txt≠APP_VERSION
-window.APP_VERSION = 'V1_0_0_67';
+window.APP_VERSION = 'V1_0_0_68';
 (function(){
   // V20_77: AUTO-LIMPIEZA de _ackedVersion envenenado.
   // Bug detectado: surqueros tocaban "Actualizar ahora" pero el SW interceptaba el reload con HTML viejo.
@@ -11620,7 +11620,7 @@ function buildPDFWindow(vals, wks, ep, hp, cp, ausArr, grpActsArr){
       // para mostrar suma de acres en header del PDF junto a "Doors p/p".
       var _hColAcr_ = (typeof parseFormulaCell === 'function' && gact_ && gact_.H) ? parseFormulaCell(gact_.H) : null;
       var _isAcresInputCol_ = !!(_hColAcr_ && _hColAcr_.type==='input' && _hColAcr_.label && String(_hColAcr_.label).toLowerCase()==='acres');
-      col_={label:(gact_.en||gact_.es), ct:'puertas', perPersona:{}, totalVal:puertas_, np:np_, precio:gact_.p, unitLabel:'Doors p/p', finca:g_.vars.finca||'', ini:g_.vars.ini||'', fin:g_.vars.fin||'', anchoCama:anchoCama_, gact:gact_, grandAcres:grandAcres_, isAcresInput:_isAcresInputCol_};
+      col_={label:(gact_.en||gact_.es), ct:'puertas', perPersona:{}, totalVal:puertas_, np:np_, precio:gact_.p, unitLabel:'Doors p/p', finca:g_.vars.finca||'', ini:g_.vars.ini||'', fin:g_.vars.fin||'', lIni:(g_.vars.lonches&&g_.vars.lonches[0]?g_.vars.lonches[0].ini:''), lFin:(g_.vars.lonches&&g_.vars.lonches[0]?g_.vars.lonches[0].fin:''), anchoCama:anchoCama_, gact:gact_, grandAcres:grandAcres_, isAcresInput:_isAcresInputCol_};
       for(var pi_=0;pi_<g_.participantes.length;pi_++) col_.perPersona[g_.participantes[pi_]]=ppx_;
     } else if(ct_==='cajas'){
       var totalC_=parseFloat(g_.vars.totalC)||0;
@@ -11635,13 +11635,13 @@ function buildPDFWindow(vals, wks, ep, hp, cp, ausArr, grpActsArr){
       if(!totalC_) continue;
       var cpx_=totalC_/np_;
       // V20_71 Fase B: usar nombre en inglés en label (PDF es para Cindy en EN)
-      col_={label:(gact_.en||gact_.es), ct:'cajas', perPersona:{}, totalVal:totalC_, np:np_, precio:precioC_, unitLabel:'Boxes p/p', finca:g_.vars.finca||'', ini:g_.vars.ini||'', fin:g_.vars.fin||''};
+      col_={label:(gact_.en||gact_.es), ct:'cajas', perPersona:{}, totalVal:totalC_, np:np_, precio:precioC_, unitLabel:'Boxes p/p', finca:g_.vars.finca||'', ini:g_.vars.ini||'', fin:g_.vars.fin||'', lIni:(g_.vars.lonches&&g_.vars.lonches[0]?g_.vars.lonches[0].ini:''), lFin:(g_.vars.lonches&&g_.vars.lonches[0]?g_.vars.lonches[0].fin:'')};
       for(var pi2_=0;pi2_<g_.participantes.length;pi2_++) col_.perPersona[g_.participantes[pi2_]]=cpx_;
     } else if(ct_==='hora'){
       var hGrp_=nh(g_.vars.ini||'',g_.vars.fin||'',g_.vars.lonches);
       if(!hGrp_) continue;
       // V20_71 Fase B: usar nombre en inglés en label (PDF es para Cindy en EN)
-      col_={label:(gact_.en||gact_.es), ct:'hora', perPersona:{}, totalVal:hGrp_, np:np_, precio:gact_.p, unitLabel:'Hours', finca:'', ini:g_.vars.ini||'', fin:g_.vars.fin||''};
+      col_={label:(gact_.en||gact_.es), ct:'hora', perPersona:{}, totalVal:hGrp_, np:np_, precio:gact_.p, unitLabel:'Hours', finca:'', ini:g_.vars.ini||'', fin:g_.vars.fin||'', lIni:(g_.vars.lonches&&g_.vars.lonches[0]?g_.vars.lonches[0].ini:''), lFin:(g_.vars.lonches&&g_.vars.lonches[0]?g_.vars.lonches[0].fin:'')};
       for(var pi3_=0;pi3_<g_.participantes.length;pi3_++) col_.perPersona[g_.participantes[pi3_]]=hGrp_;
     } else {
       var totalP_=parseFloat(g_.vars.totalP)||0;
@@ -11659,7 +11659,7 @@ function buildPDFWindow(vals, wks, ep, hp, cp, ausArr, grpActsArr){
       var qpx_=totalP_/np_;
       var _prcG_=parseFloat(g_.vars.precioC)||parseFloat(gact_.p)||0; // V1_0_0_10: precio del grupal (precioC) si existe
       // V20_71 Fase B: usar nombre en inglés en label (PDF es para Cindy en EN)
-      col_={label:(gact_.en||gact_.es), ct:'generic', perPersona:{}, totalVal:totalP_, np:np_, precio:_prcG_, unitLabel:(gact_.payType||'Pieces')+' p/p', finca:g_.vars.finca||'', ini:g_.vars.ini||'', fin:g_.vars.fin||''};
+      col_={label:(gact_.en||gact_.es), ct:'generic', perPersona:{}, totalVal:totalP_, np:np_, precio:_prcG_, unitLabel:(gact_.payType||'Pieces')+' p/p', finca:g_.vars.finca||'', ini:g_.vars.ini||'', fin:g_.vars.fin||'', lIni:(g_.vars.lonches&&g_.vars.lonches[0]?g_.vars.lonches[0].ini:''), lFin:(g_.vars.lonches&&g_.vars.lonches[0]?g_.vars.lonches[0].fin:'')};
       for(var pi4_=0;pi4_<g_.participantes.length;pi4_++) col_.perPersona[g_.participantes[pi4_]]=qpx_;
     }
     if(col_) grpPuertasCols.push(col_);
@@ -11777,10 +11777,20 @@ function buildPDFWindow(vals, wks, ep, hp, cp, ausArr, grpActsArr){
     +'<td style="border:1px solid #000"></td>'
     +'<td style="border:1px solid #000"></td>'
     +'<td style="text-align:right;padding:2px 4px;border:1px solid #000;border-right:2px solid #407623;color:#000">Entrada</td>';
-  var trExit='<tr class="meta-last" style="font-size:9px;background:#f9f9f9">'
+  var trExit='<tr style="font-size:9px;background:#f9f9f9">'
     +'<td style="border:1px solid #000"></td>'
     +'<td style="border:1px solid #000"></td>'
     +'<td style="text-align:right;padding:2px 4px;border:1px solid #000;border-right:2px solid #407623;color:#000">Salida</td>';
+  // V1_0_0_68: filas de LONCHE (L.Inicio / L.Fin) en el PDF diario — para que se vea el horario del lonche y
+  // saber si se descontó (paridad con la semanal, que ya las tenía). Pedido de Serafín 2026-08-12.
+  var trLunchIni='<tr style="font-size:9px;background:#f9f9f9">'
+    +'<td style="border:1px solid #000"></td>'
+    +'<td style="border:1px solid #000"></td>'
+    +'<td style="text-align:right;padding:2px 4px;border:1px solid #000;border-right:2px solid #407623;color:#000">L. Inicio</td>';
+  var trLunchFin='<tr class="meta-last" style="font-size:9px;background:#f9f9f9">'
+    +'<td style="border:1px solid #000"></td>'
+    +'<td style="border:1px solid #000"></td>'
+    +'<td style="text-align:right;padding:2px 4px;border:1px solid #000;border-right:2px solid #407623;color:#000">L. Fin</td>';
 
   // V20_06: meta rows con subdivisión. Total/Pago/Labor con colspan=N (valor compartido).
   // Entrada/Salida con N celdas (horario por sub-shift).
@@ -11803,12 +11813,14 @@ function buildPDFWindow(vals, wks, ep, hp, cp, ausArr, grpActsArr){
     }
     // Buscar unitPr y laborLbl (valor único para toda la columna)
     // V20_152: matcher unificado con payType.
-    var unitPr=''; var laborLbl='';
+    var unitPr=''; var laborLbl=''; var _lonI4=''; var _lonF4=''; // V1_0_0_68: lonche de la actividad para el PDF
     for(var w2=0;w2<wks.length;w2++){
       for(var a2=0;a2<wks[w2].acts.length;a2++){
         var wAct4_=wks[w2].acts[a2];
         if(_colMatchesWAct(col4, wAct4_)){
           var act2=wks[w2].acts[a2];
+          // V1_0_0_68: capturar el lonche del 1er worker que matchea (el lonche es por actividad)
+          if(!_lonI4 && !_lonF4 && act2.lonches && act2.lonches[0]){ _lonI4=act2.lonches[0].ini||''; _lonF4=act2.lonches[0].fin||''; }
           if(!unitPr){
             // V1_0_0_25 FIX: la tarifa SIEMPRE viene del TASK del MASTER (act._unitPrice / ACTS[ai].p),
             // NUNCA del contractRate del worker. Antes (V20_99) el PDF para Hora agarraba wks[0].contractRate
@@ -11982,10 +11994,13 @@ function buildPDFWindow(vals, wks, ep, hp, cp, ausArr, grpActsArr){
         trExit +='<td style="text-align:center;border:1px solid #000;color:#000">'+to12h(_sm.fin||'')+'</td>';
       }
     }
+    // V1_0_0_68: L.Inicio/L.Fin de la actividad (colspan=N — el lonche es por actividad, compartido entre sub-shifts)
+    trLunchIni+='<td'+_csp+' style="text-align:center;border:1px solid #000;color:#8a6d1a">'+(_lonI4?to12h(_lonI4):'')+'</td>';
+    trLunchFin+='<td'+_csp+' style="text-align:center;border:1px solid #000;color:#8a6d1a">'+(_lonF4?to12h(_lonF4):'')+'</td>';
   }
-  if(cp&&cp.length&&cajasT){ trTotal+='<td style="border-top:3px solid #1a2b8c"></td>'; trPrice+='<td></td>'; trLabor+='<td></td>'; trEntry+='<td></td>'; trExit+='<td></td>'; }
-  if(ep&&ep.length&&estA&&estAn){ trTotal+='<td style="border-top:3px solid #1a2b8c"></td>'; trPrice+='<td></td>'; trLabor+='<td></td>'; trEntry+='<td></td>'; trExit+='<td></td>'; }
-  if(hp&&hp.length&&hilA&&hilAn){ trTotal+='<td style="border-top:3px solid #1a2b8c"></td>'; trPrice+='<td></td>'; trLabor+='<td></td>'; trEntry+='<td></td>'; trExit+='<td></td>'; }
+  if(cp&&cp.length&&cajasT){ trTotal+='<td style="border-top:3px solid #1a2b8c"></td>'; trPrice+='<td></td>'; trLabor+='<td></td>'; trEntry+='<td></td>'; trExit+='<td></td>'; trLunchIni+='<td></td>'; trLunchFin+='<td></td>'; }
+  if(ep&&ep.length&&estA&&estAn){ trTotal+='<td style="border-top:3px solid #1a2b8c"></td>'; trPrice+='<td></td>'; trLabor+='<td></td>'; trEntry+='<td></td>'; trExit+='<td></td>'; trLunchIni+='<td></td>'; trLunchFin+='<td></td>'; }
+  if(hp&&hp.length&&hilA&&hilAn){ trTotal+='<td style="border-top:3px solid #1a2b8c"></td>'; trPrice+='<td></td>'; trLabor+='<td></td>'; trEntry+='<td></td>'; trExit+='<td></td>'; trLunchIni+='<td></td>'; trLunchFin+='<td></td>'; }
   // V20_06: Meta rows de grupales con subdivisión por grpParents (label+finca).
   // V20_30: TOTAL ahora emite N celdas separadas (una por sub), igual que V20_26 hizo con individuales.
   // Pago/Labor mantienen colspan (valor compartido). Entrada/Salida ya eran N celdas.
@@ -12038,10 +12053,13 @@ function buildPDFWindow(vals, wks, ep, hp, cp, ausArr, grpActsArr){
       var _sub=_gp2.subs[gs3_];
       trEntry+='<td style="text-align:center;border:1px solid #000;color:#000">'+to12h(_sub.ini||'')+'</td>';
       trExit +='<td style="text-align:center;border:1px solid #000;color:#000">'+to12h(_sub.fin||'')+'</td>';
+      // V1_0_0_68: L.Inicio/L.Fin del grupal (lonche de g.vars.lonches, propagado a cada sub)
+      trLunchIni+='<td style="text-align:center;border:1px solid #000;color:#8a6d1a">'+(_sub.lIni?to12h(_sub.lIni):'')+'</td>';
+      trLunchFin+='<td style="text-align:center;border:1px solid #000;color:#8a6d1a">'+(_sub.lFin?to12h(_sub.lFin):'')+'</td>';
     }
   }
-  trTotal+='</tr>'; trPrice+='</tr>'; trLabor+='</tr>'; trEntry+='</tr>'; trExit+='</tr>';
-  var metaRows=trTotal+trPrice+trLabor+trEntry+trExit;
+  trTotal+='</tr>'; trPrice+='</tr>'; trLabor+='</tr>'; trEntry+='</tr>'; trExit+='</tr>'; trLunchIni+='</tr>'; trLunchFin+='</tr>';
+  var metaRows=trTotal+trPrice+trLabor+trEntry+trExit+trLunchIni+trLunchFin;
 
   // ── Upsilon2: ordenar workers por actividad principal (columna más a la izq donde tienen datos)
   // Esto agrupa visualmente: Bus Driver juntos, Equip Op juntos, Harvest juntos, etc.
