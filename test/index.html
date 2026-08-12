@@ -35,7 +35,7 @@
 </script>
 <script>
 // V20_21: check versión + ackedVersion para romper loop infinito cuando version.txt≠APP_VERSION
-window.APP_VERSION = 'V1_0_0_64';
+window.APP_VERSION = 'V1_0_0_65';
 (function(){
   // V20_77: AUTO-LIMPIEZA de _ackedVersion envenenado.
   // Bug detectado: surqueros tocaban "Actualizar ahora" pero el SW interceptaba el reload con HTML viejo.
@@ -12302,6 +12302,7 @@ function buildPDFWindow(vals, wks, ep, hp, cp, ausArr, grpActsArr){
     +'<thead><tr style="background:#1a2b8c;color:#fff">'+th1+'</tr>'+(_hasSub?('<tr style="background:#1a2b8c;color:#fff">'+th2+'</tr>'):'')+'</thead>'
     +'<tbody>'+metaRows+rows+'</tbody>'
     +'</table>'
+    +'<div class="ft">'+esc(vals.rancho||'')+' &nbsp;|&nbsp; '+esc(vals.fecha||'')+' &nbsp;|&nbsp; '+wks.length+' trabajadores &nbsp;|&nbsp; Bus: #'+esc(String(vals.numBus||''))+' &nbsp;|&nbsp; Surquero: '+(currentUser&&currentUser.isAdmin?esc(ADMIN_USER_NAME):esc(vals.surquero||''))+' &nbsp;|&nbsp; Generado: '+new Date().toLocaleString()+' &nbsp;|&nbsp; App: '+(window.APP_VERSION||'?')+(_readOnlyMode?' &nbsp;|&nbsp; 📖 REGENERADO DESDE SHEETS':'')+'</div>'  // V1_0_0_65: pie de página DENTRO de imgPage1 → ahora sale en la IMAGEN diaria (paridad con la semanal que ya lo incluía)
     +'</div>'  // V1_0_0_29: cierra imgPage1 (página NÓMINA) antes de la página de análisis
     // V12-FIX: Ausencias removidas del PDF (solo van a Google Sheets)
     // ── V20_63: Notas + Análisis en HOJA SEPARADA con page-break-before:always ──
@@ -22260,6 +22261,3 @@ function checkInFaceID(){
 </script>
 </body>
 </html>
-
-
-
