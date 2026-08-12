@@ -35,7 +35,7 @@
 </script>
 <script>
 // V20_21: check versión + ackedVersion para romper loop infinito cuando version.txt≠APP_VERSION
-window.APP_VERSION = 'V1_0_0_66';
+window.APP_VERSION = 'V1_0_0_67';
 (function(){
   // V20_77: AUTO-LIMPIEZA de _ackedVersion envenenado.
   // Bug detectado: surqueros tocaban "Actualizar ahora" pero el SW interceptaba el reload con HTML viejo.
@@ -17115,6 +17115,29 @@ function _onSemShiftEdit(wid, d){
   calcSemHours(wid, d);
   semAutoFill(wid, d, 'shift');
 }
+// V1_0_0_66: ¿el lonche del día cae DENTRO de este turno? (para restarlo solo al turno que lo contiene,
+// y para mostrarlo en la meta-fila L.Inicio/L.Fin de ese turno en el PDF). Si el lonche cae en el HUECO
+// entre 2 turnos, NO se resta a ninguno (ese hueco YA es el descanso) — evita doble descuento.
+function _semLoncheInTurno(ini, fin, lIni, lFin){
+  var e = t2m(ini), s = t2m(fin), li = t2m(lIni), lf = t2m(lFin);
+  if(e === null || s === null || li === null || lf === null) return false;
+  if(s <= e) s += 1440;
+  var liA = li; if(liA < e) liA += 1440; // por si el turno cruza medianoche
+  return (liA >= e && liA < s);
+}
+// V1_0_0_66: horas de UN turno (redondeo al cuarto, regla DOL), descontando el lonche solo si cae dentro.
+function _semTurnoHours(ini, fin, lIni, lFin){
+  var e = t2m(ini), s = t2m(fin);
+  if(e === null || s === null) return 0;
+  if(s <= e) s += 1440;
+  var mins = s - e;
+  if(_semLoncheInTurno(ini, fin, lIni, lFin)){
+    var li = t2m(lIni), lf = t2m(lFin);
+    if(li !== null && lf !== null){ if(lf <= li) lf += 1440; mins -= (lf - li); }
+  }
+  if(mins < 0) mins = 0;
+  return Math.round(mins / 15) * 15 / 60;
+}
 
 function initSemTab(){
   // V12-FIX4: usa getRanchoList() compartido (antes era lógica duplicada de populateRanchoDropdown)
@@ -17418,28 +17441,14 @@ function calcSemHours(wid, dayIdx){
   var lIni = gVal(cellId + '_li');
   var lFin = gVal(cellId + '_lf');
 
-  // V1_0_0_66: sumar TODOS los turnos del día (antes: 1 solo par ini/fin).
-  // V14: redondeo a cuartos de hora (.00, .25, .50, .75).
+  // V1_0_0_66: horas del día = SUMA de horas de cada turno (redondeo por turno, regla DOL). El lonche
+  // se resta solo al turno que lo contiene (si cae en el hueco entre turnos, no se descuenta doble).
+  // Coincide con la diaria (suma por turno) y con el desglose T1/T2 del PDF.
   var shifts = _semReadShifts(wid, dayIdx);
-  var mins = 0, any = false;
+  var hrs = 0;
   for(var si=0; si<shifts.length; si++){
-    var e = t2m(shifts[si].ini), s = t2m(shifts[si].fin);
-    if(e !== null && s !== null){
-      if(s <= e) s += 1440; // cruce medianoche
-      mins += (s - e);
-      any = true;
-    }
+    hrs += _semTurnoHours(shifts[si].ini, shifts[si].fin, lIni, lFin);
   }
-  if(any){
-    var li = t2m(lIni), lf = t2m(lFin);
-    if(li !== null && lf !== null){
-      if(lf <= li) lf += 1440;
-      mins -= (lf - li); // lonche 1 por día, se descuenta del total
-    }
-  }
-  if(mins < 0) mins = 0;
-  var qMins = Math.round(mins / 15) * 15;
-  var hrs = qMins / 60;
 
   var el = gEl(cellId + '_hrs');
   if(el) el.textContent = hrs > 0 ? smartNum(hrs) : '0';
@@ -17804,59 +17813,64 @@ function generateSemPDF(){
   var _isHourSem = selAct && (typeof isHourAct === 'function' ? isHourAct(selAct) : !!selAct.hr);
 
   // ── Paso 1: Recopilar datos + horarios por worker por día ──
+  // V1_0_0_66: DESGLOSE POR TURNO (como la diaria). En actividades de HORAS, cada turno del día es una
+  // "entrada" con su horario y sus horas → luego se agrupa por horario y sale como sub-columna T1/T2.
+  // En PIEZAS se captura 1 cantidad por día (no hay qty por turno) → sigue siendo 1 entrada por día.
   var workerData = [];
   for(var w=0;w<workers.length;w++){
     var wk = workers[w];
     var rowTotal = 0;
-    var days = [];
-    var scheds = [];
+    var entries = []; // entries[d] = [{ent,sal,lIni,lFin,labor,val}, ...]
     for(var d=0;d<7;d++){
       var cellId = 'sem_' + wk.id + '_d' + d;
-      var val = 0;
+      var _labor = (gVal(cellId+'_labor')||gVal('semFinca')||''); // V1_0_0_59: labor por celda
+      var _lIni = gVal(cellId+'_li')||'', _lFin = gVal(cellId+'_lf')||'';
+      var dayEntries = [];
       if(isHour){
-        var hrsEl = gEl(cellId+'_hrs');
-        val = parseFloat(hrsEl ? hrsEl.textContent : '0') || 0;
+        var _psh = _semReadShifts(wk.id, d);
+        for(var _ti=0; _ti<_psh.length; _ti++){
+          var _tt = _psh[_ti];
+          if(!_tt.ini && !_tt.fin) continue;
+          var _th = _semTurnoHours(_tt.ini, _tt.fin, _lIni, _lFin);
+          if(_th <= 0) continue;
+          var _inL = _semLoncheInTurno(_tt.ini, _tt.fin, _lIni, _lFin); // lonche solo en su turno
+          dayEntries.push({ ent:_tt.ini||'', sal:_tt.fin||'', lIni:(_inL?_lIni:''), lFin:(_inL?_lFin:''), labor:_labor, val:_th });
+          rowTotal += _th;
+        }
       } else {
-        val = parseFloat(gVal(cellId+'_qty')) || 0;
+        var _qty = parseFloat(gVal(cellId+'_qty')) || 0;
+        if(_qty > 0){
+          var _psh2 = _semReadShifts(wk.id, d);
+          dayEntries.push({ ent:(_psh2.length?_psh2[0].ini:'')||'', sal:(_psh2.length?_psh2[_psh2.length-1].fin:'')||'', lIni:_lIni, lFin:_lFin, labor:_labor, val:_qty });
+          rowTotal += _qty;
+        }
       }
-      days.push(val);
-      rowTotal += val;
-      // V1_0_0_66: con turnos múltiples, el rango del día va de la entrada del 1er turno a la salida del último.
-      // Las horas (val, desde _hrs) YA son la suma de todos los turnos.
-      var _psh = _semReadShifts(wk.id, d);
-      scheds.push({
-        ent: (_psh.length ? _psh[0].ini : '')||'',
-        sal: (_psh.length ? _psh[_psh.length-1].fin : '')||'',
-        lIni: gVal(cellId+'_li')||'',
-        lFin: gVal(cellId+'_lf')||'',
-        // V1_0_0_59: labor POR CELDA (persona×día). Antes el PDF/imagen solo mostraba la finca global
-        // de Parámetros; ahora lee la labor de cada celda (default = semFinca si no se cambió). El dato
-        // ya llegaba a FIELD_DROP pero no al PDF. Reportado por Serafín 2026-07-16.
-        labor: (gVal(cellId+'_labor')||gVal('semFinca')||'')
-      });
+      entries.push(dayEntries);
     }
-    workerData.push({wk:wk, days:days, scheds:scheds, total:rowTotal});
+    workerData.push({wk:wk, entries:entries, total:rowTotal});
   }
 
-  // ── Paso 2: Para cada día, agrupar por horario único → sub-columnas ──
+  // ── Paso 2: Para cada día, agrupar los TURNOS por horario único → sub-columnas T1/T2/... ──
   var dayCols = [];
   var dayColSpans = [];
   for(var d=0;d<7;d++){
     var groups = {};
     var groupOrder = [];
     for(var w=0;w<workerData.length;w++){
-      var wd = workerData[w];
-      if(wd.days[d] === 0) continue;
-      var sc = wd.scheds[d];
-      // V1_0_0_59: incluir la labor en la clave → cada columna tiene una labor consistente y correcta
-      // (si 2 personas tienen mismo horario pero distinta labor, salen en sub-columnas separadas).
-      var key = sc.ent+'|'+sc.sal+'|'+sc.lIni+'|'+sc.lFin+'|'+sc.labor;
-      if(!groups[key]){
-        groups[key] = {sched:sc, vals:{}, total:0};
-        groupOrder.push(key);
+      var des = workerData[w].entries[d];
+      if(!des || !des.length) continue;
+      for(var _ei=0; _ei<des.length; _ei++){
+        var sc = des[_ei];
+        // V1_0_0_59: incluir la labor en la clave → cada columna tiene una labor consistente.
+        // V1_0_0_66: la clave es por el horario del TURNO (no del día) → un worker con 2 turnos cae en 2 columnas.
+        var key = sc.ent+'|'+sc.sal+'|'+sc.lIni+'|'+sc.lFin+'|'+sc.labor;
+        if(!groups[key]){
+          groups[key] = {sched:sc, vals:{}, total:0};
+          groupOrder.push(key);
+        }
+        groups[key].vals[w] = (groups[key].vals[w] || 0) + sc.val; // acumular por si un worker repite horario
+        groups[key].total += sc.val;
       }
-      groups[key].vals[w] = wd.days[d];
-      groups[key].total += wd.days[d];
     }
     // V16-FIX: días sin datos no generan columna en el PDF
     if(groupOrder.length === 0){
@@ -18084,14 +18098,9 @@ function sendSemToSheets(){
       // V1_0_0_66: sumar TODOS los turnos del día. A Cindy va el TOTAL de horas + entrada/salida del 1er
       // turno (igual que la diaria) → sin tocar backend. El desglose T1/T2 vive solo en el PDF/app.
       var _shD = _semReadShifts(wk.id, d);
-      var _mins = 0, _any = false;
-      for(var _ss=0; _ss<_shD.length; _ss++){
-        var _e = t2m(_shD[_ss].ini), _s = t2m(_shD[_ss].fin);
-        if(_e !== null && _s !== null){ if(_s <= _e) _s += 1440; _mins += (_s - _e); _any = true; }
-      }
-      if(_any){ var _li = t2m(lIni), _lf = t2m(lFin); if(_li !== null && _lf !== null){ if(_lf <= _li) _lf += 1440; _mins -= (_lf - _li); } }
-      if(_mins < 0) _mins = 0;
-      var hrs = Math.round(_mins / 15) * 15 / 60; // redondeo a cuartos de hora
+      // V1_0_0_66: total = suma de horas por turno (lonche al turno que lo contiene) — coincide con la celda y el PDF.
+      var hrs = 0;
+      for(var _ss=0; _ss<_shD.length; _ss++){ hrs += _semTurnoHours(_shD[_ss].ini, _shD[_ss].fin, lIni, lFin); }
       // V1_0_0_66: rango COMPLETO del día → entrada del 1er turno, salida del ÚLTIMO (coincide con el PDF).
       var ini = _shD.length ? (_shD[0].ini||'') : '';
       var fin = _shD.length ? (_shD[_shD.length-1].fin||'') : '';
