@@ -247,6 +247,13 @@ header{
 .ac div{padding:11px 12px;border-bottom:1px solid #f1f5f9;cursor:pointer;font-size:14px}
 .ac div:last-child{border-bottom:none}
 .ac div:active,.ac div.sel{background:#dcfce7}
+/* V11: aviso dentro del buscador cuando no hay coincidencias o sobran */
+.ac .vacio{
+  padding:11px 12px;font-size:12.5px;color:#64748b;line-height:1.45;
+  background:#f8fafc;cursor:default
+}
+.ac .vacio:active{background:#f8fafc}
+.ac .vacio b{color:#166534}
 .ac .e{color:#64748b;font-size:11.5px;font-weight:600;float:right}
 .btns{display:flex;gap:9px;margin-top:6px}
 .btn{
@@ -289,8 +296,21 @@ header{
   aspect-ratio:3/4;display:flex;align-items:center;justify-content:center
 }
 @supports not (aspect-ratio: 1/1){ .tfoto{height:0;padding-bottom:49%} }
-.tfoto img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
-.tfoto .ini{font:800 40px sans-serif;color:rgba(255,255,255,.55)}
+/* ══ V11: la foto viene de FaceData a 80×80 px. Estirarla al triple la
+   cuadricula. Solución: el marco se llena con la misma foto ampliada y
+   desenfocada (queda como un fondo de color), y encima va la foto a un
+   tamaño moderado, donde todavía se ve limpia. ══ */
+.tfoto .bg{
+  position:absolute;inset:-12%;background-size:cover;background-position:center;
+  filter:blur(11px) brightness(.72) saturate(1.15);transform:scale(1.15)
+}
+.tfoto .real{
+  position:relative;width:78%;max-width:118px;aspect-ratio:1/1;border-radius:9px;
+  object-fit:cover;box-shadow:0 4px 14px rgba(0,0,0,.45);
+  border:2px solid rgba(255,255,255,.5);filter:contrast(1.05) saturate(1.05)
+}
+@supports not (aspect-ratio: 1/1){ .tfoto .real{height:118px} }
+.tfoto .ini{font:800 40px sans-serif;color:rgba(255,255,255,.55);position:relative}
 .tdatos{flex:1;min-width:0}
 .tdato{
   background:rgba(255,255,255,.11);border-radius:7px;padding:5px 9px;margin-bottom:5px;
@@ -704,18 +724,35 @@ function chipSyncClick(){
 }
 
 /* ══════ LISTA DE EMPLEADOS ══════ */
+/* V11 — BUG CORREGIDO: antes se descartaba todo nombre repetido, así que
+   si había dos trabajadores llamados igual (cosa común), el segundo
+   desaparecía de la app aunque estuviera en la lista de empleados.
+   Ahora se deduplica por número de empleado, que sí es único; solo
+   cuando alguien no tiene número se cae de vuelta al nombre. */
 function setWorkers(arr, src){
-  var seen = {}, out = [];
+  var porEmp = {}, porNombre = {}, out = [], repetidos = 0;
   for(var i=0;i<arr.length;i++){
     var w = arr[i]; if(!w || !w.name) continue;
-    var k = norm(w.name); if(seen[k]) continue; seen[k] = 1;
-    out.push({name:String(w.name).trim(), empNum:String(w.empNum||'').trim(),
+    var emp = String(w.empNum || '').trim();
+    var nom = String(w.name).trim();
+    if(emp){
+      if(porEmp[emp]) continue;               // mismo empleado dos veces en la hoja
+      porEmp[emp] = 1;
+      if(porNombre[norm(nom)]) repetidos++;   // homónimo: SÍ entra, solo se cuenta
+      porNombre[norm(nom)] = 1;
+    } else {
+      var k = norm(nom);
+      if(porNombre[k]) continue;              // sin número, no hay cómo distinguirlos
+      porNombre[k] = 1;
+    }
+    out.push({name:nom, empNum:emp,
               crew:String(w.crew||'').trim(), lider:String(w.lider||'').trim()});
   }
   out.sort(function(a,b){ return norm(a.name) < norm(b.name) ? -1 : 1; });
   WORKERS = out;
   try{ localStorage.setItem(WCACHE, JSON.stringify({w:out, ts:Date.now()})); }catch(e){}
   $('chipList').textContent = 'Lista: ' + out.length + (src ? ' ('+src+')' : '');
+  if(repetidos) console.log('[housing] ' + repetidos + ' trabajadores con nombre repetido (se conservaron todos)');
 }
 function loadWorkers(force){
   closeMenu();
@@ -1233,8 +1270,10 @@ function openInfo(k){
                               {day:'2-digit', month:'2-digit', year:'numeric'});
 
   var fb = $('tcFoto');
-  fb.innerHTML = foto ? '<img src="' + foto + '" alt="">'
-                      : '<span class="ini">' + esc(iniciales(v.n)) + '</span>';
+  fb.innerHTML = foto
+    ? '<div class="bg" style="background-image:url(' + foto + ')"></div>'
+      + '<img class="real" src="' + foto + '" alt="">'
+    : '<span class="ini">' + esc(iniciales(v.n)) + '</span>';
 
   $('tcDatos').innerHTML =
       tcRow('Nombre:',              v.n)
@@ -1298,26 +1337,79 @@ function closeBed(){
   $('ovBed').classList.remove('on');
   curBed = null; acIdx = -1;
 }
+/* ══════ BUSCADOR DE TRABAJADORES — reescrito en V11 ══════
+   Antes fallaba en dos cosas:
+     · dejaba de buscar a las 40 coincidencias, así que en una lista
+       grande un apellido común (García, Pérez…) podía nunca aparecer;
+     · buscaba la frase tal cual, así que "Perez Juan" no encontraba
+       a "JUAN PEREZ LOPEZ".
+   Ahora recorre TODA la lista, acepta las palabras en cualquier orden
+   y también busca por número de empleado.                           */
+var AC_MAX = 15;    // cuántas sugerencias se muestran
+
 function onAC(q){
   var box = $('acBox');
-  q = norm(q);
-  if(q.length < 2 || !WORKERS.length){ box.style.display = 'none'; acList = []; return; }
-  var starts = [], has = [];
-  for(var i=0;i<WORKERS.length && (starts.length+has.length) < 40;i++){
-    var nm = norm(WORKERS[i].name);
-    if(nm.indexOf(q) === 0) starts.push(WORKERS[i]);
-    else if(nm.indexOf(q) > -1) has.push(WORKERS[i]);
+  var qn  = norm(q);
+  if(qn.length < 2 || !WORKERS.length){ box.style.display = 'none'; acList = []; return; }
+
+  var terminos = qn.split(' ').filter(function(t){ return t.length > 0; });
+  var esNumero = /^\d+$/.test(qn);
+  var res = [];
+
+  for(var i=0;i<WORKERS.length;i++){          // ← la lista COMPLETA, sin cortes
+    var w = WORKERS[i], nm = norm(w.name), emp = String(w.empNum || '');
+    var puntos = -1;
+
+    if(esNumero && emp){                       // búsqueda por número de empleado
+      if(emp === qn)            puntos = 100;
+      else if(emp.indexOf(qn) === 0) puntos = 90;
+      else if(emp.indexOf(qn) > -1)  puntos = 70;
+    }
+    if(puntos < 0){
+      /* todas las palabras que escribiste deben estar en el nombre,
+         sin importar el orden */
+      var todas = true, empiezaPalabra = 0;
+      for(var t=0;t<terminos.length;t++){
+        var pos = nm.indexOf(terminos[t]);
+        if(pos < 0){ todas = false; break; }
+        if(pos === 0 || nm.charAt(pos-1) === ' ') empiezaPalabra++;
+      }
+      if(todas){
+        if(nm.indexOf(qn) === 0)                 puntos = 80;   // empieza igual
+        else if(empiezaPalabra === terminos.length) puntos = 60; // coincide por palabras
+        else                                     puntos = 40;   // coincide por dentro
+        if(nm === qn) puntos = 110;                              // exacto
+      }
+    }
+    if(puntos >= 0) res.push({w:w, p:puntos, nm:nm});
   }
-  acList = starts.concat(has).slice(0,12);
-  if(!acList.length){ box.style.display = 'none'; return; }
+
+  res.sort(function(a,b){ return b.p - a.p || (a.nm < b.nm ? -1 : 1); });
+  var total = res.length;
+  acList = res.slice(0, AC_MAX).map(function(r){ return r.w; });
+
+  /* Si no hay nadie, decirlo — antes el menú simplemente no salía
+     y uno no sabía si estaba buscando mal o si faltaba la lista. */
+  if(!acList.length){
+    box.innerHTML = '<div class="vacio">Nadie con ese nombre entre los '
+                  + WORKERS.length + ' empleados cargados.<br>'
+                  + '<b>Puedes escribirlo a mano igual</b>, o toca ☰ → '
+                  + '"Actualizar lista de empleados".</div>';
+    box.style.display = 'block'; acIdx = -1; return;
+  }
+
   var h = '';
   for(var j=0;j<acList.length;j++){
-    var w = acList[j], where = findPerson(w.name);
+    var wk = acList[j], where = findPerson(wk.name);
     h += '<div onmousedown="pickAC('+j+')" ontouchstart="pickAC('+j+')">'
-       +   '<span class="e">'+(w.empNum ? '#'+esc(w.empNum) : '')+'</span>'
-       +   esc(w.name)
-       +   (where ? ' <span style="color:#b45309;font-size:11px">• casa '+where.casa+'</span>' : '')
+       +   '<span class="e">'+(wk.empNum ? '#'+esc(wk.empNum) : '')+'</span>'
+       +   esc(wk.name)
+       +   (wk.crew ? ' <span style="color:#0f766e;font-size:11px;font-weight:700">· '+esc(wk.crew)+'</span>' : '')
+       +   (where ? ' <span style="color:#b45309;font-size:11px">• ya está en casa '+where.casa+'</span>' : '')
        + '</div>';
+  }
+  if(total > AC_MAX){
+    h += '<div class="vacio">y ' + (total - AC_MAX) + ' más — escribe el apellido para afinar</div>';
   }
   box.innerHTML = h; box.style.display = 'block'; acIdx = -1;
 }
