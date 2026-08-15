@@ -53,7 +53,11 @@ header{
   display:flex;gap:8px;align-items:center;flex-wrap:wrap;
   padding:8px 14px;background:#fff;border-bottom:1px solid #e2e8f0;font-size:12.5px;position:sticky;top:0;z-index:50
 }
-.chip{background:#f1f5f9;border-radius:20px;padding:4px 11px;font-weight:600;color:#334155}
+.chip{background:#f1f5f9;border-radius:20px;padding:6px 12px;font-weight:600;color:#334155}
+/* V6: el chip de estado se puede tocar para enviar */
+#chipSync{cursor:pointer;min-height:32px;display:inline-flex;align-items:center}
+#chipSync.pend{box-shadow:0 0 0 2px rgba(185,28,28,.25)}
+#chipSync:active{filter:brightness(.92)}
 .chip.ok{background:#dcfce7;color:#166534}
 .chip.warn{background:#fef3c7;color:#92400e}
 .chip.pend{background:#fee2e2;color:#991b1b}
@@ -257,6 +261,75 @@ header{
   background:#fef3c7;border-left:4px solid #f59e0b;padding:10px 12px;border-radius:8px;
   font-size:13px;color:#92400e;margin-bottom:12px;display:none
 }
+/* ══ V8: TARJETA DEL TRABAJADOR (estilo ficha deportiva) ══ */
+.tarjeta{
+  background:linear-gradient(140deg,#0a3b2a 0%,#15803d 48%,#0d4630 100%);
+  border-radius:14px;padding:13px;color:#fff;position:relative;overflow:hidden;
+  box-shadow:0 6px 22px rgba(10,59,42,.35)
+}
+/* textura diagonal suave, como las fichas de futbol */
+.tarjeta:before{
+  content:'';position:absolute;inset:0;opacity:.07;pointer-events:none;
+  background:repeating-linear-gradient(115deg,#fff 0 2px,transparent 2px 26px)
+}
+.thead{
+  display:flex;align-items:center;gap:10px;position:relative;
+  border-bottom:1px solid rgba(255,255,255,.22);padding-bottom:10px;margin-bottom:12px
+}
+.thead .logo{
+  height:36px;background:#fff;border-radius:7px;padding:3px 6px;flex:0 0 auto;
+  box-shadow:0 2px 6px rgba(0,0,0,.2)
+}
+.thead .tit{font-size:12.5px;font-weight:800;line-height:1.2;letter-spacing:.3px}
+.thead .sub{font-size:10px;opacity:.82;font-weight:600;margin-top:2px;letter-spacing:.6px}
+.tbody{display:flex;gap:11px;position:relative}
+.tfoto{
+  flex:0 0 37%;border-radius:10px;overflow:hidden;position:relative;
+  background:rgba(255,255,255,.13);border:2px solid rgba(255,255,255,.35);
+  aspect-ratio:3/4;display:flex;align-items:center;justify-content:center
+}
+@supports not (aspect-ratio: 1/1){ .tfoto{height:0;padding-bottom:49%} }
+.tfoto img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+.tfoto .ini{font:800 40px sans-serif;color:rgba(255,255,255,.55)}
+.tdatos{flex:1;min-width:0}
+.tdato{
+  background:rgba(255,255,255,.11);border-radius:7px;padding:5px 9px;margin-bottom:5px;
+  border-left:3px solid rgba(255,255,255,.35)
+}
+.tdato:last-child{margin-bottom:0}
+.tdato .lbl{
+  font-size:9px;font-weight:700;letter-spacing:.7px;text-transform:uppercase;
+  opacity:.72;line-height:1.3
+}
+.tdato .val{font-size:13.5px;font-weight:700;line-height:1.25;word-break:break-word}
+.tdato.destaca{background:rgba(255,255,255,.2);border-left-color:#fde68a}
+.tdato.destaca .val{color:#fde68a}
+.tfoot{
+  display:flex;align-items:center;justify-content:space-between;position:relative;
+  margin-top:11px;padding-top:9px;border-top:1px solid rgba(255,255,255,.22);
+  font-size:9.5px;opacity:.8;font-weight:700;letter-spacing:.6px
+}
+.ficha .nota{
+  margin-top:10px;font-size:12px;color:#b45309;background:#fef3c7;
+  border-radius:8px;padding:8px 10px;line-height:1.4
+}
+@media(max-width:400px){
+  .tdato .val{font-size:12.5px}
+  .tfoto{flex-basis:34%}
+}
+/* ── V6: BOTÓN GUARDAR FLOTANTE ── */
+.fab{
+  position:fixed;right:14px;bottom:14px;bottom:calc(14px + env(safe-area-inset-bottom));
+  z-index:85;background:#16a34a;color:#fff;border:none;border-radius:30px;
+  padding:0 22px;min-height:54px;font-size:16px;font-weight:800;font-family:inherit;
+  box-shadow:0 6px 20px rgba(22,163,74,.45);cursor:pointer;display:none;
+  align-items:center;gap:8px;animation:fabIn .2s ease-out
+}
+.fab.on{display:flex}
+.fab:active{background:#15803d}
+.fab.enviando{background:#f59e0b;box-shadow:0 6px 20px rgba(245,158,11,.45)}
+@keyframes fabIn{from{transform:scale(.85);opacity:0}to{transform:scale(1);opacity:1}}
+body.viewonly .fab{display:none !important}
 /* ── TOAST ── */
 #toast{
   position:fixed;left:50%;bottom:26px;transform:translateX(-50%) translateY(80px);
@@ -340,7 +413,7 @@ body.viewonly .occrow .del{display:none}
 <div class="statusbar">
   <span class="chip ok" id="chipOcc">0 / 196</span>
   <span class="chip" id="chipCasas">14 casas</span>
-  <span class="chip" id="chipSync">Sin enviar</span>
+  <span class="chip" id="chipSync" onclick="chipSyncClick()" title="Toca para enviar a Google Sheets">Sin enviar</span>
   <span class="spacer"></span>
   <span class="lnk" id="chipList" onclick="loadWorkers(true)">Lista: 0</span>
 </div>
@@ -394,12 +467,38 @@ body.viewonly .occrow .del{display:none}
         <!-- cocina -->
         <line x1="395" y1="305" x2="395" y2="472" stroke="#0f172a" stroke-width="5"/>
         <line x1="120" y1="470" x2="745" y2="470" stroke="#0f172a" stroke-width="5"/>
-        <!-- puertas (arcos) -->
-        <path d="M40,222 Q118,222 133,150" fill="none" stroke="#94a3b8" stroke-width="3"/>
-        <path d="M395,307 Q452,307 452,240" fill="none" stroke="#94a3b8" stroke-width="3"/>
-        <path d="M645,307 Q590,307 590,242" fill="none" stroke="#94a3b8" stroke-width="3"/>
-        <path d="M920,307 Q825,307 822,215" fill="none" stroke="#94a3b8" stroke-width="3"/>
-        <path d="M425,700 Q425,645 530,700" fill="none" stroke="#94a3b8" stroke-width="4"/>
+        <!-- ══ PUERTAS (V6) ══
+             Se acabaron las curvas grises. Cada puerta ahora es:
+             1) un hueco blanco que "corta" la pared
+             2) la hoja de la puerta, de color madera, con su manija -->
+
+        <!-- Cuarto 2 (abre hacia adentro del cuarto).
+             La hoja va en el extremo del hueco, no pegada al muro exterior. -->
+        <line x1="33" y1="220" x2="125" y2="220" stroke="#fff" stroke-width="11"/>
+        <rect x="115" y="152" width="10" height="68" rx="2" fill="#a16207" stroke="#78350f" stroke-width="2"/>
+        <circle cx="120" cy="161" r="3" fill="#fde68a"/>
+
+        <!-- Baño 1 -->
+        <line x1="398" y1="305" x2="470" y2="305" stroke="#fff" stroke-width="10"/>
+        <rect x="460" y="305" width="10" height="62" rx="2" fill="#a16207" stroke="#78350f" stroke-width="2"/>
+        <circle cx="465" cy="358" r="3" fill="#fde68a"/>
+
+        <!-- Baño 2 -->
+        <line x1="556" y1="305" x2="628" y2="305" stroke="#fff" stroke-width="10"/>
+        <rect x="556" y="305" width="10" height="62" rx="2" fill="#a16207" stroke="#78350f" stroke-width="2"/>
+        <circle cx="561" cy="358" r="3" fill="#fde68a"/>
+
+        <!-- Cuarto 1 (hoja del lado de adentro, no sobre el muro exterior) -->
+        <line x1="830" y1="305" x2="908" y2="305" stroke="#fff" stroke-width="10"/>
+        <rect x="830" y="305" width="10" height="62" rx="2" fill="#a16207" stroke="#78350f" stroke-width="2"/>
+        <circle cx="835" cy="358" r="3" fill="#fde68a"/>
+
+        <!-- ENTRADA PRINCIPAL -->
+        <line x1="428" y1="710" x2="528" y2="710" stroke="#fff" stroke-width="12"/>
+        <rect x="428" y="638" width="11" height="72" rx="2" fill="#a16207" stroke="#78350f" stroke-width="2.5"/>
+        <circle cx="433.5" cy="649" r="3.5" fill="#fde68a"/>
+        <text x="478" y="620" text-anchor="middle"
+              font-size="17" font-weight="700" fill="#a16207">ENTRADA</text>
         <!-- etiquetas -->
         <text class="roomlbl" x="120" y="118">Cuarto 2</text>
         <text class="roomlbl" x="405" y="158" font-size="19">BAÑO</text>
@@ -422,6 +521,40 @@ body.viewonly .occrow .del{display:none}
     <div id="occRows"></div>
   </div>
 </div>
+
+<!-- ═══ V6: FICHA DE LA PERSONA (al tocar una cama ocupada) ═══ -->
+<div class="ov" id="ovInfo" onclick="if(event.target===this)closeInfo()">
+  <div class="sheet">
+    <div class="ficha">
+      <div class="tarjeta">
+        <div class="thead">
+          <img class="logo" id="tcLogo" alt="eBerry Harvest">
+          <div>
+            <div class="tit">ALOJAMIENTO DE PERSONAL</div>
+            <div class="sub" id="tcSub">PREWITT VILLAGE</div>
+          </div>
+        </div>
+        <div class="tbody">
+          <div class="tfoto" id="tcFoto"></div>
+          <div class="tdatos" id="tcDatos"></div>
+        </div>
+        <div class="tfoot">
+          <span>eBerry Harvest Company</span>
+          <span id="tcFecha"></span>
+        </div>
+      </div>
+      <div class="nota" id="infoNota" style="display:none"></div>
+    </div>
+    <div class="btns">
+      <button class="btn d edit-only" onclick="infoQuitar()">Quitar</button>
+      <button class="btn s" onclick="closeInfo()">Cerrar</button>
+      <button class="btn p edit-only" onclick="infoEditar()">✏️ Editar / Mover</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ V6: BOTÓN GUARDAR ═══ -->
+<button class="fab" id="fabSave" onclick="sendToSheets()">💾 Guardar y enviar</button>
 
 <!-- ═══ MODAL ASIGNAR ═══ -->
 <div class="ov" id="ovBed" onclick="if(event.target===this)closeBed()">
@@ -540,7 +673,8 @@ function saveDB(markDirty){
 }
 function markPending(){
   var c = $('chipSync');
-  c.className = 'chip pend'; c.textContent = 'Sin enviar';
+  c.className = 'chip pend'; c.textContent = '⚠️ Sin enviar';
+  if(!VIEWONLY) $('fabSave').classList.add('on');   /* V6: aparece el botón Guardar */
 }
 function markSynced(txt){
   DB.dirty = false;
@@ -548,6 +682,19 @@ function markSynced(txt){
   var c = $('chipSync');
   c.className = 'chip ok'; c.textContent = txt;
   $('pendBar').classList.remove('on');
+  var f = $('fabSave');
+  f.classList.remove('on','enviando');
+  f.innerHTML = '💾 Guardar y enviar';
+}
+/* V6 — tocar el chip de estado hace lo que toque según el momento */
+function chipSyncClick(){
+  if(VIEWONLY){ forceLoadFromSheets(); return; }
+  if(DB.dirty){ sendToSheets(); return; }
+  var n = 0;
+  for(var i=0;i<CASAS.length;i++) n += occCasa(CASAS[i]);
+  if(!n){ toast('Todavía no hay nadie asignado'); return; }
+  if(confirm('No hay cambios pendientes.\n\n¿Volver a enviar todo a Google Sheets de todas formas?'))
+    sendToSheets();
 }
 
 /* ══════ LISTA DE EMPLEADOS ══════ */
@@ -556,7 +703,8 @@ function setWorkers(arr, src){
   for(var i=0;i<arr.length;i++){
     var w = arr[i]; if(!w || !w.name) continue;
     var k = norm(w.name); if(seen[k]) continue; seen[k] = 1;
-    out.push({name:String(w.name).trim(), empNum:String(w.empNum||'').trim(), crew:String(w.crew||'').trim()});
+    out.push({name:String(w.name).trim(), empNum:String(w.empNum||'').trim(),
+              crew:String(w.crew||'').trim(), lider:String(w.lider||'').trim()});
   }
   out.sort(function(a,b){ return norm(a.name) < norm(b.name) ? -1 : 1; });
   WORKERS = out;
@@ -611,6 +759,11 @@ function fallbackWorkers(){
    corre en el mismo dominio (GitHub Pages), las puede leer directo.
    Si ese caché no existe (otro dispositivo), las pide a FieldSync
    con action=faceData y guarda su propia copia. */
+/* V8 — Logo de eBerry Harvest Company.
+   Sacado del propio app eBerry (variable EBERRY_LOGO), así la tarjeta
+   se ve igual de oficial y no depende de ningún archivo externo. */
+var EBERRY_LOGO = "data:image/jpeg;base64,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";
+
 var FACES = {};                       // empNum → base64 jpeg
 var FKEY_APP  = 'eb_facethumbs_v1';   // caché del app eBerry
 var FKEY_MINE = 'eb_housing_faces';   // caché propio del housing
@@ -665,6 +818,27 @@ function loadFaces(force){
   xhr.onerror = xhr.ontimeout = function(){};
   xhr.send();
 }
+/* V7 — Busca al trabajador en la lista (por Emp# primero, luego por nombre) */
+function workerOf(v){
+  if(!v) return null;
+  var e = v.e ? String(v.e).trim() : '';
+  var i;
+  if(e){
+    for(i=0;i<WORKERS.length;i++) if(String(WORKERS[i].empNum).trim() === e) return WORKERS[i];
+  }
+  if(v.n){
+    var q = norm(v.n);
+    for(i=0;i<WORKERS.length;i++) if(norm(WORKERS[i].name) === q) return WORKERS[i];
+  }
+  return null;
+}
+/* V7 — Cuadrilla del trabajador: la guardada al asignarlo, o la de la lista */
+function crewOf(v){
+  if(v && v.c) return v.c;
+  var w = workerOf(v);
+  return (w && w.crew) ? w.crew : '';
+}
+
 /* Devuelve la foto de quien ocupa la cama, o '' si no hay */
 function faceOf(v){
   if(!v) return '';
@@ -972,16 +1146,94 @@ function quickDel(k){
 }
 
 /* ══════ MODAL DE CAMA ══════ */
+/* V6 — al tocar una cama:
+     · ocupada  → primero la FICHA (foto, nombre, Emp#) y de ahí "Editar"
+     · vacía    → directo a escribir, para capturar rápido
+     · consulta → siempre la ficha, sin botones de editar          */
 function openBed(k){
   var v0 = (DB.casas[curCasa] || {})[k] || {};
-  if(VIEWONLY){                       /* V2: en consulta solo se muestra */
-    var L0 = LITERAS.filter(function(x){ return x.id === parseInt(k,10); })[0] || {};
-    toast(v0.n ? (v0.n + (v0.e ? ' · #' + v0.e : '') + ' — ' + L0.loc)
-               : 'Cama vacía — ' + bedLabel(k));
+  if(v0 && v0.n){ openInfo(k); return; }
+  if(VIEWONLY){
+    toast('Cama libre — ' + bedLabel(k));
     return;
   }
+  openBedEdit(k);
+}
+/* ── V6: FICHA DE LA PERSONA ── */
+var infoBed = null;
+function iniciales(n){
+  var p = String(n||'').trim().split(/\s+/);
+  return ((p[0]||'').charAt(0) + (p[1]||'').charAt(0)).toUpperCase() || '?';
+}
+/* V8 — arma una fila de la tarjeta */
+function tcRow(label, valor, destaca){
+  return '<div class="tdato' + (destaca ? ' destaca' : '') + '">'
+       +   '<div class="lbl">' + esc(label) + '</div>'
+       +   '<div class="val">' + esc(valor || '—') + '</div>'
+       + '</div>';
+}
+function openInfo(k){
+  infoBed = k;
+  var v = (DB.casas[curCasa] || {})[k] || {};
+  var L = LITERAS.filter(function(x){ return x.id === parseInt(k,10); })[0] || {};
+  var foto = faceOf(v);
+  var w    = workerOf(v);
+  var crew = crewOf(v);
+
+  $('tcLogo').src = EBERRY_LOGO;
+  $('tcSub').textContent = 'PREWITT VILLAGE · CASA ' + curCasa;
+  $('tcFecha').textContent = new Date().toLocaleDateString('es-MX',
+                              {day:'2-digit', month:'2-digit', year:'numeric'});
+
+  var fb = $('tcFoto');
+  fb.innerHTML = foto ? '<img src="' + foto + '" alt="">'
+                      : '<span class="ini">' + esc(iniciales(v.n)) + '</span>';
+
+  $('tcDatos').innerHTML =
+      tcRow('Nombre:',              v.n)
+    + tcRow('Número de empleado:',  v.e ? '#' + v.e : 'Sin registrar')
+    + tcRow('Cuadrilla:',           crew || (WORKERS.length ? 'No aparece en la lista' : 'Lista sin cargar'))
+    + (w && w.lider ? tcRow('Supervisor:', w.lider) : '')
+    + tcRow('Casa:',                curCasa)
+    + tcRow('Ubicación:',           L.loc)
+    + tcRow('Litera:',              'Número ' + k.slice(0,-1))
+    + tcRow('Cama:',                (k.slice(-1) === 'A' ? 'ARRIBA' : 'ABAJO'), true);
+
+  /* Si no tiene foto, explicar por qué en vez de dejarlo adivinando */
+  var nota = $('infoNota');
+  if(!foto){
+    nota.style.display = 'block';
+    nota.innerHTML = Object.keys(FACES).length
+      ? '📷 Esta persona no tiene foto registrada. Se le toma con <b>FaceID en el app eBerry</b> '
+        + 'y después, aquí en el menú ☰, "Traer datos y fotos".'
+      : '📷 Todavía no se han cargado las fotos en este dispositivo. Entra al menú ☰ y toca '
+        + '<b>"Traer datos y fotos de Google Sheets"</b>.';
+  } else nota.style.display = 'none';
+
+  $('ovInfo').classList.add('on');
+}
+function closeInfo(){ $('ovInfo').classList.remove('on'); infoBed = null; }
+function infoEditar(){
+  var k = infoBed;
+  closeInfo();
+  if(k) openBedEdit(k);
+}
+function infoQuitar(){
+  var k = infoBed;
+  if(!k) return;
+  var v = (DB.casas[curCasa]||{})[k];
+  if(!v) return;
+  if(!confirm('¿Quitar a ' + v.n + ' de la ' + bedLabel(k) + '?')) return;
+  delete DB.casas[curCasa][k];
+  saveDB(); renderPlano(); closeInfo();
+  toast('Cama liberada');
+}
+
+/* Modal de captura (el de siempre) */
+function openBedEdit(k){
+  if(VIEWONLY) return;
   curBed = k;
-  var v = v0;
+  var v = (DB.casas[curCasa] || {})[k] || {};
   var L = LITERAS.filter(function(x){ return x.id === parseInt(k,10); })[0] || {};
   $('bedT').textContent = 'Casa ' + curCasa + ' · ' + bedLabel(k);
   $('bedS').textContent = L.loc || '';
@@ -1074,7 +1326,10 @@ function saveBed(){
   var f = findPerson(nm);
   if(f && !confirm(nm + ' está en la casa ' + f.casa + ' (' + bedLabel(f.bed) + ').\n\n¿Moverlo a esta cama?')) return;
   if(f) delete DB.casas[f.casa][f.bed];
-  DB.casas[curCasa][curBed] = {n:nm, e:em};
+  /* V7: se guarda también la cuadrilla, para que quede aunque después
+     la lista de empleados no esté cargada en ese dispositivo. */
+  var wk = workerOf({n:nm, e:em});
+  DB.casas[curCasa][curBed] = {n:nm, e:em, c:(wk && wk.crew) ? wk.crew : ''};
   saveDB(); renderPlano(); closeBed();
   toast('✔ ' + shortName(nm) + ' asignado');
 }
@@ -1095,7 +1350,7 @@ function globalSearch(q){
     var c = CASAS[ci], d = DB.casas[c] || {};
     for(var k in d){
       if(d[k] && norm(d[k].n).indexOf(q) > -1)
-        hits.push({casa:c, bed:k, name:d[k].n, emp:d[k].e});
+        hits.push({casa:c, bed:k, name:d[k].n, emp:d[k].e, v:d[k]});
       if(hits.length > 25) break;
     }
   }
@@ -1106,8 +1361,10 @@ function globalSearch(q){
   var h = '';
   for(var i=0;i<hits.length;i++){
     var L = LITERAS.filter(function(x){ return x.id === parseInt(hits[i].bed,10); })[0] || {};
+    var cw = crewOf(hits[i].v);
     h += '<div onmousedown="jumpTo(\''+hits[i].casa+'\',\''+hits[i].bed+'\')">'
        +   '<b>'+esc(hits[i].name)+'</b>'+(hits[i].emp ? ' <span style="color:#64748b;font-size:11px">#'+esc(hits[i].emp)+'</span>' : '')
+       +   (cw ? ' <span style="color:#0f766e;font-size:11px;font-weight:700">· '+esc(cw)+'</span>' : '')
        +   '<br><span style="color:#64748b;font-size:12px">Casa '+hits[i].casa+' · '+bedLabel(hits[i].bed)+' · '+esc(L.loc||'')+'</span>'
        + '</div>';
   }
@@ -1233,6 +1490,9 @@ function sendToSheets(){
 
   var chip = $('chipSync');
   chip.className = 'chip warn'; chip.textContent = 'Enviando…';
+  var fab = $('fabSave');
+  fab.classList.add('on','enviando');
+  fab.innerHTML = '⏳ Enviando…';
 
   var payload = {
     action: 'housing',
@@ -1253,7 +1513,8 @@ function sendToSheets(){
         markSynced('Enviado ' + new Date().toTimeString().slice(0,5));
         toast('✔ Enviado a Sheets (' + ocupadas + ' personas)');
       } else {
-        chip.className = 'chip pend'; chip.textContent = 'Error';
+        chip.className = 'chip pend'; chip.textContent = '⚠️ Error';
+        fab.classList.remove('enviando'); fab.innerHTML = '💾 Reintentar envío';
         toast('El servidor respondió con error. Revisa HousingSync.gs', true);
       }
     })
@@ -1268,7 +1529,8 @@ function sendToSheets(){
           toast('Enviado — verifica la hoja HOUSING');
         })
         .catch(function(){
-          chip.className = 'chip pend'; chip.textContent = 'Sin enviar';
+          chip.className = 'chip pend'; chip.textContent = '⚠️ Sin enviar';
+          fab.classList.remove('enviando'); fab.innerHTML = '💾 Reintentar envío';
           toast('Sin conexión. Los datos siguen guardados aquí.', true);
         });
     });
@@ -1285,11 +1547,14 @@ function sendToSheets(){
     for(var i=0;i<eo.length;i++) eo[i].style.display = 'none';
     $('chipList').style.display = 'none';
     $('gsearch').placeholder = '🔍 ¿Dónde duerme…? Busca a una persona';
+    $('chipSync').title = 'Toca para traer lo más reciente de Google Sheets';
   }
 
   renderMapa();
   restoreChip();
-  if(!VIEWONLY) loadWorkers(false);
+  /* V7: la lista de empleados se carga SIEMPRE, también en modo consulta:
+     de ahí sale la cuadrilla que se muestra en la ficha. */
+  loadWorkers(false);
   loadFaces();          // V3: fotos de los trabajadores
 
   /* ── Traer datos de Sheets al abrir ──
