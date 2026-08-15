@@ -26,13 +26,18 @@ header{
 .htitle small{display:block;font-size:11px;font-weight:400;opacity:.8;margin-top:2px}
 .hbtn{
   background:rgba(255,255,255,.16);border:1px solid rgba(255,255,255,.28);color:#fff;
-  border-radius:9px;padding:7px 10px;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap
+  border-radius:9px;font-size:15px;font-weight:600;cursor:pointer;white-space:nowrap;
+  /* V5 iPhone: 44px es el mínimo que recomienda Apple para tocar con el dedo */
+  min-width:44px;min-height:44px;padding:0 12px
 }
 .hbtn:active{background:rgba(255,255,255,.3)}
 .hbtn.ghost{background:transparent}
 .searchwrap{position:relative;margin-top:9px}
 #gsearch{
-  width:100%;padding:9px 12px;border-radius:10px;border:none;font-size:14px;
+  width:100%;padding:11px 12px;border-radius:10px;border:none;
+  /* V5 iPhone: 16px obligatorio — con menos, Safari hace zoom solo
+     al tocar el campo y descuadra toda la pantalla */
+  font-size:16px;
   background:rgba(255,255,255,.95);color:#0f172a
 }
 #gres{
@@ -106,7 +111,8 @@ header{
 .freechips{display:flex;flex-wrap:wrap;gap:6px}
 .fchip{
   background:#f0fdf4;border:1px solid #bbf7d0;color:#166534;border-radius:8px;
-  padding:5px 9px;font-size:12px;font-weight:700;cursor:pointer
+  padding:9px 11px;font-size:12.5px;font-weight:700;cursor:pointer;
+  min-height:38px;display:inline-flex;align-items:center   /* V5: cómodo para el dedo */
 }
 .fchip:active{background:#dcfce7}
 .fchip.llena{background:#f1f5f9;border-color:#e2e8f0;color:#94a3b8}
@@ -115,8 +121,8 @@ header{
 /* ── PLANO DE LA CASA ── */
 .backbar{display:flex;align-items:center;gap:10px;margin-bottom:12px}
 .backbtn{
-  background:#fff;border:1px solid #cbd5e1;border-radius:10px;padding:8px 13px;
-  font-size:14px;font-weight:700;cursor:pointer;color:#166534
+  background:#fff;border:1px solid #cbd5e1;border-radius:10px;padding:0 15px;
+  font-size:14px;font-weight:700;cursor:pointer;color:#166534;min-height:44px
 }
 .backbtn:active{background:#f1f5f9}
 .casaTitle{font-size:20px;font-weight:800;flex:1}
@@ -125,6 +131,11 @@ header{
   background:#fff;border-radius:16px;padding:12px;box-shadow:0 2px 12px rgba(0,0,0,.07);overflow:hidden
 }
 .plano{position:relative;width:100%;aspect-ratio:950/740}
+/* V5 iPhone viejo: iOS 14 y anteriores no entienden aspect-ratio y el plano
+   se aplastaría a cero de alto. Este respaldo usa el truco del padding. */
+@supports not (aspect-ratio: 1/1){
+  .plano{height:0;padding-bottom:77.9%}
+}
 .plano svg{position:absolute;inset:0;width:100%;height:100%}
 .roomlbl{font:600 22px sans-serif;fill:#475569;letter-spacing:.5px}
 /* ══ LITERAS — V3: vista de perfil, cama alta arriba y baja abajo ══ */
@@ -206,7 +217,8 @@ header{
 /* ── MODAL ── */
 .ov{
   position:fixed;inset:0;background:rgba(15,23,42,.55);display:none;align-items:flex-end;
-  justify-content:center;z-index:100;backdrop-filter:blur(2px)
+  justify-content:center;z-index:100;
+  -webkit-backdrop-filter:blur(2px);backdrop-filter:blur(2px)   /* V5: Safari pide el -webkit- */
 }
 .ov.on{display:flex}
 .sheet{
@@ -887,6 +899,12 @@ function fitBeds(){
     /* V3: descontar lo que ocupan la etiqueta ARRIBA/ABAJO y la foto.
        Si la cama quedó muy chica, se esconde la foto para que el
        nombre siga siendo legible — el nombre importa más. */
+    /* V5: si la cama quedó muy bajita (celular), la etiqueta ARRIBA/ABAJO
+       se corta. Ahí se esconde y queda el color de fondo + la leyenda. */
+    var posEl = box.querySelector('.pos');
+    var conPos = (h >= 34);
+    if(posEl) posEl.style.display = conPos ? '' : 'none';
+
     var img = box.querySelector('.face');
     var conFoto = false;
     if(img){
@@ -894,8 +912,8 @@ function fitBeds(){
       conFoto = (h >= 46 && w >= 58);
       if(conFoto) img.classList.add('on'); else img.classList.remove('on');
     }
-    var alto = h - (conFoto ? 24 : 14);       // fila de etiqueta (+foto)
-    if(alto < 12) alto = 12;
+    var alto = h - (conFoto ? 24 : (conPos ? 14 : 2));   // fila de etiqueta (+foto)
+    if(alto < 11) alto = 11;
     h = alto + 14;                            // fitBeds vuelve a restar 14/15 abajo
     var words = txt.split(/\s+/), maxWord = 1;
     for(var j=0;j<words.length;j++) if(words[j].length > maxWord) maxWord = words[j].length;
@@ -972,7 +990,10 @@ function openBed(k){
   $('bedWarn').style.display = 'none';
   $('acBox').style.display = 'none';
   $('ovBed').classList.add('on');
-  setTimeout(function(){ $('bedName').focus(); }, 120);
+  /* V5 iPhone: el focus va inmediato, dentro del mismo toque. Si se pone
+     dentro de un setTimeout, Safari lo considera "no provocado por el
+     usuario" y no levanta el teclado. */
+  try{ $('bedName').focus(); }catch(e){}
 }
 function closeBed(){
   $('ovBed').classList.remove('on');
@@ -1116,10 +1137,29 @@ function setUser(){
 }
 function exportJSON(){
   closeMenu();
-  var blob = new Blob([JSON.stringify(DB, null, 2)], {type:'application/json'});
+  var nombre = 'housing_' + new Date().toISOString().slice(0,10) + '.json';
+  var texto  = JSON.stringify(DB, null, 2);
+  var blob   = new Blob([texto], {type:'application/json'});
+
+  /* V5 iPhone: Safari en iOS ignora el atributo download — abriría el JSON
+     en una pestaña en vez de guardarlo. Ahí usamos el menú Compartir del
+     sistema, que sí deja guardarlo en Archivos o mandarlo por WhatsApp. */
+  var esIOS = /iPad|iPhone|iPod/.test(navigator.userAgent)
+              || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  if(esIOS && navigator.canShare && window.File){
+    try{
+      var archivo = new File([blob], nombre, {type:'application/json'});
+      if(navigator.canShare({files:[archivo]})){
+        navigator.share({files:[archivo], title:'Respaldo housing'})
+          .then(function(){ toast('Respaldo compartido'); })
+          .catch(function(){ /* si cancela, ni modo */ });
+        return;
+      }
+    }catch(e){}
+  }
   var a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
-  a.download = 'housing_' + new Date().toISOString().slice(0,10) + '.json';
+  a.download = nombre;
   a.click();
   setTimeout(function(){ URL.revokeObjectURL(a.href); }, 1500);
   toast('Respaldo descargado');
