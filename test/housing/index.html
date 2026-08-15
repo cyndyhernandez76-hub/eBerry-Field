@@ -1,0 +1,1269 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#166534">
+<title>eBerry Housing — Prewitt Village</title>
+<style>
+/* ═══════════ eBerry Housing Alpha V1 ═══════════ */
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;padding:0}
+body{
+  font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;
+  background:#f1f5f4;color:#0f172a;font-size:15px;
+  padding-bottom:env(safe-area-inset-bottom);
+}
+/* ── HEADER ── */
+header{
+  background:linear-gradient(135deg,#166534,#15803d);color:#fff;
+  padding:calc(10px + env(safe-area-inset-top)) 14px 10px;
+  position:sticky;top:0;z-index:60;box-shadow:0 2px 10px rgba(0,0,0,.18)
+}
+.hrow{display:flex;align-items:center;gap:10px}
+.htitle{font-size:17px;font-weight:700;line-height:1.1;flex:1;min-width:0}
+.htitle small{display:block;font-size:11px;font-weight:400;opacity:.8;margin-top:2px}
+.hbtn{
+  background:rgba(255,255,255,.16);border:1px solid rgba(255,255,255,.28);color:#fff;
+  border-radius:9px;padding:7px 10px;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap
+}
+.hbtn:active{background:rgba(255,255,255,.3)}
+.hbtn.ghost{background:transparent}
+.searchwrap{position:relative;margin-top:9px}
+#gsearch{
+  width:100%;padding:9px 12px;border-radius:10px;border:none;font-size:14px;
+  background:rgba(255,255,255,.95);color:#0f172a
+}
+#gres{
+  position:absolute;left:0;right:0;top:calc(100% + 4px);background:#fff;border-radius:10px;
+  box-shadow:0 8px 26px rgba(0,0,0,.25);max-height:44vh;overflow:auto;display:none;z-index:70
+}
+#gres div{padding:10px 12px;border-bottom:1px solid #f1f5f9;cursor:pointer;color:#0f172a;font-size:14px}
+#gres div:last-child{border-bottom:none}
+#gres div:active{background:#dcfce7}
+#gres b{color:#166534}
+/* ── BARRA DE ESTADO ── */
+.statusbar{
+  display:flex;gap:8px;align-items:center;flex-wrap:wrap;
+  padding:8px 14px;background:#fff;border-bottom:1px solid #e2e8f0;font-size:12.5px;position:sticky;top:0;z-index:50
+}
+.chip{background:#f1f5f9;border-radius:20px;padding:4px 11px;font-weight:600;color:#334155}
+.chip.ok{background:#dcfce7;color:#166534}
+.chip.warn{background:#fef3c7;color:#92400e}
+.chip.pend{background:#fee2e2;color:#991b1b}
+.spacer{flex:1}
+.lnk{color:#166534;font-weight:600;cursor:pointer;text-decoration:underline;font-size:12.5px}
+/* ── VISTAS ── */
+.view{display:none;padding:14px;max-width:760px;margin:0 auto}
+.view.on{display:block}
+/* ── MAPA DEL VILLAGE ── */
+.village{
+  position:relative;background:#fff;border-radius:16px;padding:16px 46px;
+  box-shadow:0 2px 12px rgba(0,0,0,.07)
+}
+.street{
+  position:absolute;top:10px;bottom:10px;width:30px;background:#cbd5e1;border-radius:6px;
+  display:flex;align-items:center;justify-content:center
+}
+.street span{
+  writing-mode:vertical-rl;font-size:10px;font-weight:700;color:#475569;letter-spacing:.5px;
+  white-space:nowrap
+}
+.street.left{left:8px}
+.street.right{right:8px}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:14px 20px}
+/* ── V3: cada casa es una casita dibujada ── */
+.casa{
+  background:transparent;border:none;padding:0;cursor:pointer;text-align:center;
+  transition:transform .12s;position:relative
+}
+.casa:active{transform:scale(.95)}
+.casa svg{width:100%;max-width:112px;display:block;margin:0 auto;overflow:visible}
+.casa .occ{
+  font-size:12px;font-weight:700;margin-top:1px;color:#64748b
+}
+.casa .bar{
+  height:5px;background:#e2e8f0;border-radius:4px;margin:4px auto 0;overflow:hidden;max-width:88px
+}
+.casa .bar i{display:block;height:100%;border-radius:4px;transition:width .3s}
+.casa.full .occ{color:#166534}
+.casa.full .bar i{background:#16a34a}
+.casa.part .occ{color:#b45309}
+.casa.part .bar i{background:#f59e0b}
+.casa.empty .occ{color:#94a3b8}
+.casa.empty .bar i{background:#cbd5e1}
+.casa.hit .hs-body,.casa.hit .hs-roof{stroke:#166534;stroke-width:4}
+.hs-num{font:800 22px sans-serif;fill:#0f172a}
+.vtitle{text-align:center;font-size:12px;color:#64748b;margin:0 0 10px;font-weight:600;letter-spacing:.5px}
+/* ── V3: panel de lugares libres ── */
+.freebox{
+  background:#fff;border-radius:14px;padding:12px 14px;margin-bottom:12px;
+  box-shadow:0 2px 12px rgba(0,0,0,.07);border-left:5px solid #16a34a
+}
+.freebox h3{margin:0 0 3px;font-size:15px;color:#166534;display:flex;align-items:center;gap:7px}
+.freebox .sub{font-size:12px;color:#64748b;margin-bottom:9px;font-weight:600}
+.freechips{display:flex;flex-wrap:wrap;gap:6px}
+.fchip{
+  background:#f0fdf4;border:1px solid #bbf7d0;color:#166534;border-radius:8px;
+  padding:5px 9px;font-size:12px;font-weight:700;cursor:pointer
+}
+.fchip:active{background:#dcfce7}
+.fchip.llena{background:#f1f5f9;border-color:#e2e8f0;color:#94a3b8}
+.freebox.lleno{border-left-color:#f59e0b}
+.freebox.lleno h3{color:#b45309}
+/* ── PLANO DE LA CASA ── */
+.backbar{display:flex;align-items:center;gap:10px;margin-bottom:12px}
+.backbtn{
+  background:#fff;border:1px solid #cbd5e1;border-radius:10px;padding:8px 13px;
+  font-size:14px;font-weight:700;cursor:pointer;color:#166534
+}
+.backbtn:active{background:#f1f5f9}
+.casaTitle{font-size:20px;font-weight:800;flex:1}
+.casaTitle small{display:block;font-size:12px;font-weight:600;color:#64748b}
+.planoWrap{
+  background:#fff;border-radius:16px;padding:12px;box-shadow:0 2px 12px rgba(0,0,0,.07);overflow:hidden
+}
+.plano{position:relative;width:100%;aspect-ratio:950/740}
+.plano svg{position:absolute;inset:0;width:100%;height:100%}
+.roomlbl{font:600 22px sans-serif;fill:#475569;letter-spacing:.5px}
+/* ══ LITERAS — V3: vista de perfil, cama alta arriba y baja abajo ══ */
+.litera{
+  position:absolute;border:3px solid #0f766e;border-radius:10px;overflow:visible;
+  display:flex;flex-direction:column;background:#fff;
+  box-shadow:0 2px 6px rgba(15,23,42,.12)
+}
+/* número de la litera, en su etiqueta */
+.litnum{
+  position:absolute;top:-9px;left:-7px;z-index:3;
+  background:#0f766e;color:#fff;border-radius:6px;
+  font:800 10px sans-serif;padding:2px 6px;letter-spacing:.3px;
+  box-shadow:0 1px 3px rgba(0,0,0,.25)
+}
+/* escalerita al costado derecho */
+.ladder{
+  position:absolute;right:-9px;top:14%;bottom:14%;width:7px;z-index:2;
+  border-left:2px solid #94a3b8;border-right:2px solid #94a3b8;
+  background:repeating-linear-gradient(to bottom,
+    transparent 0,transparent 5px,#94a3b8 5px,#94a3b8 7px)
+}
+.cama{
+  flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;
+  cursor:pointer;line-height:1.15;text-align:center;padding:2px 3px;
+  overflow:hidden;position:relative;transition:background .12s
+}
+/* la separación entre cama alta y baja = el "colchón" de en medio */
+.cama.baja{border-top:3px solid #0f766e}
+.cama:active{filter:brightness(.93)}
+/* fila de arriba de la cama: foto + etiqueta ARRIBA/ABAJO */
+.cama .ctop{display:flex;align-items:center;gap:3px;margin-bottom:2px;max-width:100%}
+.cama .pos{
+  font:800 8.5px sans-serif;letter-spacing:.6px;border-radius:4px;
+  padding:1px 5px;white-space:nowrap
+}
+.cama.alta .pos{background:#0f766e;color:#fff}
+.cama.baja .pos{background:#e2e8f0;color:#475569}
+.cama .nm{
+  font-weight:700;color:#0f172a;font-size:10.5px;line-height:1.12;
+  max-width:100%;word-break:normal;overflow-wrap:normal;hyphens:none
+}
+/* fondos: la de arriba más marcada, la de abajo más clara */
+.cama.alta{background:#f0fdfa}
+.cama.baja{background:#fafafa}
+.cama.alta.taken{background:#a7f3d0}
+.cama.baja.taken{background:#dcfce7}
+.cama.empty .nm{color:#cbd5e1;font-size:15px;font-weight:400}
+/* foto del trabajador */
+.cama .face{
+  width:20px;height:20px;border-radius:50%;object-fit:cover;flex:0 0 auto;
+  border:2px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,.25);display:none
+}
+.cama .face.on{display:block}
+.cama.hit{background:#fde68a !important;animation:pulse 1s ease-in-out 2}
+/* leyenda debajo del plano */
+.leyenda{
+  display:flex;gap:14px;justify-content:center;flex-wrap:wrap;
+  margin-top:10px;font-size:11.5px;color:#64748b;font-weight:600
+}
+.leyenda i{display:inline-block;width:13px;height:13px;border-radius:3px;
+  vertical-align:-2px;margin-right:4px;border:1px solid #cbd5e1}
+@keyframes pulse{0%,100%{background:#fde68a}50%{background:#fbbf24}}
+/* ── LISTA DE OCUPANTES ── */
+.occlist{background:#fff;border-radius:16px;padding:12px 14px;margin-top:12px;box-shadow:0 2px 12px rgba(0,0,0,.07)}
+.occlist h3{margin:0 0 8px;font-size:14px;color:#166534;display:flex;align-items:center;gap:8px}
+.occrow{
+  display:flex;align-items:center;gap:10px;padding:8px 4px;border-bottom:1px solid #f1f5f9;font-size:13.5px
+}
+.occrow:last-child{border-bottom:none}
+.occrow .pos{
+  background:#166534;color:#fff;border-radius:7px;font-size:11px;font-weight:800;
+  padding:4px 7px;min-width:44px;text-align:center
+}
+.occrow .who{flex:1;font-weight:600}
+.occrow .emp{font-size:11.5px;color:#64748b;font-weight:600}
+.occrow .del{color:#dc2626;font-size:17px;cursor:pointer;padding:0 6px}
+.emptymsg{color:#94a3b8;font-size:13px;padding:10px 0;text-align:center}
+/* ── MODAL ── */
+.ov{
+  position:fixed;inset:0;background:rgba(15,23,42,.55);display:none;align-items:flex-end;
+  justify-content:center;z-index:100;backdrop-filter:blur(2px)
+}
+.ov.on{display:flex}
+.sheet{
+  background:#fff;width:100%;max-width:520px;border-radius:18px 18px 0 0;padding:18px 16px;
+  padding-bottom:calc(18px + env(safe-area-inset-bottom));max-height:88vh;overflow:auto;
+  animation:up .18s ease-out
+}
+@keyframes up{from{transform:translateY(30px);opacity:.5}to{transform:translateY(0);opacity:1}}
+.sheet h2{margin:0 0 3px;font-size:18px}
+.sheet .sub{color:#64748b;font-size:12.5px;margin-bottom:14px;font-weight:600}
+.fld{position:relative;margin-bottom:12px}
+.fld label{display:block;font-size:12px;font-weight:700;color:#475569;margin-bottom:5px}
+.fld input{
+  width:100%;padding:12px;border:2px solid #cbd5e1;border-radius:11px;font-size:16px;
+  font-family:inherit;background:#fff
+}
+.fld input:focus{outline:none;border-color:#16a34a}
+.ac{
+  position:absolute;left:0;right:0;top:calc(100% + 3px);background:#fff;border-radius:11px;
+  box-shadow:0 10px 30px rgba(0,0,0,.2);max-height:210px;overflow:auto;z-index:10;display:none
+}
+.ac div{padding:11px 12px;border-bottom:1px solid #f1f5f9;cursor:pointer;font-size:14px}
+.ac div:last-child{border-bottom:none}
+.ac div:active,.ac div.sel{background:#dcfce7}
+.ac .e{color:#64748b;font-size:11.5px;font-weight:600;float:right}
+.btns{display:flex;gap:9px;margin-top:6px}
+.btn{
+  flex:1;padding:13px;border:none;border-radius:11px;font-size:15px;font-weight:700;cursor:pointer;
+  font-family:inherit
+}
+.btn.p{background:#16a34a;color:#fff}
+.btn.s{background:#f1f5f9;color:#475569}
+.btn.d{background:#fee2e2;color:#b91c1c;flex:0 0 auto;padding:13px 16px}
+.btn:active{opacity:.8}
+.warnbox{
+  background:#fef3c7;border-left:4px solid #f59e0b;padding:10px 12px;border-radius:8px;
+  font-size:13px;color:#92400e;margin-bottom:12px;display:none
+}
+/* ── TOAST ── */
+#toast{
+  position:fixed;left:50%;bottom:26px;transform:translateX(-50%) translateY(80px);
+  background:#0f172a;color:#fff;padding:12px 20px;border-radius:12px;font-size:14px;font-weight:600;
+  z-index:200;opacity:0;transition:.25s;pointer-events:none;max-width:88vw;text-align:center
+}
+#toast.on{opacity:1;transform:translateX(-50%) translateY(0)}
+#toast.err{background:#b91c1c}
+/* ── MODO CONSULTA (?ver) ── */
+.verbar{
+  background:#1e40af;color:#fff;padding:8px 14px;font-size:13px;font-weight:600;
+  display:none;align-items:center;gap:8px
+}
+body.viewonly .verbar{display:flex}
+body.viewonly .cama{cursor:default}
+body.viewonly .occrow .del{display:none}
+.verbar span{flex:1}
+/* aviso de datos locales sin enviar */
+.pendbar{
+  background:#fef3c7;border-bottom:1px solid #fcd34d;color:#92400e;padding:9px 14px;
+  font-size:13px;display:none;align-items:center;gap:9px;flex-wrap:wrap
+}
+.pendbar.on{display:flex}
+.pendbar b{color:#78350f}
+.pendbar button{
+  background:#166534;color:#fff;border:none;border-radius:8px;padding:7px 12px;
+  font-size:12.5px;font-weight:700;cursor:pointer;font-family:inherit
+}
+.pendbar button.s{background:#fff;color:#92400e;border:1px solid #fcd34d}
+/* ── MENU ── */
+.menu{
+  position:fixed;right:12px;top:calc(60px + env(safe-area-inset-top));background:#fff;border-radius:13px;
+  box-shadow:0 10px 34px rgba(0,0,0,.22);z-index:90;display:none;overflow:hidden;min-width:230px
+}
+.menu.on{display:block}
+.menu button{
+  display:block;width:100%;text-align:left;padding:13px 16px;border:none;background:#fff;
+  font-size:14px;font-family:inherit;cursor:pointer;border-bottom:1px solid #f1f5f9;color:#0f172a
+}
+.menu button:last-child{border-bottom:none}
+.menu button:active{background:#f1f5f9}
+/* en celulares el plano se desliza en horizontal para que siga siendo legible */
+@media(max-width:660px){
+  .view{padding:10px}
+  .planoWrap{overflow-x:auto;-webkit-overflow-scrolling:touch;padding:10px}
+  .plano{min-width:520px}
+}
+@media(min-width:700px){
+  .cama .nm{font-size:12.5px}
+  .cama .tag{font-size:10.5px}
+}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="hrow">
+    <div class="htitle">🏠 Housing — Prewitt Village
+      <small id="hsub">Cargando…</small>
+    </div>
+    <button class="hbtn" onclick="toggleMenu()">☰</button>
+  </div>
+  <div class="searchwrap">
+    <input id="gsearch" placeholder="🔍 ¿Dónde duerme…? Busca a una persona" autocomplete="off"
+           oninput="globalSearch(this.value)" onblur="setTimeout(function(){document.getElementById('gres').style.display='none'},180)">
+    <div id="gres"></div>
+  </div>
+</header>
+
+<div class="verbar">
+  <span>👁️ Modo consulta — solo puedes ver, no editar</span>
+</div>
+
+<div class="pendbar" id="pendBar">
+  <b>⚠️ Tienes cambios sin enviar en este dispositivo.</b>
+  <span>No se cargaron los datos de Sheets para no borrarlos.</span>
+  <button onclick="sendToSheets()">📤 Enviar los míos</button>
+  <button class="s" onclick="forceLoadFromSheets()">📥 Traer los de Sheets</button>
+</div>
+
+<div class="statusbar">
+  <span class="chip ok" id="chipOcc">0 / 196</span>
+  <span class="chip" id="chipCasas">14 casas</span>
+  <span class="chip" id="chipSync">Sin enviar</span>
+  <span class="spacer"></span>
+  <span class="lnk" id="chipList" onclick="loadWorkers(true)">Lista: 0</span>
+</div>
+
+<div class="menu" id="menu">
+  <button onclick="forceLoadFromSheets()">🔄 Traer datos y fotos de Google Sheets</button>
+  <button class="edit-only" onclick="sendToSheets()">📤 Enviar a Google Sheets</button>
+  <button onclick="copyViewLink()">🔗 Copiar link de solo consulta</button>
+  <button class="edit-only" onclick="loadWorkers(true)">👥 Actualizar lista de empleados</button>
+  <button onclick="exportJSON()">💾 Exportar respaldo (JSON)</button>
+  <button class="edit-only" onclick="importJSON()">📥 Importar respaldo (JSON)</button>
+  <button onclick="printPlano()">🖨️ Imprimir / PDF</button>
+  <button class="edit-only" onclick="setUser()">👤 Cambiar quién captura</button>
+  <button class="edit-only" onclick="wipeAll()" style="color:#b91c1c">🗑️ Borrar todo</button>
+</div>
+
+<!-- ═══ VISTA MAPA ═══ -->
+<div class="view on" id="vMapa">
+  <div class="freebox" id="freeBox">
+    <h3 id="freeT">🛏️ Lugares libres</h3>
+    <div class="sub" id="freeS">—</div>
+    <div class="freechips" id="freeChips"></div>
+  </div>
+  <p class="vtitle">Toca una casa para ver su plano</p>
+  <div class="village">
+    <div class="street left"><span>Prewitt Ave</span></div>
+    <div class="street right"><span>Washington Ave</span></div>
+    <div class="grid" id="grid"></div>
+  </div>
+</div>
+
+<!-- ═══ VISTA CASA ═══ -->
+<div class="view" id="vCasa">
+  <div class="backbar">
+    <button class="backbtn" onclick="goMapa()">← Mapa</button>
+    <div class="casaTitle" id="cTitle">Casa —<small id="cSub"></small></div>
+  </div>
+  <div class="planoWrap">
+    <div class="plano" id="plano">
+      <svg viewBox="0 0 950 740" preserveAspectRatio="none" id="svgPlano">
+        <!-- contorno -->
+        <rect x="30" y="35" width="890" height="675" fill="none" stroke="#0f172a" stroke-width="7"/>
+        <!-- pared cuarto 2 -->
+        <line x1="33" y1="220" x2="390" y2="220" stroke="#0f172a" stroke-width="7"/>
+        <!-- paredes verticales zona baños / cuartos -->
+        <line x1="390" y1="35" x2="390" y2="305" stroke="#0f172a" stroke-width="5"/>
+        <line x1="518" y1="35" x2="518" y2="305" stroke="#0f172a" stroke-width="5"/>
+        <line x1="650" y1="35" x2="650" y2="305" stroke="#0f172a" stroke-width="5"/>
+        <!-- pared horizontal bajo baños/cuarto1 -->
+        <line x1="390" y1="305" x2="920" y2="305" stroke="#0f172a" stroke-width="6"/>
+        <!-- cocina -->
+        <line x1="395" y1="305" x2="395" y2="472" stroke="#0f172a" stroke-width="5"/>
+        <line x1="120" y1="470" x2="745" y2="470" stroke="#0f172a" stroke-width="5"/>
+        <!-- puertas (arcos) -->
+        <path d="M40,222 Q118,222 133,150" fill="none" stroke="#94a3b8" stroke-width="3"/>
+        <path d="M395,307 Q452,307 452,240" fill="none" stroke="#94a3b8" stroke-width="3"/>
+        <path d="M645,307 Q590,307 590,242" fill="none" stroke="#94a3b8" stroke-width="3"/>
+        <path d="M920,307 Q825,307 822,215" fill="none" stroke="#94a3b8" stroke-width="3"/>
+        <path d="M425,700 Q425,645 530,700" fill="none" stroke="#94a3b8" stroke-width="4"/>
+        <!-- etiquetas -->
+        <text class="roomlbl" x="120" y="118">Cuarto 2</text>
+        <text class="roomlbl" x="405" y="158" font-size="19">BAÑO</text>
+        <text class="roomlbl" x="535" y="150" font-size="19">BAÑO</text>
+        <text class="roomlbl" x="672" y="240">CUARTO 1</text>
+        <text class="roomlbl" x="455" y="392">COCINA</text>
+        <text class="roomlbl" x="70" y="520" font-size="19" fill="#94a3b8">SALA / COMEDOR</text>
+      </svg>
+      <!-- literas inyectadas por JS -->
+    </div>
+    <div class="leyenda">
+      <span><i style="background:#a7f3d0"></i>Cama de arriba</span>
+      <span><i style="background:#dcfce7"></i>Cama de abajo</span>
+      <span><i style="background:#fafafa"></i>Libre</span>
+    </div>
+  </div>
+
+  <div class="occlist">
+    <h3>👥 Ocupantes <span id="occCount" style="color:#64748b;font-weight:600"></span></h3>
+    <div id="occRows"></div>
+  </div>
+</div>
+
+<!-- ═══ MODAL ASIGNAR ═══ -->
+<div class="ov" id="ovBed" onclick="if(event.target===this)closeBed()">
+  <div class="sheet">
+    <h2 id="bedT">Cama</h2>
+    <div class="sub" id="bedS"></div>
+    <div class="warnbox" id="bedWarn"></div>
+    <div class="fld">
+      <label>Nombre del trabajador</label>
+      <input id="bedName" placeholder="Escribe para buscar…" autocomplete="off"
+             oninput="onAC(this.value)" onkeydown="acKey(event)">
+      <div class="ac" id="acBox"></div>
+    </div>
+    <div class="fld">
+      <label>Emp # (opcional)</label>
+      <input id="bedEmp" placeholder="—" inputmode="numeric">
+    </div>
+    <div class="btns">
+      <button class="btn d" onclick="clearBed()">Vaciar</button>
+      <button class="btn s" onclick="closeBed()">Cancelar</button>
+      <button class="btn p" onclick="saveBed()">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+<input type="file" id="fileIn" accept=".json" style="display:none">
+
+<script>
+/* ══════════════════════════════════════════════════════════
+   eBerry Housing — Alpha V1
+   Mapa de casas → plano interactivo → asignación de camas
+   ══════════════════════════════════════════════════════════ */
+
+var APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwjC6Gjcb3_VRmjnVDPIRptpxM8__BRa_bi2q7MJcmY0MOcXRPdS4JVqvfyKHHK6G7m/exec';
+var HKEY      = 'eb_housing_v1';   // datos de camas
+var HUSER     = 'eb_housing_user'; // quién captura
+var APPCACHE  = 'eb_appdata_v4';   // cache de empleados del app eBerry
+var WCACHE    = 'eb_housing_workers'; // respaldo propio de la lista
+
+/* ── Casas del village (orden visual: izquierda / derecha) ── */
+var CASAS = ['201','202','203','204','205','206','207','208','209','210','211','212','213','214'];
+
+/* ── Literas: coordenadas sobre el viewBox 950x740 ──
+   id, x, y, ancho, alto, orientación, ubicación textual   */
+var LITERAS = [
+  {id:1, x:272, y:55,  w:110, h:160, o:'v', loc:'Cuarto 2'},
+  {id:2, x:678, y:58,  w:190, h:104, o:'h', loc:'Cuarto 1'},
+  {id:3, x:148, y:382, w:184, h:92,  o:'h', loc:'Sala (junto a cocina)'},
+  {id:4, x:70,  y:550, w:118, h:160, o:'v', loc:'Sala (pared, izquierda)'},
+  {id:5, x:222, y:550, w:118, h:160, o:'v', loc:'Sala (pared, izq-centro)'},
+  {id:6, x:575, y:550, w:118, h:160, o:'v', loc:'Sala (pared, der-centro)'},
+  {id:7, x:775, y:550, w:125, h:160, o:'v', loc:'Sala (pared, derecha)'}
+];
+var VBW = 950, VBH = 740;
+var CAP_CASA = LITERAS.length * 2;          // 14 personas
+var CAP_TOTAL = CAP_CASA * CASAS.length;    // 196
+
+/* ── Estado ── */
+var DB = {v:1, casas:{}, updated:'', by:'', dirty:false};
+var WORKERS = [];
+var curCasa = null, curBed = null, acIdx = -1, acList = [];
+
+/* V2 — modo consulta: se activa poniendo ?ver al final del link.
+   Ej: https://…/housing/?ver  → solo se puede ver, no editar ni enviar. */
+var VIEWONLY = /[?&]ver(\b|=)/i.test(location.search);
+
+/* ══════ UTILIDADES ══════ */
+function $(id){ return document.getElementById(id); }
+function toast(msg, err){
+  var t = $('toast'); t.textContent = msg;
+  t.className = err ? 'on err' : 'on';
+  clearTimeout(t._tm); t._tm = setTimeout(function(){ t.className = err?'err':''; }, 2600);
+}
+function norm(s){
+  return String(s||'').toUpperCase()
+    .replace(/[ÁÀÄÂ]/g,'A').replace(/[ÉÈËÊ]/g,'E').replace(/[ÍÌÏÎ]/g,'I')
+    .replace(/[ÓÒÖÔ]/g,'O').replace(/[ÚÙÜÛ]/g,'U').replace(/Ñ/g,'N')
+    .replace(/\s+/g,' ').trim();
+}
+/* Acorta el nombre para que quepa en la cama.
+   wide = litera horizontal (cabe más texto) */
+function shortName(n, wide){
+  var p = String(n||'').trim().split(/\s+/);
+  if(!p[0]) return '';
+  if(p.length === 1) return p[0];
+  var full = p.join(' ');
+  var lim = wide ? 19 : 13;
+  if(full.length <= lim) return full;
+  if(p.length === 2) return p[0] + ' ' + p[1].charAt(0) + '.';
+  var abbr = p[0] + ' ' + p[1].charAt(0) + '.' + p[2].charAt(0) + '.';
+  return abbr;
+}
+function bedKey(lit, half){ return lit + half; }          // ej "3A"
+function bedLabel(k){
+  return 'Litera ' + k.slice(0,-1) + ' · ' + (k.slice(-1)==='A' ? 'Cama alta' : 'Cama baja');
+}
+
+/* ══════ PERSISTENCIA ══════ */
+function loadDB(){
+  try{
+    var raw = localStorage.getItem(HKEY);
+    if(raw){ var d = JSON.parse(raw); if(d && d.casas) DB = d; }
+  }catch(e){ console.warn('[housing] load', e); }
+  for(var i=0;i<CASAS.length;i++) if(!DB.casas[CASAS[i]]) DB.casas[CASAS[i]] = {};
+  DB.by = DB.by || localStorage.getItem(HUSER) || '';
+}
+/* markDirty=false se usa al traer datos de Sheets: es guardar sin
+   marcar "sin enviar", porque lo que hay en pantalla YA está en Sheets. */
+function saveDB(markDirty){
+  DB.updated = new Date().toISOString();
+  if(markDirty !== false) DB.dirty = true;
+  try{ localStorage.setItem(HKEY, JSON.stringify(DB)); }
+  catch(e){ toast('No se pudo guardar (memoria llena)', true); }
+  if(markDirty !== false) markPending();
+}
+function markPending(){
+  var c = $('chipSync');
+  c.className = 'chip pend'; c.textContent = 'Sin enviar';
+}
+function markSynced(txt){
+  DB.dirty = false;
+  try{ localStorage.setItem(HKEY, JSON.stringify(DB)); }catch(e){}
+  var c = $('chipSync');
+  c.className = 'chip ok'; c.textContent = txt;
+  $('pendBar').classList.remove('on');
+}
+
+/* ══════ LISTA DE EMPLEADOS ══════ */
+function setWorkers(arr, src){
+  var seen = {}, out = [];
+  for(var i=0;i<arr.length;i++){
+    var w = arr[i]; if(!w || !w.name) continue;
+    var k = norm(w.name); if(seen[k]) continue; seen[k] = 1;
+    out.push({name:String(w.name).trim(), empNum:String(w.empNum||'').trim(), crew:String(w.crew||'').trim()});
+  }
+  out.sort(function(a,b){ return norm(a.name) < norm(b.name) ? -1 : 1; });
+  WORKERS = out;
+  try{ localStorage.setItem(WCACHE, JSON.stringify({w:out, ts:Date.now()})); }catch(e){}
+  $('chipList').textContent = 'Lista: ' + out.length + (src ? ' ('+src+')' : '');
+}
+function loadWorkers(force){
+  closeMenu();
+  /* 1) cache del app eBerry en el mismo dominio */
+  if(!force){
+    try{
+      var a = JSON.parse(localStorage.getItem(APPCACHE) || 'null');
+      if(a && a.workers && a.workers.length){ setWorkers(a.workers, 'app'); return; }
+    }catch(e){}
+    try{
+      var b = JSON.parse(localStorage.getItem(WCACHE) || 'null');
+      if(b && b.w && b.w.length){ setWorkers(b.w, 'local'); return; }
+    }catch(e){}
+  }
+  /* 2) traer de Sheets */
+  $('chipList').textContent = 'Lista: cargando…';
+  var xhr = new XMLHttpRequest();
+  xhr.open('GET', APPS_SCRIPT_URL + '?action=workers&surquero=housing&_t=' + Date.now(), true);
+  xhr.timeout = 20000;
+  xhr.onload = function(){
+    try{
+      var r = JSON.parse(xhr.responseText);
+      var list = r.workers || r || [];
+      if(list.length){ setWorkers(list, 'Sheets'); toast('Lista actualizada: ' + WORKERS.length); }
+      else { fallbackWorkers(); }
+    }catch(e){ fallbackWorkers(); }
+  };
+  xhr.onerror = xhr.ontimeout = fallbackWorkers;
+  xhr.send();
+}
+function fallbackWorkers(){
+  try{
+    var b = JSON.parse(localStorage.getItem(WCACHE) || 'null');
+    if(b && b.w && b.w.length){ setWorkers(b.w, 'local'); toast('Sin conexión — usando lista guardada'); return; }
+  }catch(e){}
+  var a = null;
+  try{ a = JSON.parse(localStorage.getItem(APPCACHE) || 'null'); }catch(e){}
+  if(a && a.workers && a.workers.length){ setWorkers(a.workers, 'app'); return; }
+  WORKERS = [];
+  $('chipList').textContent = 'Lista: 0 — toca para cargar';
+  toast('No se pudo cargar la lista. Puedes escribir los nombres a mano.', true);
+}
+
+/* ══════ FOTOS DE LOS TRABAJADORES (V3) ══════
+   El app eBerry guarda las miniaturas en localStorage bajo
+   'eb_facethumbs_v1' → {thumbs:{empNum: base64jpeg}}. Como el housing
+   corre en el mismo dominio (GitHub Pages), las puede leer directo.
+   Si ese caché no existe (otro dispositivo), las pide a FieldSync
+   con action=faceData y guarda su propia copia. */
+var FACES = {};                       // empNum → base64 jpeg
+var FKEY_APP  = 'eb_facethumbs_v1';   // caché del app eBerry
+var FKEY_MINE = 'eb_housing_faces';   // caché propio del housing
+
+/* force = true ignora los cachés y va directo a Sheets.
+   Sirve cuando acabas de registrar una cara nueva en el app eBerry
+   y quieres que aparezca aquí de inmediato. */
+function loadFaces(force){
+  if(!force){
+    /* 1) caché del app eBerry (si en este mismo navegador se usa el app) */
+    try{
+      var a = JSON.parse(localStorage.getItem(FKEY_APP) || 'null');
+      if(a && a.thumbs && Object.keys(a.thumbs).length){
+        FACES = a.thumbs;
+        if(curCasa) renderPlano();
+        return;
+      }
+    }catch(e){}
+    /* 2) caché propio — 7 días (antes 30: tardaba mucho en verse una cara nueva) */
+    try{
+      var b = JSON.parse(localStorage.getItem(FKEY_MINE) || 'null');
+      if(b && b.thumbs && (Date.now() - b.ts) < 604800000){
+        FACES = b.thumbs;
+        if(curCasa) renderPlano();
+        return;
+      }
+    }catch(e){}
+  }
+  /* 3) pedirlas a Sheets, sin estorbar (si falla, ni se nota) */
+  var xhr = new XMLHttpRequest();
+  xhr.open('GET', APPS_SCRIPT_URL + '?action=faceData&_t=' + Date.now(), true);
+  xhr.timeout = 30000;
+  xhr.onload = function(){
+    try{
+      var r = JSON.parse(xhr.responseText);
+      if(!r || !r.faces) return;
+      var m = {};
+      for(var i=0;i<r.faces.length;i++){
+        var f = r.faces[i];
+        if(f.empNum && f.thumbnail) m[String(f.empNum).trim()] = f.thumbnail;
+      }
+      if(!Object.keys(m).length) return;
+      var antes = Object.keys(FACES).length;
+      FACES = m;
+      try{ localStorage.setItem(FKEY_MINE, JSON.stringify({thumbs:m, ts:Date.now()})); }
+      catch(e){ /* si no cabe, se usan en memoria nada más */ }
+      if(curCasa) renderPlano();
+      if(force) toast('📷 ' + Object.keys(m).length + ' fotos disponibles'
+                      + (Object.keys(m).length > antes ? ' (+' + (Object.keys(m).length - antes) + ' nuevas)' : ''));
+    }catch(e){}
+  };
+  xhr.onerror = xhr.ontimeout = function(){};
+  xhr.send();
+}
+/* Devuelve la foto de quien ocupa la cama, o '' si no hay */
+function faceOf(v){
+  if(!v) return '';
+  var t = v.e ? FACES[String(v.e).trim()] : null;
+  if(!t && v.n){                       // sin Emp#: buscar por nombre en la lista
+    for(var i=0;i<WORKERS.length;i++){
+      if(norm(WORKERS[i].name) === norm(v.n) && WORKERS[i].empNum){
+        t = FACES[String(WORKERS[i].empNum).trim()];
+        break;
+      }
+    }
+  }
+  if(!t) return '';
+  return (String(t).indexOf('data:') === 0) ? t : ('data:image/jpeg;base64,' + t);
+}
+
+/* ══════ TRAER DATOS DE GOOGLE SHEETS (V2) ══════
+   Lee la pestaña HOUSING del MASTER vía FieldSync (action=housingLoad).
+   Así cualquiera que abra el link ve los datos reales, aunque su
+   navegador nunca haya guardado nada. */
+function loadFromSheets(opts){
+  opts = opts || {};
+  var chip = $('chipSync');
+  if(!opts.silent){ chip.className = 'chip warn'; chip.textContent = 'Cargando…'; }
+
+  var xhr = new XMLHttpRequest();
+  xhr.open('GET', APPS_SCRIPT_URL + '?action=housingLoad&_t=' + Date.now(), true);
+  xhr.timeout = 25000;
+  xhr.onload = function(){
+    var r = null;
+    try{ r = JSON.parse(xhr.responseText); }catch(e){}
+    if(!r || !r.success){
+      if(!opts.silent){
+        chip.className = 'chip pend'; chip.textContent = 'Sin conexión';
+        toast('No se pudo leer la hoja HOUSING', true);
+      } else { restoreChip(); }
+      return;
+    }
+    var n = 0;
+    for(var c in r.casas) for(var k in r.casas[c]) n++;
+    if(!n){
+      if(!opts.silent) toast('La hoja HOUSING está vacía todavía');
+      restoreChip(); return;
+    }
+    /* reemplazar el estado con lo que viene de Sheets */
+    DB.casas = {};
+    for(var i=0;i<CASAS.length;i++) DB.casas[CASAS[i]] = {};
+    for(var casa in r.casas){
+      if(!DB.casas[casa]) DB.casas[casa] = {};   // casa nueva que no está en CASAS
+      for(var bed in r.casas[casa]) DB.casas[casa][bed] = r.casas[casa][bed];
+    }
+    saveDB(false);                 // guardar SIN marcar "sin enviar"
+    markSynced('Sheets ' + (r.updated ? String(r.updated).slice(11,16) : 'ok'));
+    if(curCasa) renderPlano(); else renderMapa();
+    toast('📥 ' + n + ' personas cargadas de Sheets');
+  };
+  xhr.onerror = xhr.ontimeout = function(){
+    if(!opts.silent){
+      chip.className = 'chip pend'; chip.textContent = 'Sin conexión';
+      toast('Sin conexión con Google Sheets', true);
+    } else { restoreChip(); }
+  };
+  xhr.send();
+}
+function restoreChip(){
+  var c = $('chipSync');
+  if(DB.dirty){ markPending(); }
+  else { c.className = 'chip'; c.textContent = DB.updated ? 'Guardado local' : 'Sin datos'; }
+}
+function forceLoadFromSheets(){
+  closeMenu();
+  if(DB.dirty && !VIEWONLY){
+    if(!confirm('Tienes cambios en este dispositivo que NO has enviado.\n\n' +
+                'Si traes los datos de Sheets, esos cambios se pierden.\n\n¿Continuar?')) return;
+  }
+  loadFromSheets({});
+  /* V4: de paso refresca las fotos — si acabas de registrar una cara
+     nueva en el app eBerry, con este mismo botón ya aparece aquí. */
+  loadFaces(true);
+}
+function copyViewLink(){
+  closeMenu();
+  var base = location.href.split('#')[0].split('?')[0];
+  var link = base + '?ver';
+  var done = function(){ toast('🔗 Link de consulta copiado'); };
+  if(navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(link).then(done, function(){ prompt('Copia este link:', link); });
+  } else {
+    prompt('Copia este link:', link);
+  }
+}
+
+/* ══════ MAPA DEL VILLAGE ══════ */
+function occCasa(c){
+  var d = DB.casas[c] || {}, n = 0;
+  for(var k in d) if(d[k] && d[k].n) n++;
+  return n;
+}
+/* V3 — dibuja una casita: techo, cuerpo, puerta y ventanas.
+   El techo se pinta según qué tan llena está la casa. */
+function casaSVG(num, n){
+  var techo = n === 0 ? '#cbd5e1' : (n >= CAP_CASA ? '#16a34a' : '#f59e0b');
+  var techoBorde = n === 0 ? '#94a3b8' : (n >= CAP_CASA ? '#15803d' : '#d97706');
+  var luzVentana = n > 0 ? '#fde68a' : '#e2e8f0';   // ventanas prendidas si hay gente
+  return '<svg viewBox="0 0 100 84" aria-hidden="true">'
+       +   '<polygon class="hs-roof" points="50,3 97,30 3,30" fill="'+techo+'" '
+       +     'stroke="'+techoBorde+'" stroke-width="2" stroke-linejoin="round"/>'
+       +   '<rect class="hs-body" x="14" y="29" width="72" height="51" rx="3" '
+       +     'fill="#ffffff" stroke="#334155" stroke-width="2.5"/>'
+       +   '<rect x="19" y="37" width="9" height="9" rx="1.5" fill="'+luzVentana+'" stroke="#64748b" stroke-width="1.5"/>'
+       +   '<rect x="72" y="37" width="9" height="9" rx="1.5" fill="'+luzVentana+'" stroke="#64748b" stroke-width="1.5"/>'
+       +   '<text class="hs-num" x="50" y="61" text-anchor="middle">'+num+'</text>'
+       +   '<rect x="43" y="66" width="13" height="14" rx="1.5" fill="#a16207" stroke="#78350f" stroke-width="1.5"/>'
+       +   '<circle cx="53" cy="73" r="1.2" fill="#fde68a"/>'
+       + '</svg>';
+}
+function renderMapa(){
+  var g = $('grid'), h = '', tot = 0, libres = [];
+  for(var i=0;i<CASAS.length;i++){
+    var c = CASAS[i], n = occCasa(c), pct = Math.round(n/CAP_CASA*100);
+    var cls = n === 0 ? 'empty' : (n >= CAP_CASA ? 'full' : 'part');
+    tot += n;
+    if(n < CAP_CASA) libres.push({casa:c, libres:CAP_CASA - n});
+    h += '<div class="casa '+cls+'" id="casa_'+c+'" onclick="openCasa(\''+c+'\')" '
+       +      'title="Casa '+c+' — '+n+' de '+CAP_CASA+'">'
+       +   casaSVG(c, n)
+       +   '<div class="occ">'+n+' / '+CAP_CASA+(n >= CAP_CASA ? ' ✓' : '')+'</div>'
+       +   '<div class="bar"><i style="width:'+pct+'%"></i></div>'
+       + '</div>';
+  }
+  g.innerHTML = h;
+  $('chipOcc').textContent = tot + ' / ' + CAP_TOTAL + ' camas';
+  $('chipOcc').className = 'chip ' + (tot === 0 ? '' : (tot >= CAP_TOTAL ? 'ok' : 'warn'));
+  $('hsub').textContent = CASAS.length + ' casas · ' + CAP_CASA + ' personas por casa · ' + tot + ' asignados';
+  renderLibres(libres, tot);
+}
+/* V3 — panel de lugares libres: cuántos quedan y en qué casas */
+function renderLibres(libres, tot){
+  var box = $('freeBox'), totLibres = CAP_TOTAL - tot;
+  if(totLibres <= 0){
+    box.className = 'freebox lleno';
+    $('freeT').textContent = '🏠 Village lleno';
+    $('freeS').textContent = 'Las ' + CASAS.length + ' casas están completas — no hay camas disponibles.';
+    $('freeChips').innerHTML = '';
+    return;
+  }
+  box.className = 'freebox';
+  $('freeT').textContent = '🛏️ ' + totLibres + ' lugares libres';
+  $('freeS').textContent = libres.length + ' de ' + CASAS.length + ' casas tienen espacio · toca una para acomodar gente';
+  /* las que tienen más espacio primero */
+  libres.sort(function(a,b){ return b.libres - a.libres; });
+  var h = '';
+  for(var i=0;i<libres.length;i++){
+    h += '<span class="fchip" onclick="openCasa(\''+libres[i].casa+'\')">'
+       +   libres[i].casa + ' · ' + libres[i].libres + ' libre' + (libres[i].libres > 1 ? 's' : '')
+       + '</span>';
+  }
+  $('freeChips').innerHTML = h;
+}
+
+/* ══════ PLANO DE LA CASA ══════ */
+function openCasa(c, hitBed){
+  curCasa = c;
+  $('cTitle').childNodes[0].nodeValue = 'Casa ' + c + ' ';
+  $('cSub').textContent = 'Prewitt Village · ' + CAP_CASA + ' camas';
+  /* mostrar la vista ANTES de dibujar: fitBeds necesita medidas reales */
+  $('vMapa').classList.remove('on');
+  $('vCasa').classList.add('on');
+  renderPlano(hitBed);
+  window.scrollTo(0,0);
+}
+function goMapa(){
+  curCasa = null;
+  renderMapa();
+  $('vCasa').classList.remove('on');
+  $('vMapa').classList.add('on');
+  window.scrollTo(0,0);
+}
+function renderPlano(hitBed){
+  var p = $('plano');
+  /* limpiar literas previas (deja el svg) */
+  var old = p.querySelectorAll('.litera');
+  for(var i=0;i<old.length;i++) p.removeChild(old[i]);
+
+  var d = DB.casas[curCasa] || {};
+  for(var j=0;j<LITERAS.length;j++){
+    var L = LITERAS[j];
+    var div = document.createElement('div');
+    div.className = 'litera ' + L.o;
+    div.style.left   = (L.x/VBW*100) + '%';
+    div.style.top    = (L.y/VBH*100) + '%';
+    div.style.width  = (L.w/VBW*100) + '%';
+    div.style.height = (L.h/VBH*100) + '%';
+    div.innerHTML = '<span class="litnum">' + L.id + '</span>'
+                  + camaHTML(L,'A',d) + camaHTML(L,'B',d)
+                  + '<span class="ladder"></span>';
+    p.appendChild(div);
+  }
+  renderOcupantes();
+  fitBeds();
+  if(hitBed){
+    var el = document.getElementById('bed_' + hitBed);
+    if(el){ el.classList.add('hit'); setTimeout(function(){ el.classList.remove('hit'); }, 2200); }
+  }
+}
+/* V3 — cada cama dice ARRIBA o ABAJO con todas sus letras.
+   half 'A' = cama alta (la de arriba), 'B' = cama baja. */
+function camaHTML(L, half, d){
+  var k = bedKey(L.id, half), v = d[k];
+  var taken = !!(v && v.n);
+  var alta  = (half === 'A');
+  var foto  = taken ? faceOf(v) : '';
+  return '<div class="cama '+(alta?'alta':'baja')+' '+(taken?'taken':'empty')+'" id="bed_'+k+'" '
+       + 'onclick="openBed(\''+k+'\')" title="'+esc(taken ? v.n : 'Cama libre')+'">'
+       +   '<span class="ctop">'
+       +     (foto ? '<img class="face" src="'+foto+'" alt="">' : '')
+       +     '<span class="pos">'+(alta ? 'ARRIBA' : 'ABAJO')+'</span>'
+       +   '</span>'
+       +   '<span class="nm">'+(taken ? esc(shortName(v.n, L.o==='h')) : '+')+'</span>'
+       + '</div>';
+}
+/* Ajusta el tamaño de letra de cada cama al espacio real disponible,
+   para que ninguna palabra se parta a la mitad (tablet, celular o PC). */
+function fitBeds(){
+  var els = document.querySelectorAll('#plano .cama .nm');
+  for(var i=0;i<els.length;i++){
+    var e = els[i], box = e.parentNode;
+    var txt = e.textContent || '';
+    if(txt === '+'){ e.style.fontSize = ''; continue; }
+    var w = box.clientWidth, h = box.clientHeight;
+    if(!w || !h) continue;
+    /* V3: descontar lo que ocupan la etiqueta ARRIBA/ABAJO y la foto.
+       Si la cama quedó muy chica, se esconde la foto para que el
+       nombre siga siendo legible — el nombre importa más. */
+    var img = box.querySelector('.face');
+    var conFoto = false;
+    if(img){
+      /* la foto solo si de verdad cabe: si no, gana el nombre */
+      conFoto = (h >= 46 && w >= 58);
+      if(conFoto) img.classList.add('on'); else img.classList.remove('on');
+    }
+    var alto = h - (conFoto ? 24 : 14);       // fila de etiqueta (+foto)
+    if(alto < 12) alto = 12;
+    h = alto + 14;                            // fitBeds vuelve a restar 14/15 abajo
+    var words = txt.split(/\s+/), maxWord = 1;
+    for(var j=0;j<words.length;j++) if(words[j].length > maxWord) maxWord = words[j].length;
+    /* V2: primero intenta el nombre en UNA sola línea (se lee mucho mejor,
+       sobre todo en las literas horizontales). Si no da al menos 9.5px,
+       lo parte en varias líneas cuidando no cortar palabras. */
+    var oneLine = (w - 8) / (txt.length * 0.63);
+    var fs;
+    if(oneLine >= 9.5){
+      e.style.whiteSpace = 'nowrap';
+      fs = Math.min(13, oneLine, (h - 15) / 1.25);
+    } else {
+      e.style.whiteSpace = 'normal';
+      var byWidth  = (w - 7) / (maxWord * 0.72);         // que quepa la palabra más larga
+      var byHeight = (h - 15) / (words.length * 1.20);   // que quepan todas las líneas
+      fs = Math.max(6.5, Math.min(13, byWidth, byHeight));
+    }
+    e.style.fontSize = fs.toFixed(1) + 'px';
+  }
+}
+var _fitTm;
+window.addEventListener('resize', function(){
+  clearTimeout(_fitTm);
+  _fitTm = setTimeout(function(){ if(curCasa) fitBeds(); }, 150);
+});
+
+function renderOcupantes(){
+  var d = DB.casas[curCasa] || {}, rows = '', n = 0;
+  for(var i=0;i<LITERAS.length;i++){
+    for(var h=0;h<2;h++){
+      var half = h ? 'B' : 'A', k = bedKey(LITERAS[i].id, half), v = d[k];
+      if(!v || !v.n) continue;
+      n++;
+      rows += '<div class="occrow">'
+           +   '<span class="pos">'+LITERAS[i].id+(half==='A'?' ▲':' ▼')+'</span>'
+           +   '<span class="who">'+esc(v.n)+'<br><span class="emp">'+esc(LITERAS[i].loc)+'</span></span>'
+           +   '<span class="emp">'+(v.e ? '#'+esc(v.e) : '')+'</span>'
+           +   '<span class="del" onclick="quickDel(\''+k+'\')">✕</span>'
+           + '</div>';
+    }
+  }
+  $('occRows').innerHTML = rows || '<div class="emptymsg">Nadie asignado todavía. Toca una cama en el plano.</div>';
+  $('occCount').textContent = '(' + n + ' de ' + CAP_CASA + ')';
+}
+function esc(s){
+  return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+function quickDel(k){
+  if(VIEWONLY) return;
+  var v = (DB.casas[curCasa]||{})[k];
+  if(!v) return;
+  if(!confirm('¿Quitar a ' + v.n + ' de la ' + bedLabel(k) + '?')) return;
+  delete DB.casas[curCasa][k];
+  saveDB(); renderPlano();
+  toast('Cama liberada');
+}
+
+/* ══════ MODAL DE CAMA ══════ */
+function openBed(k){
+  var v0 = (DB.casas[curCasa] || {})[k] || {};
+  if(VIEWONLY){                       /* V2: en consulta solo se muestra */
+    var L0 = LITERAS.filter(function(x){ return x.id === parseInt(k,10); })[0] || {};
+    toast(v0.n ? (v0.n + (v0.e ? ' · #' + v0.e : '') + ' — ' + L0.loc)
+               : 'Cama vacía — ' + bedLabel(k));
+    return;
+  }
+  curBed = k;
+  var v = v0;
+  var L = LITERAS.filter(function(x){ return x.id === parseInt(k,10); })[0] || {};
+  $('bedT').textContent = 'Casa ' + curCasa + ' · ' + bedLabel(k);
+  $('bedS').textContent = L.loc || '';
+  $('bedName').value = v.n || '';
+  $('bedEmp').value  = v.e || '';
+  $('bedWarn').style.display = 'none';
+  $('acBox').style.display = 'none';
+  $('ovBed').classList.add('on');
+  setTimeout(function(){ $('bedName').focus(); }, 120);
+}
+function closeBed(){
+  $('ovBed').classList.remove('on');
+  curBed = null; acIdx = -1;
+}
+function onAC(q){
+  var box = $('acBox');
+  q = norm(q);
+  if(q.length < 2 || !WORKERS.length){ box.style.display = 'none'; acList = []; return; }
+  var starts = [], has = [];
+  for(var i=0;i<WORKERS.length && (starts.length+has.length) < 40;i++){
+    var nm = norm(WORKERS[i].name);
+    if(nm.indexOf(q) === 0) starts.push(WORKERS[i]);
+    else if(nm.indexOf(q) > -1) has.push(WORKERS[i]);
+  }
+  acList = starts.concat(has).slice(0,12);
+  if(!acList.length){ box.style.display = 'none'; return; }
+  var h = '';
+  for(var j=0;j<acList.length;j++){
+    var w = acList[j], where = findPerson(w.name);
+    h += '<div onmousedown="pickAC('+j+')" ontouchstart="pickAC('+j+')">'
+       +   '<span class="e">'+(w.empNum ? '#'+esc(w.empNum) : '')+'</span>'
+       +   esc(w.name)
+       +   (where ? ' <span style="color:#b45309;font-size:11px">• casa '+where.casa+'</span>' : '')
+       + '</div>';
+  }
+  box.innerHTML = h; box.style.display = 'block'; acIdx = -1;
+}
+function pickAC(i){
+  var w = acList[i]; if(!w) return;
+  $('bedName').value = w.name;
+  $('bedEmp').value  = w.empNum || '';
+  $('acBox').style.display = 'none';
+  checkDup(w.name);
+}
+function acKey(ev){
+  var box = $('acBox');
+  if(box.style.display !== 'block'){
+    if(ev.key === 'Enter'){ ev.preventDefault(); saveBed(); }
+    return;
+  }
+  var items = box.children;
+  if(ev.key === 'ArrowDown'){ ev.preventDefault(); acIdx = Math.min(acIdx+1, items.length-1); }
+  else if(ev.key === 'ArrowUp'){ ev.preventDefault(); acIdx = Math.max(acIdx-1, 0); }
+  else if(ev.key === 'Enter'){ ev.preventDefault(); if(acIdx > -1) pickAC(acIdx); else saveBed(); return; }
+  else if(ev.key === 'Escape'){ box.style.display = 'none'; return; }
+  else return;
+  for(var i=0;i<items.length;i++) items[i].className = (i === acIdx ? 'sel' : '');
+  if(items[acIdx]) items[acIdx].scrollIntoView({block:'nearest'});
+}
+/* ¿esa persona ya está en otra cama? */
+function findPerson(name){
+  var q = norm(name); if(!q) return null;
+  for(var c in DB.casas){
+    var d = DB.casas[c];
+    for(var k in d){
+      if(d[k] && norm(d[k].n) === q){
+        if(c === curCasa && k === curBed) continue;
+        return {casa:c, bed:k};
+      }
+    }
+  }
+  return null;
+}
+function checkDup(name){
+  var w = $('bedWarn'), f = findPerson(name);
+  if(f){
+    w.innerHTML = '⚠️ <b>' + esc(name) + '</b> ya está en la <b>casa ' + f.casa + '</b> ('
+                + bedLabel(f.bed) + ').<br>Si guardas aquí, se moverá a esta cama.';
+    w.style.display = 'block';
+  } else w.style.display = 'none';
+}
+function saveBed(){
+  if(!curBed || !curCasa) return;
+  var nm = $('bedName').value.trim();
+  var em = $('bedEmp').value.trim();
+  if(!nm){ clearBed(); return; }
+  var f = findPerson(nm);
+  if(f && !confirm(nm + ' está en la casa ' + f.casa + ' (' + bedLabel(f.bed) + ').\n\n¿Moverlo a esta cama?')) return;
+  if(f) delete DB.casas[f.casa][f.bed];
+  DB.casas[curCasa][curBed] = {n:nm, e:em};
+  saveDB(); renderPlano(); closeBed();
+  toast('✔ ' + shortName(nm) + ' asignado');
+}
+function clearBed(){
+  if(!curBed || !curCasa) return;
+  if(DB.casas[curCasa][curBed]) delete DB.casas[curCasa][curBed];
+  saveDB(); renderPlano(); closeBed();
+  toast('Cama liberada');
+}
+
+/* ══════ BUSCADOR GLOBAL ══════ */
+function globalSearch(q){
+  var box = $('gres');
+  q = norm(q);
+  if(q.length < 2){ box.style.display = 'none'; return; }
+  var hits = [];
+  for(var ci=0;ci<CASAS.length;ci++){
+    var c = CASAS[ci], d = DB.casas[c] || {};
+    for(var k in d){
+      if(d[k] && norm(d[k].n).indexOf(q) > -1)
+        hits.push({casa:c, bed:k, name:d[k].n, emp:d[k].e});
+      if(hits.length > 25) break;
+    }
+  }
+  if(!hits.length){
+    box.innerHTML = '<div style="color:#94a3b8">Nadie asignado con ese nombre</div>';
+    box.style.display = 'block'; return;
+  }
+  var h = '';
+  for(var i=0;i<hits.length;i++){
+    var L = LITERAS.filter(function(x){ return x.id === parseInt(hits[i].bed,10); })[0] || {};
+    h += '<div onmousedown="jumpTo(\''+hits[i].casa+'\',\''+hits[i].bed+'\')">'
+       +   '<b>'+esc(hits[i].name)+'</b>'+(hits[i].emp ? ' <span style="color:#64748b;font-size:11px">#'+esc(hits[i].emp)+'</span>' : '')
+       +   '<br><span style="color:#64748b;font-size:12px">Casa '+hits[i].casa+' · '+bedLabel(hits[i].bed)+' · '+esc(L.loc||'')+'</span>'
+       + '</div>';
+  }
+  box.innerHTML = h; box.style.display = 'block';
+}
+function jumpTo(c, k){
+  $('gres').style.display = 'none';
+  $('gsearch').value = '';
+  openCasa(c, k);
+}
+
+/* ══════ MENÚ / EXTRAS ══════ */
+function toggleMenu(){ $('menu').classList.toggle('on'); }
+function closeMenu(){ $('menu').classList.remove('on'); }
+document.addEventListener('click', function(e){
+  if(!$('menu').contains(e.target) && e.target.className !== 'hbtn') closeMenu();
+}, true);
+
+function setUser(){
+  closeMenu();
+  var v = prompt('¿Quién está capturando? (nombre del mayordomo/supervisor)', DB.by || '');
+  if(v === null) return;
+  DB.by = v.trim();
+  localStorage.setItem(HUSER, DB.by);
+  saveDB();
+  toast('Guardado: ' + (DB.by || '—'));
+}
+function exportJSON(){
+  closeMenu();
+  var blob = new Blob([JSON.stringify(DB, null, 2)], {type:'application/json'});
+  var a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'housing_' + new Date().toISOString().slice(0,10) + '.json';
+  a.click();
+  setTimeout(function(){ URL.revokeObjectURL(a.href); }, 1500);
+  toast('Respaldo descargado');
+}
+function importJSON(){
+  closeMenu();
+  var f = $('fileIn');
+  f.value = '';
+  f.onchange = function(){
+    var file = f.files[0]; if(!file) return;
+    var r = new FileReader();
+    r.onload = function(){
+      try{
+        var d = JSON.parse(r.result);
+        if(!d || !d.casas) throw new Error('formato');
+        if(!confirm('Esto reemplaza los datos actuales. ¿Continuar?')) return;
+        DB = d;
+        for(var i=0;i<CASAS.length;i++) if(!DB.casas[CASAS[i]]) DB.casas[CASAS[i]] = {};
+        saveDB();
+        if(curCasa) renderPlano(); else renderMapa();
+        toast('Respaldo importado');
+      }catch(e){ toast('Archivo inválido', true); }
+    };
+    r.readAsText(file);
+  };
+  f.click();
+}
+function wipeAll(){
+  closeMenu();
+  if(!confirm('¿Borrar TODAS las asignaciones de las ' + CASAS.length + ' casas?')) return;
+  if(!confirm('Esto no se puede deshacer. ¿Seguro?')) return;
+  DB.casas = {};
+  for(var i=0;i<CASAS.length;i++) DB.casas[CASAS[i]] = {};
+  saveDB();
+  if(curCasa) renderPlano(); else renderMapa();
+  toast('Todo borrado');
+}
+function printPlano(){ closeMenu(); window.print(); }
+
+/* ══════ ENVÍO A GOOGLE SHEETS ══════ */
+function buildRows(){
+  var rows = [];
+  for(var ci=0;ci<CASAS.length;ci++){
+    var c = CASAS[ci], d = DB.casas[c] || {};
+    for(var li=0;li<LITERAS.length;li++){
+      for(var h=0;h<2;h++){
+        var half = h ? 'B' : 'A', k = bedKey(LITERAS[li].id, half), v = d[k];
+        rows.push({
+          casa: c,
+          litera: LITERAS[li].id,
+          cama: (half === 'A' ? 'Alta' : 'Baja'),
+          ubicacion: LITERAS[li].loc,
+          nombre: (v && v.n) || '',
+          empNum: (v && v.e) || ''
+        });
+      }
+    }
+  }
+  return rows;
+}
+function sendToSheets(){
+  closeMenu();
+  if(!DB.by){
+    var v = prompt('Antes de enviar: ¿quién está capturando?', '');
+    if(!v) return;
+    DB.by = v.trim(); localStorage.setItem(HUSER, DB.by);
+  }
+  var rows = buildRows();
+  var ocupadas = rows.filter(function(r){ return r.nombre; }).length;
+  if(!confirm('Enviar ' + ocupadas + ' asignaciones de ' + CASAS.length + ' casas a Google Sheets?')) return;
+
+  var chip = $('chipSync');
+  chip.className = 'chip warn'; chip.textContent = 'Enviando…';
+
+  var payload = {
+    action: 'housing',
+    village: 'Prewitt Village',
+    user: DB.by,
+    ts: new Date().toISOString(),
+    capacidadCasa: CAP_CASA,
+    rows: rows
+  };
+  var fd = new FormData();
+  fd.append('payload', JSON.stringify(payload));
+
+  fetch(APPS_SCRIPT_URL, {method:'POST', body:fd})
+    .then(function(r){ return r.text(); })
+    .then(function(t){
+      var ok = t.indexOf('"success":true') > -1 || t.indexOf('success') > -1;
+      if(ok){
+        markSynced('Enviado ' + new Date().toTimeString().slice(0,5));
+        toast('✔ Enviado a Sheets (' + ocupadas + ' personas)');
+      } else {
+        chip.className = 'chip pend'; chip.textContent = 'Error';
+        toast('El servidor respondió con error. Revisa HousingSync.gs', true);
+      }
+    })
+    .catch(function(e){
+      /* fallback no-cors: no podemos leer la respuesta pero sí llega */
+      var fd2 = new FormData();
+      fd2.append('payload', JSON.stringify(payload));
+      fetch(APPS_SCRIPT_URL, {method:'POST', body:fd2, mode:'no-cors'})
+        .then(function(){
+          markSynced('Enviado (sin confirmar)');
+          chip.className = 'chip warn';
+          toast('Enviado — verifica la hoja HOUSING');
+        })
+        .catch(function(){
+          chip.className = 'chip pend'; chip.textContent = 'Sin enviar';
+          toast('Sin conexión. Los datos siguen guardados aquí.', true);
+        });
+    });
+}
+
+/* ══════ INIT ══════ */
+(function init(){
+  loadDB();
+
+  /* V2 — modo consulta (?ver): sin edición, sin envío */
+  if(VIEWONLY){
+    document.body.classList.add('viewonly');
+    var eo = document.querySelectorAll('.edit-only');
+    for(var i=0;i<eo.length;i++) eo[i].style.display = 'none';
+    $('chipList').style.display = 'none';
+    $('gsearch').placeholder = '🔍 ¿Dónde duerme…? Busca a una persona';
+  }
+
+  renderMapa();
+  restoreChip();
+  if(!VIEWONLY) loadWorkers(false);
+  loadFaces();          // V3: fotos de los trabajadores
+
+  /* ── Traer datos de Sheets al abrir ──
+     Regla de oro: NUNCA pisar captura local sin enviar.
+       · Sin cambios pendientes  → carga sola y calladita.
+       · Con cambios pendientes  → NO carga; muestra la barra amarilla
+                                   para que tú decidas (enviar o traer).  */
+  if(DB.dirty && !VIEWONLY){
+    $('pendBar').classList.add('on');
+    markPending();
+  } else {
+    loadFromSheets({silent:true});
+  }
+})();
+</script>
+</body>
+</html>
