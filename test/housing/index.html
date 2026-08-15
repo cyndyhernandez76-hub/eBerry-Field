@@ -401,6 +401,7 @@ body.viewonly .occrow .del{display:none}
 
 <div class="verbar">
   <span>👁️ Modo consulta — solo puedes ver, no editar</span>
+  <b id="verAuto" style="font-size:11px;opacity:.85;font-weight:700">🔄 se actualiza solo</b>
 </div>
 
 <div class="pendbar" id="pendBar">
@@ -478,15 +479,20 @@ body.viewonly .occrow .del{display:none}
         <rect x="115" y="152" width="10" height="68" rx="2" fill="#a16207" stroke="#78350f" stroke-width="2"/>
         <circle cx="120" cy="161" r="3" fill="#fde68a"/>
 
-        <!-- Baño 1 -->
-        <line x1="398" y1="305" x2="470" y2="305" stroke="#fff" stroke-width="10"/>
-        <rect x="460" y="305" width="10" height="62" rx="2" fill="#a16207" stroke="#78350f" stroke-width="2"/>
-        <circle cx="465" cy="358" r="3" fill="#fde68a"/>
+        <!-- ══ BAÑOS (corregido V10 según el plano marcado por Serafín) ══
+             La entrada NO va en la pared de abajo (esa va completa), sino en
+             las paredes de los lados. Cada puerta abre hacia adentro del baño
+             y queda recargada en la pared de abajo. -->
 
-        <!-- Baño 2 -->
-        <line x1="556" y1="305" x2="628" y2="305" stroke="#fff" stroke-width="10"/>
-        <rect x="556" y="305" width="10" height="62" rx="2" fill="#a16207" stroke="#78350f" stroke-width="2"/>
-        <circle cx="561" cy="358" r="3" fill="#fde68a"/>
+        <!-- Baño 1: se entra por el lado izquierdo (desde la sala) -->
+        <line x1="390" y1="232" x2="390" y2="300" stroke="#fff" stroke-width="9"/>
+        <rect x="393" y="294" width="68" height="10" rx="2" fill="#a16207" stroke="#78350f" stroke-width="2"/>
+        <circle cx="454" cy="299" r="3" fill="#fde68a"/>
+
+        <!-- Baño 2: se entra por el lado derecho (desde el Cuarto 1) -->
+        <line x1="650" y1="232" x2="650" y2="300" stroke="#fff" stroke-width="9"/>
+        <rect x="579" y="294" width="68" height="10" rx="2" fill="#a16207" stroke="#78350f" stroke-width="2"/>
+        <circle cx="586" cy="299" r="3" fill="#fde68a"/>
 
         <!-- Cuarto 1 (hoja del lado de adentro, no sobre el muro exterior) -->
         <line x1="830" y1="305" x2="908" y2="305" stroke="#fff" stroke-width="10"/>
@@ -891,9 +897,10 @@ function loadFromSheets(opts){
       for(var bed in r.casas[casa]) DB.casas[casa][bed] = r.casas[casa][bed];
     }
     saveDB(false);                 // guardar SIN marcar "sin enviar"
+    ultimaCarga = Date.now();      // V9: para el refresco automático
     markSynced('Sheets ' + (r.updated ? String(r.updated).slice(11,16) : 'ok'));
     if(curCasa) renderPlano(); else renderMapa();
-    toast('📥 ' + n + ' personas cargadas de Sheets');
+    if(!opts.callado) toast('📥 ' + n + ' personas cargadas de Sheets');
   };
   xhr.onerror = xhr.ontimeout = function(){
     if(!opts.silent){
@@ -903,6 +910,46 @@ function loadFromSheets(opts){
   };
   xhr.send();
 }
+/* ══════ V9: ACTUALIZACIÓN AUTOMÁTICA ══════
+   Del lado del gerente (modo consulta) la pantalla se refresca sola:
+     · cada 4 minutos mientras la tenga a la vista
+     · y en cuanto vuelve a la app/pestaña, si ya pasó más de 1 minuto
+       (esto es lo que más sirve en celular: Safari congela los
+        temporizadores cuando la app está en segundo plano)
+   Del lado del editor NO se refresca solo si hay captura sin enviar —
+   ahí manda lo que tú tengas en el teléfono.                        */
+var ultimaCarga = 0;
+var REFRESCO_MS = 240000;    // 4 minutos
+var VIEJO_MS    = 900000;    // a los 15 min el chip avisa que puede estar viejo
+
+function autoRefrescar(motivo){
+  if(DB.dirty && !VIEWONLY) return;                 // nunca pisar lo no enviado
+  if(Date.now() - ultimaCarga < 60000) return;      // no saturar el servidor
+  loadFromSheets({silent:true, callado:(motivo === 'timer')});
+}
+function iniciarAutoRefresco(){
+  /* al volver a la app o a la pestaña */
+  document.addEventListener('visibilitychange', function(){
+    if(!document.hidden) autoRefrescar('visible');
+  });
+  window.addEventListener('focus', function(){ autoRefrescar('focus'); });
+  /* y cada tanto, solo para quien está consultando */
+  if(VIEWONLY){
+    setInterval(function(){
+      if(!document.hidden) autoRefrescar('timer');
+    }, REFRESCO_MS);
+  }
+  /* avisar si lo que se ve ya tiene rato */
+  setInterval(function(){
+    if(DB.dirty || !ultimaCarga) return;
+    var c = $('chipSync');
+    if(Date.now() - ultimaCarga > VIEJO_MS && c.className.indexOf('warn') < 0){
+      c.className = 'chip warn';
+      c.textContent = '🕐 Toca para actualizar';
+    }
+  }, 60000);
+}
+
 function restoreChip(){
   var c = $('chipSync');
   if(DB.dirty){ markPending(); }
@@ -1568,6 +1615,7 @@ function sendToSheets(){
   } else {
     loadFromSheets({silent:true});
   }
+  iniciarAutoRefresco();      // V9
 })();
 </script>
 </body>
