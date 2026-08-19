@@ -35,7 +35,7 @@
 </script>
 <script>
 // V20_21: check versión + ackedVersion para romper loop infinito cuando version.txt≠APP_VERSION
-window.APP_VERSION = 'V1_0_0_68';
+window.APP_VERSION = 'V1_0_0_69';
 (function(){
   // V20_77: AUTO-LIMPIEZA de _ackedVersion envenenado.
   // Bug detectado: surqueros tocaban "Actualizar ahora" pero el SW interceptaba el reload con HTML viejo.
@@ -4925,11 +4925,21 @@ function onGrpMotorInput(inp){
   } catch(e){ console.warn('[V60 piezas sanity grp]', e); }
 }
 
-// validateWorkerHasHorario: TODA actividad debe tener ENT/SAL (regla V20_27)
+// V1_0_0_69: ¿la actividad es un EXTRA/Bono? El Extra es un pago suelto → NO requiere horario (pedido Serafín 2026-08-14).
+// Se identifica por payType 'Extra' (del MASTER) o tipo '$' (tipoMap normaliza 'Extra'→'$', y SOLO Extra mapea a '$').
+function _isExtraAct(a){
+  if(!a) return false;
+  var tp = a.tipo || ((a.ai!=null && ACTS[a.ai]) ? ACTS[a.ai].tipo : '') || '';
+  var pt = a._payType || ((a.ai!=null && ACTS[a.ai]) ? ACTS[a.ai].payType : '') || '';
+  return tp === '$' || String(pt).toLowerCase() === 'extra';
+}
+
+// validateWorkerHasHorario: TODA actividad debe tener ENT/SAL (regla V20_27), EXCEPTO Extra (V1_0_0_69)
 function validateWorkerHasHorario(worker){
   if(!worker||!worker.acts||!worker.acts.length) return {ok:true};
   for(var i=0;i<worker.acts.length;i++){
     var a=worker.acts[i];
+    if(_isExtraAct(a)) continue; // V1_0_0_69: Extra no requiere horario
     var ini='', fin='';
     if(a.shifts&&a.shifts.length){
       ini=a.shifts[0].ini||''; fin=a.shifts[0].fin||'';
@@ -18985,6 +18995,7 @@ function _validateAllHorariosPre(){
       if(!w || !w.acts || !w.acts.length) continue;
       for(var ai=0; ai<w.acts.length; ai++){
         var a = w.acts[ai];
+        if(_isExtraAct(a)) continue; // V1_0_0_69: Extra no requiere horario
         if(!a || !a.shifts || !a.shifts.length){
           if(!a.ini || !a.fin){
             missing.push(esc(w.name||'?')+' — '+esc(a.esName||'actividad')+' (sin hora)');
@@ -19021,6 +19032,9 @@ function _validateAllHorariosPre(){
 function _validateSemanalHorariosPre(){
   var missing = [];
   if(typeof workers === 'undefined' || !workers) return {ok:true, missing:[]};
+  // V1_0_0_69: si la actividad semanal seleccionada es Extra, no se requiere horario.
+  var _selSem = (typeof ALL_ACTS !== 'undefined') ? ALL_ACTS[parseInt(gVal('semActivity'))] : null;
+  if(_selSem && (_selSem.tipo === '$' || String(_selSem.payType||'').toLowerCase() === 'extra')) return {ok:true, missing:[]};
   for(var w=0; w<workers.length; w++){
     var wk = workers[w];
     for(var d=0; d<7; d++){
