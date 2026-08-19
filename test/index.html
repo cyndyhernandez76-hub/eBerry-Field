@@ -35,7 +35,7 @@
 </script>
 <script>
 // V20_21: check versión + ackedVersion para romper loop infinito cuando version.txt≠APP_VERSION
-window.APP_VERSION = 'V1_0_0_69';
+window.APP_VERSION = 'V1_0_0_70';
 (function(){
   // V20_77: AUTO-LIMPIEZA de _ackedVersion envenenado.
   // Bug detectado: surqueros tocaban "Actualizar ahora" pero el SW interceptaba el reload con HTML viejo.
@@ -17059,6 +17059,7 @@ function _semMondayOf(dateStr){
 // buildSemTable lo setea al FINAL (tras restaurar las celdas). saveSemData sólo guarda si el contexto actual
 // coincide con lo renderizado → evita pisar datos buenos con una tabla que aún no es de este contexto.
 var _semRenderedKey = '';
+var _semLastWeek = ''; // V1_0_0_70: lunes de la semana actualmente renderizada (para ofrecer migrar al cambiar de semana)
 function _semCtxKey(){
   return (gVal('semRancho')||'') + '|' + _semMondayOf(gVal('semWeekStart')) + '|' + (gVal('semActivity')||'');
 }
@@ -17270,19 +17271,64 @@ function onSemRanchoChange(){
   try { renderSemFinca(); } catch(e){ console.warn('V20_101 renderSemFinca fallo:', e); }
 }
 
+// V1_0_0_70: ¿la fila (worker) de una semana guardada tiene ALGÚN dato? (turnos con hora o qty)
+function _semRowHasData(r){
+  if(!r || !r.days) return false;
+  for(var d=0; d<r.days.length; d++){
+    var dd = r.days[d]; if(!dd) continue;
+    if(dd.qty && parseFloat(dd.qty) > 0) return true;
+    if(dd.ini || dd.fin) return true;
+    if(dd.shifts && dd.shifts.length){ for(var s=0; s<dd.shifts.length; s++){ if(dd.shifts[s].ini || dd.shifts[s].fin) return true; } }
+  }
+  return false;
+}
+// V1_0_0_70: cuántos trabajadores con datos tiene la semana guardada bajo weekMonday
+function _semWeekDataCount(weekMonday){
+  try {
+    var data = JSON.parse(localStorage.getItem(_semStoreKey(weekMonday)) || 'null');
+    if(!data || !data.rows) return 0;
+    var n = 0; for(var i=0; i<data.rows.length; i++){ if(_semRowHasData(data.rows[i])) n++; }
+    return n;
+  } catch(e){ return 0; }
+}
+// V1_0_0_70: MIGRAR (MOVER) los datos guardados de una semana a otra — igual que "migrar el día" en Parámetros.
+// Mueve (borra la vieja) para que la semana equivocada quede limpia y no se reenvíe por error.
+function _semMigrarSemana(oldMonday, newMonday){
+  try {
+    var oldKey = _semStoreKey(oldMonday);
+    var data = JSON.parse(localStorage.getItem(oldKey) || 'null');
+    if(!data){ if(typeof toast==='function') toast('⚠️ No encontré datos que migrar'); return false; }
+    // Colisión: ¿la semana destino ya tiene datos? → avisar antes de reemplazar.
+    var nDest = _semWeekDataCount(newMonday);
+    if(nDest > 0){
+      var ok = confirm('⚠️ La semana del ' + newMonday + ' YA tiene datos de ' + nDest + ' trabajador(es).\n\nSi migras, ESOS datos se reemplazan con los de la semana anterior.\n\n¿Reemplazar?');
+      if(!ok) return false; // no migrar, dejar todo como está
+    }
+    data.weekStart = newMonday; // la data ahora pertenece a la semana nueva
+    localStorage.setItem(_semStoreKey(newMonday), JSON.stringify(data));
+    localStorage.removeItem(oldKey); // MOVER: la semana vieja queda limpia
+    if(typeof toast==='function') toast('📦 Datos migrados a la semana del ' + newMonday);
+    return true;
+  } catch(e){ console.warn('[V1_0_0_70] _semMigrarSemana:', e.message); if(typeof toast==='function') toast('❌ Error al migrar la semana'); return false; }
+}
+
 function onSemWeekChange(){
-  // V20-FIX3: guardar datos semanales ANTES de cambiar semana
+  // V20-FIX3: guardar datos semanales ANTES de cambiar semana (los guards V64 evitan pisar si el contexto no coincide)
   saveSemData();
   var dateStr = gVal('semWeekStart');
   if(!dateStr) return;
-  // Ajustar al lunes de esa semana
-  var d = new Date(dateStr + 'T12:00:00');
-  var dow = d.getDay(); // 0=dom
-  var diff = dow === 0 ? -6 : 1 - dow;
-  d.setDate(d.getDate() + diff);
-  var mo = d.getMonth()+1; var dy = d.getDate();
-  var monday = d.getFullYear()+'-'+(mo<10?'0'+mo:mo)+'-'+(dy<10?'0'+dy:dy);
+  var monday = _semMondayOf(dateStr); // V1_0_0_62: siempre al lunes
   gEl('semWeekStart').value = monday;
+
+  // V1_0_0_70: si CAMBIASTE de semana y la ANTERIOR tiene datos → ofrecer MIGRARLOS (no reescribir horarios).
+  var oldMonday = _semLastWeek;
+  if(oldMonday && monday !== oldMonday){
+    var nOld = _semWeekDataCount(oldMonday);
+    if(nOld > 0){
+      var doMig = confirm('📅 Tienes datos de ' + nOld + ' trabajador(es) en la semana del ' + oldMonday + '.\n\n¿MIGRAR esos datos a la semana del ' + monday + '? (te ahorra volver a escribir los horarios)\n\nAceptar = migrar (mover a la nueva semana)\nCancelar = no migrar (dejar cada semana como está)');
+      if(doMig) _semMigrarSemana(oldMonday, monday);
+    }
+  }
   buildSemTable();
 }
 
@@ -17395,6 +17441,7 @@ function buildSemTable(){
   // V1_0_0_64: la tabla YA está armada y restaurada para este contexto → registrar la firma.
   // A partir de aquí saveSemData sí puede guardar sin miedo a pisar (el contexto coincide).
   _semRenderedKey = _semCtxKey();
+  _semLastWeek = _semMondayOf(gVal('semWeekStart')); // V1_0_0_70: recordar la semana renderizada
   // V1_0_0_38: registrar el default global actual para la propagación de labor por celda
   _semPrevFinca = gVal('semFinca') || '';
 
