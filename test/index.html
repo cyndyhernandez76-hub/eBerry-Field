@@ -35,7 +35,7 @@
 </script>
 <script>
 // V20_21: check versión + ackedVersion para romper loop infinito cuando version.txt≠APP_VERSION
-window.APP_VERSION = 'V1_0_0_70';
+window.APP_VERSION = 'V1_0_0_71';
 (function(){
   // V20_77: AUTO-LIMPIEZA de _ackedVersion envenenado.
   // Bug detectado: surqueros tocaban "Actualizar ahora" pero el SW interceptaba el reload con HTML viejo.
@@ -2760,6 +2760,9 @@ function proceedLogin(user){
 
 function loginSuccess(user){
   currentUser = user;
+  // V1_0_0_71: avisar de INMEDIATO si el navegador no puede guardar (Safari iOS modo privado / storage off).
+  // Mejor enterarse al entrar que perder un día completo de captura sin darse cuenta.
+  try { if(!_storageWorks()){ _warnStorageFail(); } } catch(e){}
   gEl('loginScreen').classList.add('hide');
   // Tau: unlock body scroll after login
   document.body.classList.remove('login-locked');
@@ -8831,18 +8834,38 @@ function _serializeState(){
   }
   return {vals:vals, wSave:wSave};
 }
-// V13-FIX3: try/catch separados — si historial falla por storage lleno, estado principal sí se guarda
+// V1_0_0_71: ¿el navegador puede REALMENTE escribir en localStorage? En Safari iOS modo privado,
+// setItem LANZA excepción (QuotaExceededError) → el guardado falla. Este helper lo detecta escribiendo
+// y leyendo una llave de prueba. Cachea el resultado para no repetir el chequeo en cada guardado.
+var _storageOK = null;
+function _storageWorks(){
+  if(_storageOK !== null) return _storageOK;
+  try {
+    var k = '__eb_test__';
+    localStorage.setItem(k, '1');
+    var v = localStorage.getItem(k);
+    localStorage.removeItem(k);
+    _storageOK = (v === '1');
+  } catch(e){ _storageOK = false; }
+  return _storageOK;
+}
+
+// V13-FIX3: try/catch separados — si historial falla por storage lleno, estado principal sí se guarda.
+// V1_0_0_71: retorna true/false para que quien llame (saveQuiet/save) SEPA si el guardado principal falló
+// y pueda mostrarlo VISIBLE (antes fallaba en silencio → el surquero creía que guardó y perdía datos en Safari).
 function _persistState(vals, wSave){
   try {
     // V20_91_01: incluir _dayFlow (estado del flujo check-in/out del día)
     localStorage.setItem(getUserKey(),JSON.stringify({v:vals,w:wSave,id:wid,ep:estP,hp:hilP,cp:cajasP,ga:grpActs,aus:ausencias,df:_dayFlow}));
-  } catch(e){ console.warn('[eBerry] Error guardando estado:', e.message); return; }
+    _storageOK = true; // confirmado: sí se pudo escribir
+  } catch(e){ console.warn('[eBerry] Error guardando estado:', e.message); _storageOK = false; return false; }
   try {
     var dateKey=getUserHistKey(vals.fecha||new Date().toISOString().split('T')[0]);
     // V17-FIX7: ausencias incluidas en historial (antes faltaban)
     // V20_91_01: incluir _dayFlow también en historial
     localStorage.setItem(dateKey,JSON.stringify({v:vals,w:wSave,id:wid,ep:estP,hp:hilP,cp:cajasP,ga:grpActs,aus:ausencias,df:_dayFlow,saved:new Date().toISOString()}));
   } catch(e){ console.warn('[eBerry] localStorage lleno — historial no guardado:', e.message); }
+  return true; // V1_0_0_71: el guardado PRINCIPAL sí se completó
 }
 
 // V20_61: flag de activación del autoSave.
@@ -8933,12 +8956,33 @@ function save(){
   window._autoSaveActive = true;
   try {
     var s=_serializeState();
-    _persistState(s.vals, s.wSave);
+    var _okP=_persistState(s.vals, s.wSave);
+    // V1_0_0_71: si falló el guardado principal (Safari privado, storage lleno) → avisar VISIBLE, no mentir.
+    if(_okP===false){ _updateSavePill('error'); _warnStorageFail(); return; }
     toast('💾 Guardado — auto-guardado activado');
     _updateSavePill('saved');
     if(_asTimer2)clearTimeout(_asTimer2);
     _asTimer2=setTimeout(function(){ _updateSavePill('auto'); },2000);
   }catch(e){ toast('Error al guardar: '+e.message); _updateSavePill('error'); }
+}
+
+// V1_0_0_71: aviso VISIBLE y persistente cuando el navegador no puede guardar (típico: Safari iOS en
+// modo privado, o almacenamiento deshabilitado). Se muestra una vez por sesión para no ser molesto.
+var _storageWarnShown = false;
+function _warnStorageFail(){
+  try{ toast('⚠️ NO se está guardando — Safari en modo privado. Sal del modo privado o agrega la app a Inicio.'); }catch(e){}
+  if(_storageWarnShown) return;
+  _storageWarnShown = true;
+  try{
+    var b = gEl('storageWarnBanner');
+    if(!b){
+      b = document.createElement('div');
+      b.id = 'storageWarnBanner';
+      b.style.cssText = 'position:fixed;left:0;right:0;bottom:0;z-index:99999;background:#c0392b;color:#fff;padding:12px 14px;font-size:13px;font-weight:700;text-align:center;box-shadow:0 -2px 8px rgba(0,0,0,.3);line-height:1.35';
+      b.innerHTML = '⚠️ Tu navegador NO está guardando los datos.<br><span style="font-weight:400;font-size:12px">Safari en <b>modo privado</b> no guarda nada. Sal del modo privado, o toca <b>Compartir → Agregar a inicio</b> y abre la app desde ahí.</span> <button onclick="this.parentNode.style.display=\'none\'" style="margin-left:8px;background:#fff;color:#c0392b;border:none;border-radius:6px;padding:5px 10px;font-weight:700;cursor:pointer">Entendido</button>';
+      document.body.appendChild(b);
+    } else { b.style.display=''; }
+  }catch(e){}
 }
 
 function load(){
@@ -10914,7 +10958,9 @@ function saveQuiet(){
   if(!_autoSaveReady()) return;
   try{
     var s=_serializeState();
-    _persistState(s.vals, s.wSave);
+    var _okP=_persistState(s.vals, s.wSave);
+    // V1_0_0_71: si el guardado principal FALLÓ (Safari privado, storage lleno) → NO decir "guardado".
+    if(_okP===false){ _updateSavePill('error'); _warnStorageFail(); return; }
     _updateSavePill('saved');
     if(_asTimer2)clearTimeout(_asTimer2);
     _asTimer2=setTimeout(function(){ _updateSavePill('auto'); },2000);
@@ -18277,6 +18323,8 @@ function saveOfflineQueue(queue){
     localStorage.setItem(OQ_KEY, JSON.stringify(queue));
   } catch(e){
     console.warn('[eBerry] No se pudo guardar cola offline:', e.message);
+    // V1_0_0_71: la cola offline es crítica — si no se puede guardar (Safari privado), avisar VISIBLE.
+    try{ _storageOK = false; _warnStorageFail(); }catch(e2){}
   }
 }
 
