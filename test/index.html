@@ -35,7 +35,7 @@
 </script>
 <script>
 // V20_21: check versión + ackedVersion para romper loop infinito cuando version.txt≠APP_VERSION
-window.APP_VERSION = 'V1_0_0_73';
+window.APP_VERSION = 'V1_0_0_74';
 (function(){
   // V20_77: AUTO-LIMPIEZA de _ackedVersion envenenado.
   // Bug detectado: surqueros tocaban "Actualizar ahora" pero el SW interceptaba el reload con HTML viejo.
@@ -10175,7 +10175,9 @@ function _saveEditedActivityGroup(){
   var newAct = ACTS[newAi];
   var newIni = (gEl('assignIni')||{}).value || '';
   var newFin = (gEl('assignFin')||{}).value || '';
-  if(!newIni || !newFin){ toast && toast('⚠️ Captura horario inicio y fin'); return; }
+  // V1_0_0_74: VarMil/VarExt/Extra no requieren reloj — permitir horario en blanco también al EDITAR.
+  var _noHorEdit = _actNoHorario({_variable: newAct.variable, tipo: newAct.tipo, _payType: newAct.payType, ai: newAi});
+  if((!newIni || !newFin) && !_noHorEdit){ toast && toast('⚠️ Captura horario inicio y fin'); return; }
   // V20_187: construir lista de shifts (T1 + extras del modal) al GUARDAR la edición.
   var _newShifts = [{ini: newIni, fin: newFin}];
   for(var _esx=0; _esx<_assignExtraShifts.length; _esx++){
@@ -10606,7 +10608,10 @@ function confirmAssignMany(){
   if(!act){ toast && toast('⚠️ Actividad no encontrada'); return; }
   var ini = gVal('assignIni') || '';
   var fin = gVal('assignFin') || '';
-  if(!ini || !fin){ toast && toast('⚠️ Captura horario inicio y fin'); return; }
+  // V1_0_0_74: si la actividad NO requiere reloj (VarMil/VarExt/Extra), permitir horario en blanco.
+  // El reloj sigue visible en el modal, pero ya no bloquea el "Asignar". Sin esto, V73 seguía atorando aquí.
+  var _noHorAssign = _actNoHorario({_variable: act.variable, tipo: act.tipo, _payType: act.payType, ai: _assignCurrentActIdx});
+  if((!ini || !fin) && !_noHorAssign){ toast && toast('⚠️ Captura horario inicio y fin'); return; }
   // V20_186: construir lista de shifts incluyendo turnos extras del modal.
   // El turno 1 está en assignIni/assignFin; los extras vienen de _assignExtraShifts.
   var _shifts = [{ini:ini, fin:fin}];
