@@ -35,7 +35,7 @@
 </script>
 <script>
 // V20_21: check versión + ackedVersion para romper loop infinito cuando version.txt≠APP_VERSION
-window.APP_VERSION = 'V1_0_0_71';
+window.APP_VERSION = 'V1_0_0_72';
 (function(){
   // V20_77: AUTO-LIMPIEZA de _ackedVersion envenenado.
   // Bug detectado: surqueros tocaban "Actualizar ahora" pero el SW interceptaba el reload con HTML viejo.
@@ -10503,16 +10503,20 @@ function _renderAssignVarInputs(act){
   var inputs = [];
   try { inputs = getRequiredInputs(act) || []; } catch(e){ inputs = []; }
   if(!inputs.length) return;
-  var perWorkerKeywords = ['pieza','piezas','caja','cajas','pie','pies','puerta','puertas','metro','metros','cantidad'];
+  // V1_0_0_72: clasificación DATA-DRIVEN (ya NO lista fija de palabras 'piezas/cajas/...').
+  // En este modal se asignan actividades INDIVIDUALES → toda etiqueta de CANTIDAD que la persona
+  // produce (Millas, Piezas, Cajas, Pies, Vueltas, Bultos... = columnas MULTIPLICADORAS H,I,J,K del
+  // MASTER) es POR PERSONA → se captura en cada tarjeta, NO en el modal (antes 'Millas' no estaba en
+  // la lista → salía duplicada: modal + tarjeta). Solo un divisor con etiqueta (L,M,N,O, ej. un factor
+  // compartido del grupo) seguiría mostrándose en el modal. 'personas' se ignora (es división auto).
+  var multiplierCols = {H:1, I:1, J:1, K:1};
   var any = false;
   for(var i=0; i<inputs.length; i++){
     var inp = inputs[i];
     var lbl = String(inp.label||inp.placeholder||'').toLowerCase();
-    var isPerWorker = false;
-    for(var k=0; k<perWorkerKeywords.length; k++){
-      if(lbl.indexOf(perWorkerKeywords[k]) >= 0){ isPerWorker = true; break; }
-    }
-    if(isPerWorker) continue;
+    var col = String(inp.column||inp.col||'').toUpperCase();
+    // Cantidad por persona = columna multiplicadora (H-K) → se captura en la tarjeta, no aquí.
+    if(multiplierCols[col]) continue;
     if(lbl.indexOf('persona') >= 0) continue;
     // Renderizar input compartido
     var safeCol = esc(inp.column||inp.col||('v'+i));
