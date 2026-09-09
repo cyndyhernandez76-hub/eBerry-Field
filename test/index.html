@@ -35,7 +35,7 @@
 </script>
 <script>
 // V20_21: check versión + ackedVersion para romper loop infinito cuando version.txt≠APP_VERSION
-window.APP_VERSION = 'V1_0_0_75';
+window.APP_VERSION = 'V1_0_0_78';
 (function(){
   // V20_77: AUTO-LIMPIEZA de _ackedVersion envenenado.
   // Bug detectado: surqueros tocaban "Actualizar ahora" pero el SW interceptaba el reload con HTML viejo.
@@ -17597,18 +17597,46 @@ function _populateSemFromReadOnly(){
         if(pwl[pi].name === wk.name){ pw = pwl[pi]; break; }
       }
       if(!pw || !pw.acts) continue;
-      var match = null;
+      // V1_0_0_78: juntar TODOS los renglones de esa actividad en el dia, no solo el primero.
+      // Con el backend v5.45 un dia con 3 turnos llega como 3 filas (una por turno) -> aqui se
+      // reconstruyen T1/T2/T3 tal como se capturaron. Antes el 'break' se quedaba con el primero
+      // y el resto del dia se perdia. Se ordenan por hora de entrada porque FIELD_DROP no
+      // garantiza el orden de las filas.
+      var _mAll = [];
       for(var ai=0; ai<pw.acts.length; ai++){
-        if(pw.acts[ai].actEs === selAct.es){ match = pw.acts[ai]; break; }
+        if(pw.acts[ai].actEs === selAct.es) _mAll.push(pw.acts[ai]);
       }
-      if(!match) continue;
+      if(!_mAll.length) continue;
+      if(_mAll.length > 1){
+        _mAll.sort(function(a,b){
+          var _ta = (typeof t2m==='function' ? t2m(a.hEnt||'') : null);
+          var _tb = (typeof t2m==='function' ? t2m(b.hEnt||'') : null);
+          if(_ta === null) _ta = 99999;
+          if(_tb === null) _tb = 99999;
+          return _ta - _tb;
+        });
+      }
+      var match = _mAll[0];
       var cellId = 'sem_' + wk.id + '_d' + dayIdx;
       var qtyEl = gEl(cellId+'_qty');
       if(qtyEl && (match.qty !== undefined && match.qty !== '')) qtyEl.value = match.qty;
-      // V1_0_0_66: Sheets guarda 1 par entrada/salida por día (el total) → poblar como 1 turno.
-      if(match.hEnt || match.hSal){ _semSetShifts(wk.id, dayIdx, [{ini:match.hEnt||'', fin:match.hSal||''}]); }
-      var liEl  = gEl(cellId+'_li');  if(liEl  && match.hLIni) liEl.value  = match.hLIni;
-      var lfEl  = gEl(cellId+'_lf');  if(lfEl  && match.hLFin) lfEl.value  = match.hLFin;
+      // V1_0_0_78: un turno por fila recibida (backend v5.45). Con backend viejo llega 1 sola
+      // fila y el resultado es identico al de antes (1 turno con el rango del dia).
+      var _shIn = [];
+      for(var _mi=0; _mi<_mAll.length; _mi++){
+        var _m = _mAll[_mi];
+        if(_m.hEnt || _m.hSal) _shIn.push({ini:_m.hEnt||'', fin:_m.hSal||''});
+      }
+      if(_shIn.length) _semSetShifts(wk.id, dayIdx, _shIn);
+      // V1_0_0_78: el lonche sigue siendo 1 por dia; viene en la fila del turno que lo contiene,
+      // asi que se toma el primero que lo traiga (las demas filas lo mandan vacio).
+      var _lonI = '', _lonF = '';
+      for(var _mj=0; _mj<_mAll.length; _mj++){
+        if(!_lonI && _mAll[_mj].hLIni) _lonI = _mAll[_mj].hLIni;
+        if(!_lonF && _mAll[_mj].hLFin) _lonF = _mAll[_mj].hLFin;
+      }
+      var liEl  = gEl(cellId+'_li');  if(liEl  && _lonI) liEl.value  = _lonI;
+      var lfEl  = gEl(cellId+'_lf');  if(lfEl  && _lonF) lfEl.value  = _lonF;
       try { calcSemHours(wk.id, dayIdx); } catch(e){}
       matched++; _populated++;
     }
@@ -17962,12 +17990,28 @@ function generateSemPDF(){
     dates.push(dayLabel);
   }
 
+  // V1_0_0_76: UN solo nombre para el PDF y la imagen de la hoja semanal.
+  // Antes el PDF se llamaba 'Semanal - 2026-08-31' (ISO, sin rancho ni hora) y la imagen
+  // 'Semanal eBerry 31-Ago 2024' -> dos patrones distintos para la misma hoja (Serafin
+  // 2026-09-09). Ahora ambos usan _semFnBase.
+  // V1_0_0_77: la fecha del NOMBRE va en ISO (weekStart, 2026-08-31), no '31-Ago-2026'.
+  // ISO se ordena solo en Descargas (alfabetico = cronologico), no depende del idioma y no
+  // se confunde con el HHMM del final. Paridad con la hoja diaria, que ya usaba ISO.
+  // OJO: dates[] ('31-Ago') se sigue usando para los encabezados VISIBLES de la tabla —
+  // esto solo cambia el nombre del archivo. El HHMM final es el sello de hora de V1_0_0_75
+  // (coincide con el 'Generado:' del pie de pagina).
+  var _semTs = (function(){ var _n=new Date(), _h=_n.getHours(), _m=_n.getMinutes();
+    return (_h<10?'0':'')+_h+(_m<10?'0':'')+_m; })();
+  var _semD0 = weekStart || '';  // V1_0_0_77: ISO YYYY-MM-DD (lunes de la semana)
+  var _semFnBase = ('Semanal '+(gVal('semRancho')||'')+' '+_semD0+' '+_semTs)
+    .replace(/[^a-zA-Z0-9 _-]/g,'').replace(/\s+/g,' ').trim();
+
   // Beta2-V3: Surquero = ADM si sesión es admin
   var surqueroName = gVal('surquero') || '';
   if(currentUser && currentUser.isAdmin) surqueroName = ADMIN_USER_NAME;
 
   var html = '<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="color-scheme" content="only light">'
-    +'<title>Semanal - ' + weekStart + '</title>'
+    +'<title>' + esc(_semFnBase) + '</title>'  // V1_0_0_76: mismo nombre que la imagen
     +'<style>'
     +':root{color-scheme:only light}'
     +'html,body{background:#fff !important;color:#000 !important}'
@@ -18190,12 +18234,10 @@ function generateSemPDF(){
   // Gamma2: Footer + botones Imprimir/Cerrar
   html += '<div class="ft">'+(gVal('semRancho')||'—')+' &nbsp;|&nbsp; Semana: '+dates[0]+' al '+dates[6]+' &nbsp;|&nbsp; '+workers.length+' trabajadores &nbsp;|&nbsp; Surquero: '+surqueroName+' &nbsp;|&nbsp; Generado: '+new Date().toLocaleString()+' &nbsp;|&nbsp; App: '+(window.APP_VERSION||'?')+'</div>';
   html += '</div>';  // V1_0_0_35: cierra imgPageW (hoja semanal) antes de la barra de botones
-  // V1_0_0_75: mismo sello de hora que la hoja diaria (evita compartir la imagen vieja)
-  var _fnTsW = (function(){ var _n=new Date(), _h=_n.getHours(), _m=_n.getMinutes();
-    return (_h<10?'0':'')+_h+(_m<10?'0':'')+_m; })();
+  // V1_0_0_76: el nombre (_semFnBase) se arma arriba, compartido con el <title> del PDF
   html += '<div class="nopr" style="text-align:center;margin-top:16px">'
     +'<button onclick="window.print()" style="background:#1a7a4a;color:#fff;border:none;padding:12px 24px;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;margin:4px">🖨️ Imprimir / Guardar PDF</button>'
-    +'<button onclick="_saveImg(\'imgPageW\',\''+('Semanal '+(gVal('semRancho')||'')+' '+(dates[0]||'')+' '+_fnTsW).replace(/[^a-zA-Z0-9 _-]/g,'')+'\')" style="background:#1a5a9a;color:#fff;border:none;padding:12px 24px;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;margin:4px">📷 Imagen Semanal</button>'
+    +'<button onclick="_saveImg(\'imgPageW\',\''+_semFnBase+'\')" style="background:#1a5a9a;color:#fff;border:none;padding:12px 24px;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;margin:4px">📷 Imagen Semanal</button>'
     +'<button onclick="window.close()" style="background:#eee;color:#555;border:none;padding:12px 20px;border-radius:8px;font-size:14px;cursor:pointer;margin:4px">Cerrar</button>'
     +'</div>';
   // V1_0_0_35: script de exportación a imagen (PNG escala 2, nítido). El tag de cierre va dividido en dos para no romper el parser del HTML padre.
@@ -18295,8 +18337,23 @@ function sendSemToSheets(){
       // turno (igual que la diaria) → sin tocar backend. El desglose T1/T2 vive solo en el PDF/app.
       var _shD = _semReadShifts(wk.id, d);
       // V1_0_0_66: total = suma de horas por turno (lonche al turno que lo contiene) — coincide con la celda y el PDF.
+      // V1_0_0_78: además del total, se arma el DESGLOSE por turno (_shOut) para mandarlo a Sheets.
+      // Antes solo viajaba total + rango (1er ini, ultimo fin) -> una hoja con 3 turnos llegaba como
+      // '9.50 h entre 06:58 y 03:07', un rango de ~20 h imposible de reconstruir ni de auditar
+      // (caso Agustin Dominguez, Serafin 2026-09-09). Con el desglose, el backend v5.45 escribe
+      // 1 fila por turno y la hoja se puede reconstruir exacta.
+      // Lonche: va SOLO en el turno que lo contiene (igual que el calculo de horas) -> la suma cuadra.
       var hrs = 0;
-      for(var _ss=0; _ss<_shD.length; _ss++){ hrs += _semTurnoHours(_shD[_ss].ini, _shD[_ss].fin, lIni, lFin); }
+      var _shOut = [];
+      for(var _ss=0; _ss<_shD.length; _ss++){
+        var _sIni = _shD[_ss].ini || '', _sFin = _shD[_ss].fin || '';
+        var _sHrs = _semTurnoHours(_sIni, _sFin, lIni, lFin);
+        hrs += _sHrs;
+        if(!_sIni && !_sFin) continue; // turno vacío: no genera fila
+        var _sLon = false;
+        try { _sLon = (typeof _semLoncheInTurno==='function') && _semLoncheInTurno(_sIni, _sFin, lIni, lFin); } catch(e){}
+        _shOut.push({ ini:_sIni, fin:_sFin, hrs:_sHrs, lIni:(_sLon?lIni:''), lFin:(_sLon?lFin:'') });
+      }
       // V1_0_0_66: rango COMPLETO del día → entrada del 1er turno, salida del ÚLTIMO (coincide con el PDF).
       var ini = _shD.length ? (_shD[0].ini||'') : '';
       var fin = _shD.length ? (_shD[_shD.length-1].fin||'') : '';
@@ -18311,8 +18368,12 @@ function sendSemToSheets(){
       if(!isHour){
         dayObj.qty = parseFloat(gVal(cellId+'_qty')) || 0;
         if(dayObj.qty > 0 || hrs > 0) anyData = true;
+        // V1_0_0_78: para NO-Hora el qty es del DIA, no del turno. Partirlo entre turnos seria
+        // inventar datos, asi que estas actividades siguen mandando 1 sola fila (como hasta ahora).
       } else {
         if(hrs > 0) anyData = true;
+        // V1_0_0_78: solo Hora manda desglose. Backend viejo ignora 'shifts' y escribe 1 fila (retrocompat).
+        if(_shOut.length) dayObj.shifts = _shOut;
       }
       row.days.push(dayObj);
     }
