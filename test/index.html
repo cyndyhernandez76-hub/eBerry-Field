@@ -35,7 +35,7 @@
 </script>
 <script>
 // V20_21: check versión + ackedVersion para romper loop infinito cuando version.txt≠APP_VERSION
-window.APP_VERSION = 'V1_0_0_78';
+window.APP_VERSION = 'V1_0_0_80';
 (function(){
   // V20_77: AUTO-LIMPIEZA de _ackedVersion envenenado.
   // Bug detectado: surqueros tocaban "Actualizar ahora" pero el SW interceptaba el reload con HTML viejo.
@@ -11678,6 +11678,75 @@ function buildPDFWindow(vals, wks, ep, hp, cp, ausArr, grpActsArr){
     return result;
   }
 
+  // ─────────────────────────────────────────────────────────────────────────────
+  // V1_0_0_79 (Opcion B) — turnos pegados: mover la etiqueta al numero.
+  // Reportado por payroll via Serafin 2026-09-09 (Payroll Hartway 2026-08-31,
+  // "Packing Squash green"): T1 11:00-2:00 (7 personas, 300 boxes) y T2 2:00-7:00
+  // (8 personas, 1048 boxes). Los 7 que estuvieron en ambos turnos salian en UNA
+  // celda ancha (colspan) con la suma 42.86+131 = 173.86; Emmanuel, que solo entro
+  // al T2, salia con 131 suelto y parecia rendir menos que los demas.
+  // Ademas ninguna columna se podia auditar: la fila decia TOTAL 300 pero abajo
+  // habia 7 x 173.86 = 1217.
+  //
+  // La regla de fusion de turnos pegados (V20_07 _computeFrags) NO se toca — la
+  // suma sigue siendo correcta y util. Lo que cambia es que el ENCABEZADO y el
+  // TOTAL acompanen a esa suma:
+  //   1. la celda fusionada deja de llevar colspan y se imprime en su sub-columna;
+  //   2. el encabezado de esa sub-columna extiende su rango al bloque completo
+  //      (T1 pasa de "11:00 AM-2:00 PM" a "11:00 AM-7:00 PM"), igual que la fila Salida;
+  //   3. el TOTAL de cada sub-columna pasa a ser la suma de lo realmente impreso
+  //      en ella — asi SIEMPRE cuadra de arriba abajo, sin importar el caso.
+  // Resultado Hartway: T1 11:00 AM-7:00 PM TOTAL 1217 | T2 2:00 PM-7:00 PM TOTAL 131.
+  // 1217 + 131 = 1348 = 300 + 1048: la produccion del dia no se mueve ni un box.
+  //
+  // GUARDA (caso mixto): el encabezado solo se extiende si TODAS las personas que
+  // arrancan bloque en esa sub-columna lo terminan en el mismo punto. Si una sola
+  // se queda corta (ej. alguien que trabaja solo el T1), la columna no puede
+  // afirmar el rango largo sin mentirle a esa persona → _v79Any queda false y la
+  // columna se comporta exactamente como en V1_0_0_78 (celda ancha con colspan).
+  // ─────────────────────────────────────────────────────────────────────────────
+
+  // Recibe los bloques que arrancan en cada sub-columna ({s:inicio, e:fin, val:valor})
+  // y devuelve, por sub-columna, hasta donde puede extenderse el encabezado (ends)
+  // y cuanto se imprime realmente en ella (printed).
+  function _v79Blocks(nSubs, starts){
+    var ends=[], printed=[], bySub=[], any=false, i, k;
+    for(i=0;i<nSubs;i++){ ends[i]=i; printed[i]=0; bySub[i]=[]; }
+    for(i=0;i<starts.length;i++){
+      var st=starts[i];
+      if(st.s<0||st.s>=nSubs) continue;
+      bySub[st.s].push(st);
+      printed[st.s]+=(parseFloat(st.val)||0);
+    }
+    for(i=0;i<nSubs;i++){
+      var arr=bySub[i];
+      if(!arr.length) continue;
+      var e=arr[0].e, same=true;
+      for(k=1;k<arr.length;k++){ if(arr[k].e!==e){ same=false; break; } }
+      if(same && e>i){ ends[i]=e; any=true; }
+    }
+    return {ends:ends, printed:printed, any:any};
+  }
+
+  // Keys de turno de una actividad individual (misma logica de _wKeys usada al pintar filas)
+  function _v79WKeys(a){
+    var out=[];
+    if(!a) return out;
+    var real=false, i;
+    if(a.shifts&&a.shifts.length){
+      for(i=0;i<a.shifts.length;i++){ if(a.shifts[i].ini||a.shifts[i].fin){ real=true; break; } }
+    }
+    if(real){ for(i=0;i<a.shifts.length;i++) out.push((a.shifts[i].ini||'')+'|'+(a.shifts[i].fin||'')); }
+    else if(a.ini||a.fin) out.push((a.ini||'')+'|'+(a.fin||''));
+    return out;
+  }
+
+  // Devuelve el fin del bloque que arranca en la sub-columna si el encabezado puede extenderse
+  function _v79Fin(holder, subs, idx){
+    if(holder && holder._v79Any && holder._v79End && subs[holder._v79End[idx]]) return subs[holder._v79End[idx]].fin||'';
+    return (subs[idx]&&subs[idx].fin)||'';
+  }
+
   // Calcular datos por persona desde TODAS las actividades grupales
   var grpPuertasCols = []; // [{label, ct, perPersona: {wid: valor}, totalVal, np, precio, unitLabel, finca, ini, fin}]
   for(var gi_=0;gi_<grpActs_.length;gi_++){
@@ -11809,6 +11878,71 @@ function buildPDFWindow(vals, wks, ep, hp, cp, ausArr, grpActsArr){
     }
   }
 
+  // ── V1_0_0_79 (Opcion B): precalculo de bloques de turnos pegados por COLUMNA ──
+  // Corre antes del header porque el encabezado, el TOTAL y la fila Salida necesitan
+  // saber hasta donde llega el bloque y cuanto se imprime en cada sub-columna.
+  // Ver el comentario completo arriba, en _v79Blocks.
+
+  // Grupales (grpParents): la presencia de una persona es tener porcion en el sub.
+  for(var _v79g=0;_v79g<grpParents.length;_v79g++){
+    var _gpV=grpParents[_v79g];
+    var _nGV=_gpV.subs.length;
+    _gpV._v79Any=false; _gpV._v79End=null; _gpV._v79Printed=null;
+    if(_nGV<2) continue;
+    var _stG=[];
+    for(var _wv=0;_wv<wks.length;_wv++){
+      (function(_gp79,_wid79){
+        var _fg=_computeFrags(_gp79.subs, function(idx){ return _gp79.subs[idx].perPersona[_wid79]!==undefined; });
+        for(var _fs=0;_fs<_fg.length;_fs++){
+          if(_fg[_fs].type!=='start') continue;
+          var _e79=_fs+_fg[_fs].span-1, _sum79=0;
+          for(var _kk79=_fs;_kk79<=_e79;_kk79++){
+            var _pv79=_gp79.subs[_kk79].perPersona[_wid79];
+            if(_pv79!==undefined) _sum79+=_pv79;
+          }
+          _stG.push({s:_fs,e:_e79,val:_sum79});
+        }
+      })(_gpV, wks[_wv].id);
+    }
+    var _bkG=_v79Blocks(_nGV,_stG);
+    _gpV._v79End=_bkG.ends; _gpV._v79Printed=_bkG.printed; _gpV._v79Any=_bkG.any;
+  }
+
+  // Individuales (actCols): la presencia es que el turno del worker matchee la sub-columna.
+  // Daywork queda fuera — V20_183 fuerza _NS=1 (su columna no se subdivide).
+  for(var _v79c=0;_v79c<actCols.length;_v79c++){
+    var _colV=actCols[_v79c];
+    var _nSV=(_colV.shifts&&_colV.shifts.length)||1;
+    _colV._v79Any=false; _colV._v79End=null; _colV._v79Printed=null;
+    if(_nSV<2 || _colV.payType==='Daywork') continue;
+    var _stI=[];
+    for(var _wv2=0;_wv2<wks.length;_wv2++){
+      var _fnd79=null;
+      for(var _kv=0;_kv<wks[_wv2].acts.length;_kv++){
+        if(_colMatchesWAct(_colV, wks[_wv2].acts[_kv])){ _fnd79=wks[_wv2].acts[_kv]; break; }
+      }
+      if(!_fnd79) continue;
+      var _keys79=_v79WKeys(_fnd79);
+      if(!_keys79.length) continue;
+      (function(_col79,_k79,_act79){
+        var _fi=_computeFrags(_col79.shifts, function(idx){ return _k79.indexOf(_col79.shifts[idx].key)>=0; });
+        for(var _fs2=0;_fs2<_fi.length;_fs2++){
+          if(_fi[_fs2].type!=='start') continue;
+          var _e2=_fs2+_fi[_fs2].span-1, _val2=0;
+          if(_col79.hr){
+            var _lon79=(_act79&&Array.isArray(_act79.lonches))?_act79.lonches:_col79._lonches;
+            for(var _k3=_fs2;_k3<=_e2;_k3++) _val2+=nh(_col79.shifts[_k3].ini||'',_col79.shifts[_k3].fin||'',_lon79)||0;
+          } else {
+            _val2=parseFloat(_act79.qty)||0;
+          }
+          _stI.push({s:_fs2,e:_e2,val:_val2});
+        }
+      })(_colV,_keys79,_fnd79);
+    }
+    var _bkI=_v79Blocks(_nSV,_stI);
+    _colV._v79End=_bkI.ends; _colV._v79Printed=_bkI.printed; _colV._v79Any=_bkI.any;
+  }
+
   // V20_06: header en 2 filas (thead). Fila 1 = labels con colspan si multi-shift.
   // Fila 2 = sub-headers con horario de cada shift (solo aparece si alguna col tiene multi-shift).
   // Primeras 3 columnas (#, Emp#, Nombre) usan rowspan=2.
@@ -11828,7 +11962,10 @@ function buildPDFWindow(vals, wks, ep, hp, cp, ausArr, grpActsArr){
       th1+='<th colspan="'+_N+'" style="text-align:center;min-width:'+(80*_N)+'px">'+col.label+'<br><span style="font-weight:400;font-size:9px">'+unitLbl+'</span>'+_fincaTag+'</th>';
       for(var sh1_=0;sh1_<_N;sh1_++){
         var _sh=col.shifts[sh1_];
-        var _rango=(_sh.ini||_sh.fin)?(to12h(_sh.ini||'')+'-'+to12h(_sh.fin||'')):'';
+        // V1_0_0_79 (Opcion B): si el bloque de turnos pegados se extiende, el encabezado
+        // nombra el bloque completo (ej. T1 pasa de "11:00 AM-2:00 PM" a "11:00 AM-7:00 PM").
+        var _finSh=_v79Fin(col, col.shifts, sh1_);
+        var _rango=(_sh.ini||_finSh)?(to12h(_sh.ini||'')+'-'+to12h(_finSh||'')):'';
         th2+='<th style="text-align:center;min-width:80px;background:#2a3b9c;font-size:7px">T'+(sh1_+1)+'<br>'+_rango+'</th>';
       }
     }
@@ -11848,7 +11985,9 @@ function buildPDFWindow(vals, wks, ep, hp, cp, ausArr, grpActsArr){
       th1+='<th colspan="'+_NG+'" style="text-align:center;min-width:'+(80*_NG)+'px">'+_gp.label+'<br><span style="font-weight:400;font-size:9px">'+_gp.unitLabel+'</span>'+_gpFincaTag+'</th>';
       for(var gs1_=0;gs1_<_NG;gs1_++){
         var _gsub=_gp.subs[gs1_];
-        var _grango=(_gsub.ini||_gsub.fin)?(to12h(_gsub.ini||'')+'-'+to12h(_gsub.fin||'')):'';
+        // V1_0_0_79 (Opcion B): encabezado extendido al bloque completo (ver _v79Blocks)
+        var _gFin=_v79Fin(_gp, _gp.subs, gs1_);
+        var _grango=(_gsub.ini||_gFin)?(to12h(_gsub.ini||'')+'-'+to12h(_gFin||'')):'';
         th2+='<th style="text-align:center;min-width:80px;background:#2a3b9c;font-size:7px">T'+(gs1_+1)+'<br>'+_grango+'</th>';
       }
     }
@@ -12028,7 +12167,10 @@ function buildPDFWindow(vals, wks, ep, hp, cp, ausArr, grpActsArr){
             }
           }
         }
-        trTotal+='<td style="text-align:center;border:1px solid #000;border-top:3px solid #1a2b8c;color:#1a2b8c;font-weight:700">'+smartNum(_subTot)+' h</td>';
+        // V1_0_0_79 (Opcion B): con turnos pegados el total de la sub-columna es lo impreso en ella
+        if(col4._v79Any && col4._v79Printed) _subTot=col4._v79Printed[sst_]||0;
+        var _totLblH=(col4._v79Any && !_subTot)?'':(smartNum(_subTot)+' h'); // V1_0_0_79: sub-columna sin nadie -> en blanco
+        trTotal+='<td style="text-align:center;border:1px solid #000;border-top:3px solid #1a2b8c;color:#1a2b8c;font-weight:700">'+_totLblH+'</td>';
       }
     } else if(col4.payType==='Daywork'){
       // V20_55: TOTAL Daywork — pago FIJO del día. Sumar qty UNA vez por worker, 1 celda colspan=N.
@@ -12084,7 +12226,13 @@ function buildPDFWindow(vals, wks, ep, hp, cp, ausArr, grpActsArr){
             }
           }
         }
+        // V1_0_0_79 (Opcion B): idem para qty/horas — el total sigue a lo impreso en la sub-columna
+        if(col4._v79Any && col4._v79Printed){
+          if(_anyQtySub) _subTotQ=col4._v79Printed[sst2_]||0;
+          else _subTotH=col4._v79Printed[sst2_]||0;
+        }
         var _subLbl=_anyQtySub?smartNum(_subTotQ):(_subTotH>0?smartNum(_subTotH)+' h':'');
+        if(col4._v79Any && !(col4._v79Printed[sst2_]||0)) _subLbl=''; // V1_0_0_79: sub-columna sin nadie -> en blanco
         trTotal+='<td style="text-align:center;border:1px solid #000;border-top:3px solid #1a2b8c;color:#1a2b8c;font-weight:700">'+_subLbl+'</td>';
       }
     } else {
@@ -12107,8 +12255,10 @@ function buildPDFWindow(vals, wks, ep, hp, cp, ausArr, grpActsArr){
     } else {
       for(var sm_=0;sm_<_NS;sm_++){
         var _sm=col4.shifts[sm_]||{ini:'',fin:''};
+        // V1_0_0_79 (Opcion B): la Salida acompana al encabezado extendido del bloque
+        var _smFin=_v79Fin(col4, col4.shifts, sm_) || (_sm.fin||'');
         trEntry+='<td style="text-align:center;border:1px solid #000;color:#000">'+to12h(_sm.ini||'')+'</td>';
-        trExit +='<td style="text-align:center;border:1px solid #000;color:#000">'+to12h(_sm.fin||'')+'</td>';
+        trExit +='<td style="text-align:center;border:1px solid #000;color:#000">'+to12h(_smFin)+'</td>';
       }
     }
     // V1_0_0_68: L.Inicio/L.Fin de la actividad (colspan=N — el lonche es por actividad, compartido entre sub-shifts)
@@ -12129,7 +12279,10 @@ function buildPDFWindow(vals, wks, ep, hp, cp, ausArr, grpActsArr){
     // V20_131 FASE 3: acres via helper único (col P MASTER). Warning visible si falta factor (paridad invoice/individuales).
     for(var gs2_=0;gs2_<_NG2;gs2_++){
       var _subT=_gp2.subs[gs2_];
-      var _subTotVal=_subT.totalVal||0;
+      // V1_0_0_79 (Opcion B): el TOTAL de la sub-columna es lo REALMENTE impreso en ella,
+      // no la produccion nominal del turno. Asi la columna se audita de arriba abajo.
+      // Hartway: T1 pasa de 300 a 1217 (los 7 del bloque completo) y T2 queda en 131 (Emmanuel).
+      var _subTotVal=(_gp2._v79Any && _gp2._v79Printed)?(_gp2._v79Printed[gs2_]||0):(_subT.totalVal||0);
       var _subAcRes=null, _subActRef=null;
       if(_gp2.ct==='puertas'){
         _subActRef=_subT.gact||null;
@@ -12160,6 +12313,9 @@ function buildPDFWindow(vals, wks, ep, hp, cp, ausArr, grpActsArr){
       } else {
         _subTotalCell='<span style="font-size:11px">'+smartNum(_subTotVal)+'</span>';
       }
+      // V1_0_0_79 (Opcion B): si el bloque anterior absorbio a todos, esta sub-columna
+      // queda sin nadie -> TOTAL en blanco (imprimir "0 boxes" confundia mas que ayudar).
+      if(_gp2._v79Any && !_subTotVal) _subTotalCell='';
       trTotal+='<td style="text-align:center;font-weight:700;line-height:1.5;border:1px solid #000;border-top:3px solid #1a2b8c;color:#1a2b8c">'+_subTotalCell+'</td>';
     }
     // Pago Unit y Labor siguen con colspan (valor único compartido entre subs)
@@ -12168,8 +12324,10 @@ function buildPDFWindow(vals, wks, ep, hp, cp, ausArr, grpActsArr){
     // Entrada/Salida: N celdas con horario de cada sub-shift
     for(var gs3_=0;gs3_<_NG2;gs3_++){
       var _sub=_gp2.subs[gs3_];
+      // V1_0_0_79 (Opcion B): la Salida acompana al encabezado extendido del bloque
+      var _subFin=_v79Fin(_gp2, _gp2.subs, gs3_) || (_sub.fin||'');
       trEntry+='<td style="text-align:center;border:1px solid #000;color:#000">'+to12h(_sub.ini||'')+'</td>';
-      trExit +='<td style="text-align:center;border:1px solid #000;color:#000">'+to12h(_sub.fin||'')+'</td>';
+      trExit +='<td style="text-align:center;border:1px solid #000;color:#000">'+to12h(_subFin)+'</td>';
       // V1_0_0_68: L.Inicio/L.Fin del grupal (lonche de g.vars.lonches, propagado a cada sub)
       trLunchIni+='<td style="text-align:center;border:1px solid #000;color:#8a6d1a">'+(_sub.lIni?to12h(_sub.lIni):'')+'</td>';
       trLunchFin+='<td style="text-align:center;border:1px solid #000;color:#8a6d1a">'+(_sub.lFin?to12h(_sub.lFin):'')+'</td>';
@@ -12283,10 +12441,12 @@ function buildPDFWindow(vals, wks, ep, hp, cp, ausArr, grpActsArr){
         for(var sq_=0;sq_<_NW;sq_++){
           var _frQ=_fragsQ[sq_];
           if(_frQ.type==='start'){
-            var _cspW2=_frQ.span>1?' colspan="'+_frQ.span+'"':'';
+            // V1_0_0_79 (Opcion B): sin colspan — el valor se imprime en su sub-columna.
+            // Si _v79Any es false (caso mixto) se conserva el colspan de V1_0_0_78 tal cual.
+            var _cspW2=(!col2._v79Any && _frQ.span>1)?' colspan="'+_frQ.span+'"':'';
             td+='<td'+_cspW2+' style="text-align:center">'+smartNum(found2.qty)+'</td>';
           } else if(_frQ.type==='continue'){
-            // skip (cubierto por colspan)
+            if(col2._v79Any) td+='<td></td>'; // V1_0_0_79: ya no la cubre ningun colspan
           } else {
             td+='<td></td>';
           }
@@ -12341,10 +12501,11 @@ function buildPDFWindow(vals, wks, ep, hp, cp, ausArr, grpActsArr){
             }
             if(_sumH2>0) cv=smartNum(_sumH2)+' h';
           }
-          var _cspW=_fr.span>1?' colspan="'+_fr.span+'"':'';
+          // V1_0_0_79 (Opcion B): sin colspan — la suma del bloque va en su sub-columna
+          var _cspW=(!col2._v79Any && _fr.span>1)?' colspan="'+_fr.span+'"':'';
           td+='<td'+_cspW+' style="text-align:center">'+cv+'</td>';
         } else if(_fr.type==='continue'){
-          // skip (cubierto por colspan)
+          if(col2._v79Any) td+='<td></td>'; // V1_0_0_79: ya no la cubre ningun colspan
         } else {
           td+='<td></td>';
         }
@@ -12365,10 +12526,12 @@ function buildPDFWindow(vals, wks, ep, hp, cp, ausArr, grpActsArr){
             var pv=_gpW.subs[kk3].perPersona[w.id];
             if(pv!==undefined) _ppSum+=pv;
           }
-          var _cspG=_frG_.span>1?' colspan="'+_frG_.span+'"':'';
+          // V1_0_0_79 (Opcion B): sin colspan — la suma del bloque (ej. 42.86+131=173.86)
+          // se imprime en la sub-columna T1, cuyo encabezado ya dice 11:00 AM-7:00 PM.
+          var _cspG=(!_gpW._v79Any && _frG_.span>1)?' colspan="'+_frG_.span+'"':'';
           td+='<td'+_cspG+' style="text-align:center">'+smartNum(_ppSum)+'</td>';
         } else if(_frG_.type==='continue'){
-          // skip
+          if(_gpW._v79Any) td+='<td></td>'; // V1_0_0_79: ya no la cubre ningun colspan
         } else {
           td+='<td></td>';
         }
@@ -18556,7 +18719,12 @@ function _sendNextInQueue(){
   delete clean._queuedAt;
   delete clean._retryCount;
 
-  // V8: usa submitViaIframe unificado
+  // V1_0_0_80 FIX 1: la cola esperaba 20 s, menos de la mitad de los 45 s que se da el
+  // envío normal del semanal. Un semanal de 7 días NUNCA alcanzaba a terminar en 20 s,
+  // así que todos los reintentos morían antes de tiempo — y como el backend sí los
+  // procesaba, cada timeout dejaba una copia más en FIELD_DROP (ver FieldSync v5.46).
+  // Caso real: Gustavo Robledo Alaniz, Bedners, semana 2026-08-31, escrito 5 veces.
+  // 90 s da margen de sobra incluso con las pestañas WE grandes.
   submitViaIframe(SHEETS_URL, clean,
     function(){ // onDone
       queue.shift();
@@ -18565,13 +18733,18 @@ function _sendNextInQueue(){
       console.log('[eBerry] Cola: enviado 1, quedan ' + queue.length);
       if(queue.length > 0){ setTimeout(_sendNextInQueue, 1500); }
       else { toast('✅ Todos los registros pendientes enviados'); recordLastSend(); checkDaysWithoutSend(); }
-    }, 20000,
+    }, 90000,
     function(){ // onTimeout
       var q = getOfflineQueue();
       if(q.length > 0){
         var head = q[0];
         head._retryCount = (head._retryCount || 0) + 1;
-        console.warn('[eBerry] Timeout cola — intento ' + head._retryCount + '/3');
+        console.warn('[eBerry] Timeout cola — intento ' + head._retryCount);
+        // V1_0_0_80 FIX 2: la rotación exigía q.length > 1, así que una cola con UN SOLO
+        // envío no rotaba nunca: reintentaba el mismo para siempre, en silencio, subiendo
+        // el contador (el de Gustavo llegó a 6 en seis días sin que nadie se enterara).
+        // Ahora: con más de un envío rota como antes; con uno solo se DETIENE y avisa,
+        // en vez de seguir golpeando el backend y sembrando copias.
         if(head._retryCount >= 3 && q.length > 1){
           q.shift();
           head._retryCount = 0;
@@ -18581,6 +18754,11 @@ function _sendNextInQueue(){
           toast('⚠️ Un rancho no responde — intentando otros');
           setTimeout(_sendNextInQueue, 1500);
           return;
+        } else if(head._retryCount >= 3){
+          saveOfflineQueue(q);
+          console.warn('[eBerry] Envío atorado tras ' + head._retryCount + ' intentos — auto-reintento detenido');
+          _warnEnvioAtorado(head);
+          return;
         } else {
           saveOfflineQueue(q);
           toast('⚠️ Timeout al enviar — se reintentará');
@@ -18589,6 +18767,26 @@ function _sendNextInQueue(){
         toast('⚠️ Timeout al enviar — se reintentará');
       }
     }, '_gsQFrame');
+}
+
+// V1_0_0_80: un envío atorado ya NO falla en silencio. Antes el surquero veía un
+// toast que decía "se reintentará" y se iba tranquilo; el envío se quedaba en el
+// equipo días enteros sin que nadie lo supiera. Ahora se avisa de frente y se dice
+// qué hacer, porque esos datos solo existen en ese teléfono.
+function _warnEnvioAtorado(payload){
+  try {
+    var NL = String.fromCharCode(10); // sin escapes: evita romper la cadena al editar el archivo
+    var _q = (payload && payload.action === 'semanal') ? 'la SEMANA' : 'el DIA';
+    var _det = (payload ? ((payload.rancho || '') + '  ' + (payload.weekStart || payload.fecha || '')) : '');
+    toast('🚨 Un envio no logra salir — NO borres nada');
+    alert('🚨 HAY UN ENVIO ATORADO' + NL + NL +
+          'No se pudo mandar ' + _q + ':' + NL + _det + NL + NL +
+          'Esos datos SOLO estan en este equipo. No los pierdas:' + NL + NL +
+          '• NO empieces semana nueva' + NL +
+          '• NO borres el historial' + NL +
+          '• NO cambies de telefono' + NL + NL +
+          'Avisa a Serafin para que lo rescate. Puedes seguir capturando normal.');
+  } catch(e){ console.warn('_warnEnvioAtorado:', e); }
 }
 
 // ── 3. AVISO DE 2+ DÍAS SIN ENVIAR ──
