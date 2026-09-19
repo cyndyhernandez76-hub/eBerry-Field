@@ -35,7 +35,7 @@
 </script>
 <script>
 // V20_21: check versión + ackedVersion para romper loop infinito cuando version.txt≠APP_VERSION
-window.APP_VERSION = 'V1_0_0_80';
+window.APP_VERSION = 'V1_0_0_81';
 (function(){
   // V20_77: AUTO-LIMPIEZA de _ackedVersion envenenado.
   // Bug detectado: surqueros tocaban "Actualizar ahora" pero el SW interceptaba el reload con HTML viejo.
@@ -6180,13 +6180,59 @@ function updParam(){
 }
 
 // V20_91_13: dropdown de finca en Parámetros — OCULTA todo el wrap si el rancho no tiene catálogo
+// ─────────────────────────────────────────────────────────────────────────────
+// V1_0_0_81: lookup del catálogo de labores tolerante al nombre del rancho.
+// Reportado por Serafín 2026-09-19: surquero en "Urban Vegatable" recibía un campo
+// de labor aunque ese rancho NO tiene labores cargadas. Al revisar salieron 3 bugs:
+//
+//  1. El catálogo se buscaba con la clave EXACTA — FINCAS_POR_RANCHO[rancho] —, así que
+//     bastaba una mayúscula distinta entre la pestaña de tareas y la de labores para
+//     que un rancho con labores cargadas no viera ninguna. Casos reales del MASTER:
+//     "DeWitt" (35 tareas) contra el catálogo "Dewitt" (7 labores), y "Dewar"/"DeWar"
+//     como si fueran dos ranchos. Mismo problema de comparación estricta que ya nos
+//     mordió con los nombres de trabajadores y de actividades.
+//  2. En la Semanal era peor: se pasaba el rancho a minúsculas y DESPUÉS se buscaba la
+//     clave exacta (las claves vienen capitalizadas: "Bedners", "Hartway"). El resultado
+//     era null SIEMPRE -> ningún rancho, ni los 11 que sí tienen catálogo, mostraba el
+//     dropdown; los 29 caían al campo de texto libre con placeholder "Labor".
+//  3. Ese campo libre viola la regla V20_91_13 (rancho sin catálogo -> ocultar, nunca
+//     texto libre), que es la que evita que cada quien escriba la labor a su manera.
+//
+// Este helper resuelve 1 y 2: intenta la clave exacta y, si falla, compara normalizando
+// (minúsculas, sin acentos, espacios colapsados). NO hace coincidencias parciales a
+// propósito: "Pennrose" no debe heredar las labores de "Pennrose 11". Los nombres que
+// difieren de verdad ("Hartway Farm" contra "Hartway") se alinean en el MASTER.
+function _normRanchoKey(s){
+  return String(s||'').toLowerCase()
+    .normalize('NFD').replace(/[̀-ͯ]/g,'')
+    .replace(/\s+/g,' ').trim();
+}
+var _fincasKeyMap = null, _fincasKeySrc = null;
+function _fincasDeRancho(rancho){
+  if(typeof FINCAS_POR_RANCHO === 'undefined' || !FINCAS_POR_RANCHO) return null;
+  var r = String(rancho||'').trim();
+  if(!r) return null;
+  var hit = FINCAS_POR_RANCHO[r];                       // 1) clave exacta
+  if(hit && hit.length) return hit;
+  if(_fincasKeySrc !== FINCAS_POR_RANCHO){              // 2) índice normalizado (se rearma si cambia el catálogo)
+    _fincasKeyMap = {};
+    for(var k in FINCAS_POR_RANCHO){
+      if(!FINCAS_POR_RANCHO.hasOwnProperty(k)) continue;
+      _fincasKeyMap[_normRanchoKey(k)] = FINCAS_POR_RANCHO[k];
+    }
+    _fincasKeySrc = FINCAS_POR_RANCHO;
+  }
+  hit = _fincasKeyMap[_normRanchoKey(r)];
+  return (hit && hit.length) ? hit : null;
+}
+
 function renderParamsFinca(){
   var wrap = gEl('fincaParamWrap');
   var slot = gEl('fincaParamSlot');
   var hidden = gEl('finca');
   if(!slot || !hidden) return;
   var rancho = gVal('rancho') || '';
-  var fincas = (FINCAS_POR_RANCHO && FINCAS_POR_RANCHO[rancho]) ? FINCAS_POR_RANCHO[rancho] : null;
+  var fincas = _fincasDeRancho(rancho); // V1_0_0_81: lookup tolerante al nombre
   var current = hidden.value || '';
   slot.innerHTML = ''; // reset
   if(fincas && fincas.length){
@@ -6223,10 +6269,12 @@ function renderParamsFinca(){
 function renderSemFinca(){
   var slot = gEl('semFincaSlot');
   if(!slot) return;
-  var rancho = (gVal('semRancho')||'').toLowerCase();
+  // V1_0_0_81: antes se pasaba el rancho a minusculas y DESPUES se buscaba la clave exacta
+  // (las claves vienen capitalizadas) -> null siempre -> aqui ningun rancho mostraba sus labores.
+  var rancho = gVal('semRancho')||'';
   var hidden = gEl('semFinca');
   var prevVal = (hidden ? hidden.value : '') || '';
-  var fincas = (typeof FINCAS_POR_RANCHO!=='undefined' && rancho && FINCAS_POR_RANCHO[rancho]) ? FINCAS_POR_RANCHO[rancho] : null;
+  var fincas = _fincasDeRancho(rancho);
   if(fincas && fincas.length){
     // dropdown cerrado
     var html = '<select id="semFincaSel" onchange="onSemFincaChange()" style="width:100%;padding:8px;border:1px solid var(--bd);border-radius:8px;font-size:14px">';
@@ -6244,8 +6292,12 @@ function renderSemFinca(){
     html += '</select>';
     slot.innerHTML = html;
   } else {
-    // fallback input libre
-    slot.innerHTML = '<input type="text" id="semFincaText" value="'+esc(prevVal)+'" oninput="onSemFincaChange()" placeholder="Labor" style="width:100%;padding:8px;border:1px solid var(--bd);border-radius:8px;font-size:14px">';
+    // V1_0_0_81 (regla V20_91_13): rancho SIN catalogo -> ocultar el campo, nunca texto libre.
+    // El texto libre era lo que veia el surquero de "Urban Vegatable" (placeholder "Labor") en un
+    // rancho que no tiene labores cargadas, y ademas dejaba que cada quien la escribiera a su
+    // manera, que es justo lo que el catalogo vino a evitar.
+    slot.innerHTML = '';
+    if(hidden) hidden.value = ''; // limpiar labor residual de otro rancho
   }
 }
 
@@ -6272,8 +6324,8 @@ var _semPrevFinca = ''; // rastrea el default global anterior para propagarlo a 
 
 function _semLaborCellHTML(cellId){
   var def = gVal('semFinca') || '';
-  var rancho = (gVal('semRancho')||'').toLowerCase();
-  var fincas = (typeof FINCAS_POR_RANCHO!=='undefined' && rancho && FINCAS_POR_RANCHO[rancho]) ? FINCAS_POR_RANCHO[rancho] : null;
+  var rancho = gVal('semRancho')||''; // V1_0_0_81: sin toLowerCase, rompia el lookup
+  var fincas = _fincasDeRancho(rancho);
   var h = '<div class="sem-labor" id="'+cellId+'_laborWrap"><div class="sem-labor-lbl">🏷️ Labor</div>';
   if(fincas && fincas.length){
     h += '<select class="sem-labor-sel" id="'+cellId+'_labor" onchange="onSemCellLabor(this,\''+cellId+'\')">';
@@ -6282,7 +6334,10 @@ function _semLaborCellHTML(cellId){
     if(def && !has){ h += '<option value="'+esc(def)+'" selected>'+esc(def)+'</option>'; }
     h += '</select>';
   } else {
-    h += '<input type="text" class="sem-labor-txt" id="'+cellId+'_labor" value="'+esc(def)+'" placeholder="Labor" oninput="onSemCellLabor(this,\''+cellId+'\')">';
+    // V1_0_0_81 (regla V20_91_13): sin catalogo no se pide labor — ni celda, ni texto libre.
+    // Sin el input, gVal(cellId+'_labor') devuelve '' y el envio cae al default de Parametros,
+    // que para estos ranchos tambien va vacio. _semPropagateDefault ya hace `if(!el) continue`.
+    return '';
   }
   return h + '</div>';
 }
@@ -7531,7 +7586,7 @@ function mkActRow(wid_,ai,_cont){
   // V20_29: Finca como DROPDOWN desde catálogo "Fincas por rancho" del Master Sheet.
   // Si el rancho actual NO está en FINCAS_POR_RANCHO → NO renderizamos el input (regla de Serafín).
   var _ranchoActual = gVal('rancho') || '';
-  var _fincasDelRancho = (FINCAS_POR_RANCHO && FINCAS_POR_RANCHO[_ranchoActual]) ? FINCAS_POR_RANCHO[_ranchoActual] : null;
+  var _fincasDelRancho = _fincasDeRancho(_ranchoActual); // V1_0_0_81
   if(_fincasDelRancho && _fincasDelRancho.length){
     var fincaRow = document.createElement('div');
     fincaRow.style.cssText = 'display:flex;align-items:center;gap:6px;margin-bottom:6px';
@@ -10204,7 +10259,7 @@ function _saveEditedActivityGroup(){
   var newFinca = fincaSel ? (fincaSel.value||'') : (fincaInp ? (fincaInp.value||'') : '');
   // V1_0_0_43: finca obligatoria SOLO si el rancho tiene catálogo (paridad con confirmAssignMany).
   var _rEG = (gVal('rancho')||'').trim();
-  var _fincasCatEG = (typeof FINCAS_POR_RANCHO !== 'undefined' && FINCAS_POR_RANCHO && FINCAS_POR_RANCHO[_rEG]) ? FINCAS_POR_RANCHO[_rEG] : null;
+  var _fincasCatEG = _fincasDeRancho(_rEG); // V1_0_0_81
   if(!!(_fincasCatEG && _fincasCatEG.length) && !newFinca){ toast && toast('⚠️ Selecciona finca'); return; }
   var newWorkerIds = _assignSelectedIds.slice();
   if(!newWorkerIds.length){
@@ -10502,7 +10557,7 @@ function _renderAssignFinca(act){
   var rancho = (gVal('rancho')||'').trim();
   var fincaActual = (gVal('finca')||'').trim();
   var fincaActualLc = fincaActual.toLowerCase();
-  var fincas = (typeof FINCAS_POR_RANCHO !== 'undefined' && FINCAS_POR_RANCHO && FINCAS_POR_RANCHO[rancho]) ? FINCAS_POR_RANCHO[rancho] : null;
+  var fincas = _fincasDeRancho(rancho); // V1_0_0_81
   if(fincas && fincas.length){
     // V20_184: rancho con catálogo → mostrar wrap + dropdown
     if(wrap) wrap.style.display = '';
@@ -10642,7 +10697,7 @@ function confirmAssignMany(){
   // _renderAssignFinca oculta el bloque (regla V20_91_13) → no hay dropdown que llenar →
   // dejar continuar sin finca en vez de bloquear con "⚠️ Selecciona finca".
   var _rAM = (gVal('rancho')||'').trim();
-  var _fincasCatAM = (typeof FINCAS_POR_RANCHO !== 'undefined' && FINCAS_POR_RANCHO && FINCAS_POR_RANCHO[_rAM]) ? FINCAS_POR_RANCHO[_rAM] : null;
+  var _fincasCatAM = _fincasDeRancho(_rAM); // V1_0_0_81
   var _fincaReqAM = !!(_fincasCatAM && _fincasCatAM.length);
   if(_fincaReqAM && !finca){ toast && toast('⚠️ Selecciona finca'); return; }
 
@@ -14020,7 +14075,7 @@ function askDelGrpAct(gi){
 // V20_91_13: si rancho no tiene catálogo → retorna '' (oculta label+input completos)
 function _fincaGrpHtml(gi, val){
   var _r = (typeof gVal==='function' ? (gVal('rancho')||'') : '');
-  var _list = (typeof FINCAS_POR_RANCHO!=='undefined' && FINCAS_POR_RANCHO && FINCAS_POR_RANCHO[_r]) ? FINCAS_POR_RANCHO[_r] : null;
+  var _list = _fincasDeRancho(_r); // V1_0_0_81
   if(!_list || !_list.length) return ''; // sin catálogo → ocultar bloque completo
   var _v = val||'';
   var s = '<div style="margin-bottom:6px"><label style="font-size:10px">📍 Labor / Finca (aparece en el PDF)</label>';
