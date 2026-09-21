@@ -35,7 +35,7 @@
 </script>
 <script>
 // V20_21: check versión + ackedVersion para romper loop infinito cuando version.txt≠APP_VERSION
-window.APP_VERSION = 'V1_0_0_83';
+window.APP_VERSION = 'V1_0_0_84';
 (function(){
   // V20_77: AUTO-LIMPIEZA de _ackedVersion envenenado.
   // Bug detectado: surqueros tocaban "Actualizar ahora" pero el SW interceptaba el reload con HTML viejo.
@@ -6438,13 +6438,16 @@ function _semPropagateDefault(oldDef, newDef){
   if(!workers || !workers.length) return;
   for(var w=0; w<workers.length; w++){
     for(var d=0; d<7; d++){
-      var base = 'sem_'+workers[w].id+'_d'+d;
-      var el = gEl(base+'_labor');
-      if(!el) continue;
-      if((el.value||'') === (oldDef||'') || !(el.value||'')){
-        el.value = newDef;
-        var wrap = gEl(base+'_laborWrap');
-        if(wrap) wrap.classList.remove('changed');
+      // V1_0_0_84: la labor vive en cada turno — propagar a los turnos que seguian el default
+      var cont = gEl('sem_'+workers[w].id+'_d'+d+'_shifts');
+      if(!cont) continue;
+      var sels = cont.querySelectorAll('.sem-sh-labor');
+      var rows = cont.querySelectorAll('.sem-shift-row');
+      for(var k=0; k<sels.length; k++){
+        if((sels[k].value||'') === (oldDef||'') || !(sels[k].value||'')){
+          sels[k].value = newDef;
+          if(rows[k]) rows[k].classList.remove('changed');
+        }
       }
     }
   }
@@ -17636,7 +17639,43 @@ function _semMigrateKeys(){
 // TOTAL de horas + entrada/salida del 1er turno (igual que la diaria) → SIN tocar el backend.
 // Los turnos viven en el DOM dentro de <div id="sem_{wid}_d{d}_shifts"> y se leen por orden (querySelectorAll),
 // robusto a agregar/quitar sin reindexar. Se lee/escribe con _semReadShifts / _semSetShifts.
-function _semShiftRowHTML(wid, d, s, ini, fin){
+// V1_0_0_84 — LABOR POR TURNO en el bloque semanal (pedido Serafin 2026-09-21).
+// Antes la labor era UNA por celda (persona x dia), debajo del lonche: si alguien trabajaba
+// la manana en una labor y la tarde en otra, no habia donde anotarlo. Ahora cada turno lleva
+// la suya y desaparece la de abajo — un solo lugar donde ponerla.
+// El backend ya escribe UNA FILA POR TURNO desde v5.45, asi que cada fila puede llevar su
+// propia labor; hasta ahora compartian la del dia porque el frontend mandaba una sola.
+// Si el rancho no tiene catalogo de labores no se pide nada (regla V20_91_13).
+function _semLaborTurnoHTML(cellId, s, val){
+  var fincas = _fincasDeRancho(gVal('semRancho')||'');
+  if(!fincas || !fincas.length) return '';
+  var v = val || '';
+  var h = '<select class="sem-labor-sel sem-sh-labor" id="' + cellId + '_s' + s + '_labor"'
+        + ' onchange="onSemShiftLabor(this)" style="margin-top:2px">';
+  h += '<option value="">- labor -</option>';
+  var hay = false;
+  for(var i = 0; i < fincas.length; i++){
+    var sel = (fincas[i] === v) ? ' selected' : '';
+    if(sel) hay = true;
+    h += '<option value="' + esc(fincas[i]) + '"' + sel + '>' + esc(fincas[i]) + '</option>';
+  }
+  if(v && !hay) h += '<option value="' + esc(v) + '" selected>' + esc(v) + '</option>'; // labor fuera del catalogo
+  return h + '</select>';
+}
+// Resalta el turno cuya labor difiere del default de Parametros (mismo criterio que la celda vieja)
+function onSemShiftLabor(el){
+  try {
+    var def = gVal('semFinca') || '';
+    var row = el.closest ? el.closest('.sem-shift-row') : null;
+    if(row){
+      if((el.value || '') && (el.value || '') !== def) row.classList.add('changed');
+      else row.classList.remove('changed');
+    }
+  } catch(e){}
+  if(typeof saveSemData === 'function') saveSemData();
+}
+
+function _semShiftRowHTML(wid, d, s, ini, fin, labor){
   var cellId = 'sem_'+wid+'_d'+d;
   var isT1 = (s===0);
   var _x = isT1 ? '' : '<button type="button" onclick="delSemShift(\''+wid+'\','+d+','+s+')" title="Quitar turno" style="border:none;background:none;color:#c0392b;font-weight:900;font-size:12px;cursor:pointer;padding:0 2px;line-height:1">✕</button>';
@@ -17646,6 +17685,7 @@ function _semShiftRowHTML(wid, d, s, ini, fin){
     + '<div style="display:flex;align-items:center;justify-content:space-between"><span style="font-size:9px;font-weight:800;color:#1a2b8c">🕐 T'+(s+1)+'</span>'+_x+'</div>'
     + '<label style="font-size:8px;color:#556;text-align:left;display:block">ENT</label><input type="text" inputmode="text" class="sem-input sem-time-txt sem-sh-ini" id="'+cellId+'_s'+s+'_ini" value="'+esc(ini||'')+'" placeholder="7:00 AM" onblur="normTimeInput(this);_onSemShiftEdit(\''+wid+'\','+d+')">'
     + '<label style="font-size:8px;color:#556;text-align:left;display:block">SAL</label><input type="text" inputmode="text" class="sem-input sem-time-txt sem-sh-fin" id="'+cellId+'_s'+s+'_fin" value="'+esc(fin||'')+'" placeholder="6:00 PM" onblur="normTimeInput(this);_onSemShiftEdit(\''+wid+'\','+d+')">'
+    + _semLaborTurnoHTML(cellId, s, labor) // V1_0_0_84: labor de ESTE turno
     + '</div>';
 }
 function _semReadShifts(wid, d){
@@ -17654,7 +17694,14 @@ function _semReadShifts(wid, d){
   if(!cont) return out;
   var inis = cont.querySelectorAll('.sem-sh-ini');
   var fins = cont.querySelectorAll('.sem-sh-fin');
-  for(var i=0;i<inis.length;i++){ out.push({ini:(inis[i].value||''), fin:(fins[i]?fins[i].value:'')||''}); }
+  var labs = cont.querySelectorAll('.sem-sh-labor'); // V1_0_0_84: labor de cada turno
+  for(var i=0;i<inis.length;i++){
+    out.push({
+      ini: (inis[i].value||''),
+      fin: (fins[i] ? fins[i].value : '')||'',
+      labor: (labs[i] ? labs[i].value : '')||''
+    });
+  }
   return out;
 }
 function _semSetShifts(wid, d, arr){
@@ -17662,12 +17709,17 @@ function _semSetShifts(wid, d, arr){
   if(!cont) return;
   if(!arr || !arr.length) arr = [{ini:'',fin:''}];
   var h = '';
-  for(var s=0;s<arr.length;s++){ h += _semShiftRowHTML(wid, d, s, arr[s].ini||'', arr[s].fin||''); }
+  for(var s=0;s<arr.length;s++){ h += _semShiftRowHTML(wid, d, s, arr[s].ini||'', arr[s].fin||'', arr[s].labor||''); }
   cont.innerHTML = h;
 }
 function addSemShift(wid, d){
   if(typeof _readOnlyMode!=='undefined' && _readOnlyMode){ if(typeof toast==='function') toast('🔒 Modo lectura'); return; }
-  var arr = _semReadShifts(wid, d); arr.push({ini:'',fin:''}); _semSetShifts(wid, d, arr);
+  var arr = _semReadShifts(wid, d);
+  // V1_0_0_84: el turno nuevo nace con la labor del anterior (lo normal es seguir en la misma);
+  // si cambio de labor, el surquero la corrige ahi mismo.
+  var _labPrev = arr.length ? (arr[arr.length-1].labor || '') : (gVal('semFinca')||'');
+  arr.push({ini:'',fin:'',labor:_labPrev});
+  _semSetShifts(wid, d, arr);
 }
 function delSemShift(wid, d, s){
   if(typeof _readOnlyMode!=='undefined' && _readOnlyMode){ if(typeof toast==='function') toast('🔒 Modo lectura'); return; }
@@ -17948,8 +18000,8 @@ function buildSemTable(){
       tbody += '<div class="sem-hrs-val" id="'+cellId+'_hrs">0</div>';
       // Gamma2: Pago diario (solo visual)
       tbody += '<div id="'+cellId+'_dpay" style="font-size:9px;color:#1a6b3a;font-weight:700;margin-top:2px"></div>';
-      // V1_0_0_38: selector de Labor por celda (default = finca de Parámetros, editable por persona×día)
-      tbody += _semLaborCellHTML(cellId);
+      // V1_0_0_84: la labor dejó de estar aquí abajo — ahora cada TURNO lleva la suya
+      // (_semLaborTurnoHTML dentro de _semShiftRowHTML). Un solo lugar donde ponerla.
       tbody += '</div></td>';
     }
     tbody += '<td class="sem-total sem-td" id="'+rowId+'_total">0</td>';
@@ -18254,7 +18306,9 @@ function saveSemData(){
         fin: (_shD[0] ? _shD[0].fin : ''),
         lIni: gVal(cellId+'_li'),
         lFin: gVal(cellId+'_lf'),
-        labor: gVal(cellId+'_labor') // V1_0_0_38: labor por celda (persona×día)
+        // V1_0_0_84: la labor vive en cada turno (_shD[i].labor). Se sigue guardando una a nivel
+        // día —la del 1er turno— como red para cualquier lector viejo del archivo.
+        labor: (_shD[0] && _shD[0].labor) ? _shD[0].labor : ''
       };
       if(!isHour) dayObj.qty = gVal(cellId+'_qty');
       row.days.push(dayObj);
@@ -18353,20 +18407,33 @@ function restoreSemInputs(){
         // V1_0_0_66: restaurar TURNOS. Retrocompat: datos viejos traían ini/fin plano → 1 turno.
         var _rsh = (dayData.shifts && dayData.shifts.length) ? dayData.shifts
                    : ((dayData.ini || dayData.fin) ? [{ini:dayData.ini||'', fin:dayData.fin||''}] : [{ini:'',fin:''}]);
+        // V1_0_0_84: las semanas capturadas antes traen UNA labor a nivel día. Se pasa a TODOS
+        // los turnos de ese día (decisión de Serafín) para que la semana vieja se vea completa;
+        // el surquero corrige el turno que haya sido en otra labor.
+        var _labDia = (dayData.labor != null && dayData.labor !== '') ? dayData.labor : '';
+        for(var _si = 0; _si < _rsh.length; _si++){
+          if(_rsh[_si] && (_rsh[_si].labor == null || _rsh[_si].labor === '')) _rsh[_si].labor = _labDia;
+        }
         _semSetShifts(wk.id, d, _rsh);
         var liEl = gEl(cellId+'_li'); if(liEl && dayData.lIni) liEl.value = dayData.lIni;
         var lfEl = gEl(cellId+'_lf'); if(lfEl && dayData.lFin) lfEl.value = dayData.lFin;
-        // V1_0_0_38: restaurar labor por celda + marcar naranja si está cambiada (distinta al default)
-        var labEl = gEl(cellId+'_labor');
-        if(labEl){
-          var _labVal = (dayData.labor != null && dayData.labor !== '') ? dayData.labor : (gVal('semFinca')||'');
-          labEl.value = _labVal;
-          var _labWrap = gEl(cellId+'_laborWrap');
-          if(_labWrap){
-            if(_labVal && _labVal !== (gVal('semFinca')||'')) _labWrap.classList.add('changed');
-            else _labWrap.classList.remove('changed');
+        // V1_0_0_84: la labor ya se restauró turno por turno arriba (_semSetShifts).
+        // Marcar en naranja los turnos cuya labor difiere del default de Parámetros.
+        try {
+          var _defLab = gVal('semFinca') || '';
+          var _cont84 = gEl(cellId+'_shifts');
+          if(_cont84){
+            var _rows84 = _cont84.querySelectorAll('.sem-shift-row');
+            var _sels84 = _cont84.querySelectorAll('.sem-sh-labor');
+            for(var _k84 = 0; _k84 < _sels84.length; _k84++){
+              var _v84 = _sels84[_k84].value || '';
+              if(_rows84[_k84]){
+                if(_v84 && _v84 !== _defLab) _rows84[_k84].classList.add('changed');
+                else _rows84[_k84].classList.remove('changed');
+              }
+            }
           }
-        }
+        } catch(e){}
         calcSemHours(wk.id, d);
         // Para no-Hora: también restaurar qty
         if(!isHour){
@@ -18476,7 +18543,9 @@ function generateSemPDF(){
     var entries = []; // entries[d] = [{ent,sal,lIni,lFin,labor,val}, ...]
     for(var d=0;d<7;d++){
       var cellId = 'sem_' + wk.id + '_d' + d;
-      var _labor = (gVal(cellId+'_labor')||gVal('semFinca')||''); // V1_0_0_59: labor por celda
+      // V1_0_0_84: labor por TURNO — abajo, en el loop de turnos, cada uno usa la suya.
+      // Este queda como respaldo para no-Hora (una sola fila por dia) y para turnos sin labor.
+      var _labor = gVal('semFinca')||'';
       var _lIni = gVal(cellId+'_li')||'', _lFin = gVal(cellId+'_lf')||'';
       var dayEntries = [];
       if(isHour){
@@ -18487,14 +18556,18 @@ function generateSemPDF(){
           var _th = _semTurnoHours(_tt.ini, _tt.fin, _lIni, _lFin);
           if(_th <= 0) continue;
           var _inL = _semLoncheInTurno(_tt.ini, _tt.fin, _lIni, _lFin); // lonche solo en su turno
-          dayEntries.push({ ent:_tt.ini||'', sal:_tt.fin||'', lIni:(_inL?_lIni:''), lFin:(_inL?_lFin:''), labor:_labor, val:_th });
+          // V1_0_0_84: cada turno imprime SU labor (respaldo al default de Parametros si va vacia)
+          dayEntries.push({ ent:_tt.ini||'', sal:_tt.fin||'', lIni:(_inL?_lIni:''), lFin:(_inL?_lFin:''),
+                            labor:(_tt.labor || _labor), val:_th });
           rowTotal += _th;
         }
       } else {
         var _qty = parseFloat(gVal(cellId+'_qty')) || 0;
         if(_qty > 0){
           var _psh2 = _semReadShifts(wk.id, d);
-          dayEntries.push({ ent:(_psh2.length?_psh2[0].ini:'')||'', sal:(_psh2.length?_psh2[_psh2.length-1].fin:'')||'', lIni:_lIni, lFin:_lFin, labor:_labor, val:_qty });
+          dayEntries.push({ ent:(_psh2.length?_psh2[0].ini:'')||'', sal:(_psh2.length?_psh2[_psh2.length-1].fin:'')||'',
+                            lIni:_lIni, lFin:_lFin,
+                            labor:((_psh2.length && _psh2[0].labor) ? _psh2[0].labor : _labor), val:_qty });
           rowTotal += _qty;
         }
       }
@@ -18768,7 +18841,10 @@ function sendSemToSheets(){
         if(!_sIni && !_sFin) continue; // turno vacío: no genera fila
         var _sLon = false;
         try { _sLon = (typeof _semLoncheInTurno==='function') && _semLoncheInTurno(_sIni, _sFin, lIni, lFin); } catch(e){}
-        _shOut.push({ ini:_sIni, fin:_sFin, hrs:_sHrs, lIni:(_sLon?lIni:''), lFin:(_sLon?lFin:'') });
+        // V1_0_0_84: cada turno viaja con SU labor. El backend v5.47 escribe una fila por turno
+        // con esa labor; los anteriores la ignoran y usan la del dia (abajo), sin romperse.
+        _shOut.push({ ini:_sIni, fin:_sFin, hrs:_sHrs, lIni:(_sLon?lIni:''), lFin:(_sLon?lFin:''),
+                      finca: (_shD[_ss] && _shD[_ss].labor) ? _shD[_ss].labor : (gVal('semFinca')||'') });
       }
       // V1_0_0_66: rango COMPLETO del día → entrada del 1er turno, salida del ÚLTIMO (coincide con el PDF).
       var ini = _shD.length ? (_shD[0].ini||'') : '';
@@ -18779,7 +18855,9 @@ function sendSemToSheets(){
         fin: fin,
         lIni: lIni,
         lFin: lFin,
-        finca: gVal(cellId+'_labor') || gVal('semFinca') || '' // V1_0_0_38: labor por día (cae al default de Parámetros)
+        // V1_0_0_84: la labor del dia = la del 1er turno. Red para backends previos a v5.47,
+        // que escriben todas las filas del dia con esta.
+        finca: ((_shD[0] && _shD[0].labor) ? _shD[0].labor : '') || gVal('semFinca') || ''
       };
       if(!isHour){
         dayObj.qty = parseFloat(gVal(cellId+'_qty')) || 0;
