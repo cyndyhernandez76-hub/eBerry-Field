@@ -35,7 +35,7 @@
 </script>
 <script>
 // V20_21: check versión + ackedVersion para romper loop infinito cuando version.txt≠APP_VERSION
-window.APP_VERSION = 'V1_0_0_84';
+window.APP_VERSION = 'V2_0_0_1';
 (function(){
   // V20_77: AUTO-LIMPIEZA de _ackedVersion envenenado.
   // Bug detectado: surqueros tocaban "Actualizar ahora" pero el SW interceptaba el reload con HTML viejo.
@@ -676,6 +676,8 @@ html.login-locked{overflow:hidden!important;height:100%!important}
 /* V1_0_0_38: selector de Labor por celda (persona × día). Verde=usando default de Parámetros, naranja=cambiada */
 .sem-labor{margin-top:4px;border-top:1px dashed #cdd5e6;padding-top:3px}
 .sem-labor-lbl{font-size:8px;color:#1a6b3a;font-weight:700;text-align:left}
+.sem-act-w{width:100%;max-width:150px;padding:2px 3px;border:1.5px dashed #9aa3b8;border-radius:4px;font-size:10px;background:#fff;color:#444;box-sizing:border-box;margin-top:2px}
+.sem-act-w.changed{border-style:solid;border-color:#25a05a;background:#f4faf6;color:#14663a;font-weight:700}
 .sem-labor-sel,.sem-labor-txt{width:100%;padding:2px 3px;border:1.5px solid #1a6b3a;border-radius:4px;font-size:10px;background:#f2fbf5;color:#0d3d22;font-weight:700;box-sizing:border-box}
 .sem-labor.changed .sem-labor-lbl{color:#c47f00}
 .sem-labor.changed .sem-labor-sel,.sem-labor.changed .sem-labor-txt{border-color:#c47f00;background:#fff7e6;color:#7a4f00}
@@ -17980,7 +17982,9 @@ function buildSemTable(){
     var rowId = 'sem_' + wk.id;
     tbody += '<tr>';
     tbody += '<td class="sem-td" style="font-size:11px;color:#888">' + (w+1) + '</td>';
-    tbody += '<td class="sem-name sem-td">' + esc(wk.name) + '</td>';
+    // V2_0_0_1: bajo el nombre, la actividad de ESTE trabajador (vacia = la global de arriba)
+    tbody += '<td class="sem-name sem-td">' + esc(wk.name)
+          + '<div style="margin-top:3px">' + _semActRowHTML(wk.id, '') + '</div></td>';
 
     for(var d=0;d<7;d++){
       var cellId = rowId + '_d' + d;
@@ -18205,9 +18209,84 @@ function onSemQty(wid, day, inp){
   calcSemRow(wid);
 }
 
+// -----------------------------------------------------------------------------
+// V2_0_0_1 — ACTIVIDAD POR TRABAJADOR en la semanal (opcion A, Serafin 2026-09-21)
+// Caso real: un soldador y un mecanico en la misma cuadrilla. Los DOS por hora — lo que
+// cambia no es como se paga, es QUE hicieron. Hasta hoy la semanal tenia UNA actividad
+// para toda la tabla, asi que los dos salian con la misma o habia que capturarlos en
+// semanas separadas.
+//
+// La actividad global de arriba NO se toca: sigue siendo el default de todos. Lo que se
+// agrega es un selector en la FILA de cada trabajador, que solo se usa cuando esa persona
+// hace otra cosa. Se elige una vez por persona, no siete.
+//
+// La tarifa NO se teclea: viene con la actividad desde el MASTER. Elegir bien la actividad
+// es lo que hace que llegue el precio correcto (ver regla del task rate).
+//
+// RESTRICCION A PROPOSITO: el selector solo ofrece actividades del MISMO TIPO de pago que
+// la global. Si la semana es por horas, solo actividades por hora. Mezclar tipos obligaria
+// a que la celda cambie de forma segun el dia (turnos vs cantidad) y eso es rehacer la
+// tabla — quedo anotado como pendiente (opcion B).
+function _semActGlobal(){
+  var i = parseInt(gVal('semActivity'));
+  return (isNaN(i) || i < 0) ? null : (ALL_ACTS[i] || null);
+}
+// Actividad efectiva de un trabajador: la de su fila si eligio una, si no la global.
+function _semActWorker(wid){
+  try {
+    var sel = gEl('semActW_' + wid);
+    if(sel && sel.value !== ''){
+      var a = ALL_ACTS[parseInt(sel.value)];
+      if(a) return a;
+    }
+  } catch(e){}
+  return _semActGlobal();
+}
+// Selector de la fila. Vacio = sigue a la global. Solo actividades del mismo tipo de pago.
+function _semActRowHTML(wid, val){
+  var glob = _semActGlobal();
+  if(!glob) return '';
+  var globEsHora = !!isHourAct(glob);
+  var ranchoSem = (gVal('semRancho')||'').toLowerCase().trim();
+  var h = '<select class="sem-act-w" id="semActW_' + wid + '" onchange="onSemActWorker(this)"'
+        + ' title="Actividad de este trabajador">';
+  h += '<option value="">(la de arriba)</option>';
+  var hay = false;
+  for(var i = 0; i < ALL_ACTS.length; i++){
+    var a = ALL_ACTS[i];
+    if(!a) continue;
+    var farm = (a.farm||'').toLowerCase().trim();
+    var modo = (a.modo||'Individual').toLowerCase().trim();
+    if(farm !== ranchoSem || modo === 'grupal') continue;
+    if(!!isHourAct(a) !== globEsHora) continue; // mismo tipo de pago que la global
+    var sel = (String(i) === String(val)) ? ' selected' : '';
+    if(sel) hay = true;
+    var precio = parseFloat(a.p) || 0;
+    h += '<option value="' + i + '"' + sel + '>' + esc(a.es)
+       + (globEsHora ? (' ($' + precio.toFixed(2) + '/hr)') : (' ($' + precio.toFixed(2) + ')')) + '</option>';
+  }
+  // Actividad guardada que ya no esta en el catalogo (renombrada en el MASTER): no perderla de vista
+  if(val !== '' && val != null && !hay){
+    var vieja = ALL_ACTS[parseInt(val)];
+    h += '<option value="' + esc(val) + '" selected>' + (vieja ? esc(vieja.es) : ('act #' + esc(val))) + '</option>';
+  }
+  return h + '</select>';
+}
+function onSemActWorker(el){
+  try {
+    // Resaltar la fila que NO sigue a la global, igual que la labor cambiada
+    if(el.value) el.classList.add('changed');
+    else el.classList.remove('changed');
+  } catch(e){}
+  var wid = (el.id || '').replace('semActW_', '');
+  try { if(wid && typeof calcSemRow === 'function') calcSemRow(wid); } catch(e){}
+  if(typeof saveSemData === 'function') saveSemData();
+}
+
 function calcSemRow(wid){
   var total = 0;
-  var selAct = ALL_ACTS[parseInt(gVal('semActivity'))];
+  // V2_0_0_1: precio y tipo salen de la actividad de ESTE trabajador (cae a la global si no eligio)
+  var selAct = _semActWorker(wid);
   var isHour = selAct && isHourAct(selAct); // V8
   var price = selAct ? (parseFloat(selAct.p) || 0) : 0;
 
@@ -18294,7 +18373,9 @@ function saveSemData(){
 
   for(var w=0;w<workers.length;w++){
     var wk = workers[w];
-    var row = {wid:wk.id, name:wk.name, empNum:wk.empNum||'', days:[]};
+    // V2_0_0_1: actIdx = actividad de ESTE trabajador ('' = sigue a la global de arriba)
+    var _selActW = gEl('semActW_' + wk.id);
+    var row = {wid:wk.id, name:wk.name, empNum:wk.empNum||'', actIdx:(_selActW ? (_selActW.value||'') : ''), days:[]};
     for(var d=0;d<7;d++){
       var cellId = 'sem_' + wk.id + '_d' + d;
       // V1_0_0_66: guardar TURNOS del día (+ lonche 1 por día). Se guarda ademas ini/fin = 1er turno
@@ -18399,6 +18480,31 @@ function restoreSemInputs(){
       }
       if(!wk) continue;
 
+      // V2_0_0_1: reponer la actividad de este trabajador (si eligio una distinta a la global)
+      try {
+        var _selW = gEl('semActW_' + wk.id);
+        if(_selW){
+          var _av = (row.actIdx != null) ? String(row.actIdx) : '';
+          if(_av !== ''){
+            var _existe = false;
+            for(var _oi = 0; _oi < _selW.options.length; _oi++){
+              if(_selW.options[_oi].value === _av){ _existe = true; break; }
+            }
+            // Si la actividad guardada ya no esta en el catalogo (renombrada en el MASTER),
+            // se agrega igual para no perderla de vista al abrir la semana.
+            if(!_existe){
+              var _aObj = ALL_ACTS[parseInt(_av)];
+              var _op = document.createElement('option');
+              _op.value = _av;
+              _op.textContent = _aObj ? _aObj.es : ('act #' + _av);
+              _selW.appendChild(_op);
+            }
+          }
+          _selW.value = _av;
+          if(_av) _selW.classList.add('changed'); else _selW.classList.remove('changed');
+        }
+      } catch(e){ console.warn('[V2_0_0_1] restaurar actividad del trabajador:', e); }
+
       for(var d=0;d<7;d++){
         var cellId = 'sem_' + wk.id + '_d' + d;
         var dayData = row.days[d];
@@ -18417,6 +18523,7 @@ function restoreSemInputs(){
         _semSetShifts(wk.id, d, _rsh);
         var liEl = gEl(cellId+'_li'); if(liEl && dayData.lIni) liEl.value = dayData.lIni;
         var lfEl = gEl(cellId+'_lf'); if(lfEl && dayData.lFin) lfEl.value = dayData.lFin;
+        // (la actividad del trabajador se restaura una vez por fila, fuera de este loop de días)
         // V1_0_0_84: la labor ya se restauró turno por turno arriba (_semSetShifts).
         // Marcar en naranja los turnos cuya labor difiere del default de Parámetros.
         try {
@@ -18446,6 +18553,21 @@ function restoreSemInputs(){
 }
 
 // ── PDF Semanal ──
+// V2_0_0_1: si en la hoja hay trabajadores con actividades distintas, el titulo lo dice —
+// antes decia una sola actividad y podia contradecir lo que traen las filas.
+function _semTituloAct(actGlobalName){
+  try {
+    var vistas = {}, n = 0;
+    for(var i = 0; i < workers.length; i++){
+      var a = _semActWorker(workers[i].id);
+      var nom = a ? (a.es || a.en || '') : '';
+      if(nom && !vistas[nom]){ vistas[nom] = true; n++; }
+    }
+    if(n > 1) return actGlobalName + ' y ' + (n - 1) + ' actividad(es) mas';
+  } catch(e){}
+  return actGlobalName;
+}
+
 function generateSemPDF(){
   var weekStart = gVal('semWeekStart');
   if(!weekStart){ toast('⚠️ Selecciona la semana primero'); return; }
@@ -18518,7 +18640,7 @@ function generateSemPDF(){
     +'<img src="'+EBERRY_LOGO+'" style="height:55px;width:auto" alt="eBerry">'
     +'<div>'
     +'<div style="font-size:16px;font-weight:700;color:#1a2b8c;line-height:1.1">eberry harvest company llc</div>'
-    +'<div style="font-size:13px;font-weight:900;letter-spacing:.5px">'+actName+' &mdash; Hoja Semanal</div>'
+    +'<div style="font-size:13px;font-weight:900;letter-spacing:.5px">'+_semTituloAct(actName)+' &mdash; Hoja Semanal</div>'
     +'<div style="font-size:10px;color:#000;margin-top:2px">Rancho: '+(gVal('semRancho')||'—')+' &nbsp;|&nbsp; Finca: '+(gVal('semFinca')||'—')+' &nbsp;|&nbsp; Surquero: '+surqueroName+' &nbsp;|&nbsp; App: '+(window.APP_VERSION||'?')+'</div>'  // V1_0_0_63: versión también en el header (top) de la imagen semanal'
     +'</div></div>'
     +'<div style="text-align:right">'
@@ -18573,7 +18695,11 @@ function generateSemPDF(){
       }
       entries.push(dayEntries);
     }
-    workerData.push({wk:wk, entries:entries, total:rowTotal});
+    // V2_0_0_1: guardar la actividad de ESTE trabajador para poder imprimirla en su fila
+    var _actWPdf = _semActWorker(wk.id);
+    workerData.push({wk:wk, entries:entries, total:rowTotal,
+                     actName: _actWPdf ? (_actWPdf.es || _actWPdf.en || '') : '',
+                     actPrice: _actWPdf ? (parseFloat(_actWPdf.p)||0) : 0});
   }
 
   // ── Paso 2: Para cada día, agrupar los TURNOS por horario único → sub-columnas T1/T2/... ──
@@ -18810,10 +18936,17 @@ function sendSemToSheets(){
 
   for(var w=0;w<workers.length;w++){
     var wk = workers[w];
+    var _actW = _semActWorker(wk.id); // V2_0_0_1: su actividad (cae a la global si no eligio)
     var row = {
       name: wk.name,
       empNum: wk.empNum||'',
-      contractRate: isHour ? (parseFloat(selAct && selAct.p)||0) : (parseFloat(wk.contractRate)||0),  // V1_0_0_28: para Hora manda la tarifa del TASK (selAct.p), no contractRate (regla Serafín: task rate = contrato verificado)
+      contractRate: isHour ? (parseFloat(_actW && _actW.p)||0) : (parseFloat(wk.contractRate)||0),  // V1_0_0_28: para Hora manda la tarifa del TASK, no contractRate (regla Serafín: task rate = contrato verificado)
+      // V2_0_0_1: la actividad de ESTE trabajador. El backend v5.48 la usa para sus filas; los
+      // anteriores la ignoran y escriben con la global de arriba, que se sigue mandando igual.
+      actEs:     _actW ? _actW.es : '',
+      actEn:     _actW ? (_actW.en || _actW.es) : '',
+      tipo:      _actW ? (isHourAct(_actW) ? 'Hora' : (_actW.tipo||'')) : '',
+      unitPrice: _actW ? (parseFloat(_actW.p)||0) : 0,
       days: []
     };
     var anyData = false;
