@@ -35,7 +35,7 @@
 </script>
 <script>
 // V20_21: check versión + ackedVersion para romper loop infinito cuando version.txt≠APP_VERSION
-window.APP_VERSION = 'V1_0_0_81';
+window.APP_VERSION = 'V1_0_0_83';
 (function(){
   // V20_77: AUTO-LIMPIEZA de _ackedVersion envenenado.
   // Bug detectado: surqueros tocaban "Actualizar ahora" pero el SW interceptaba el reload con HTML viejo.
@@ -1957,7 +1957,8 @@ body.readOnly [onclick*="openNewDay"]{display:none !important}
     <label>Notas del día</label>
     <textarea id="notas" data-save rows="2" placeholder="Observaciones..."></textarea>
     <div style="margin-top:12px">
-      <button onclick="openNewDay()" style="width:100%;padding:12px;border:2px solid #3a7fd4;border-radius:8px;background:#eef4fd;color:#3a7fd4;font-family:DM Sans,sans-serif;font-size:14px;font-weight:700;cursor:pointer">🌅 Iniciar Nuevo Día</button>
+      <!-- V1_0_0_82: "Iniciar Nuevo Día" se quitó de Parámetros (pedido Serafín 2026-09-21).
+           Queda SOLO en Resumen, que es donde cierra el flujo del día. -->
     </div>
   </div>
   <input type="hidden" id="payH" data-save value="16.23">
@@ -2760,6 +2761,8 @@ function proceedLogin(user){
 
 function loginSuccess(user){
   currentUser = user;
+  // V1_0_0_83: pasar el historial ya capturado a la clave con rancho, antes de leer nada.
+  try { _migrarHistorialARancho(); } catch(e){ console.warn('[V1_0_0_83] migracion historial:', e); }
   // V1_0_0_71: avisar de INMEDIATO si el navegador no puede guardar (Safari iOS modo privado / storage off).
   // Mejor enterarse al entrar que perder un día completo de captura sin darse cuenta.
   try { if(!_storageWorks()){ _warnStorageFail(); } } catch(e){}
@@ -2915,9 +2918,42 @@ function populateRanchoDropdown(ioe, defaultRancho, isAdmin){
 }
 
 function onRanchoChange(){
-  // V20-FIX2: guardar ANTES de re-filtrar ACTS — evita serializar con ACTS del rancho nuevo
-  // V20_02-HOTFIX: solo guardar si hay workers (evita borrar datos durante login)
-  if(currentUser && workers.length) saveQuiet();
+  // ── V1_0_0_82: un dia por rancho ──────────────────────────────────────────
+  // Antes, cambiar de rancho dejaba en pantalla a los trabajadores del anterior y
+  // guardaba todo en la MISMA clave (usuario+fecha): el segundo rancho pisaba al
+  // primero. Ahora se archiva lo del rancho que se deja, y se trae lo del que entra.
+  var _rNuevo = gVal('rancho') || '';
+  var _rViejo = _lastRancho || '';
+  var _hayDatos = (typeof workers!=='undefined' && workers && workers.length > 0) ||
+                  (typeof grpActs!=='undefined' && grpActs && grpActs.length > 0) ||
+                  (typeof ausencias!=='undefined' && ausencias && ausencias.length > 0);
+  var _cambioReal = !!(_rViejo && _rNuevo && _rNuevo !== _rViejo);
+
+  if(_cambioReal && _hayDatos && !_readOnlyMode){
+    var _nW = (workers && workers.length) || 0;
+    var NL = String.fromCharCode(10);
+    var _ok = confirm(
+      'CAMBIAR DE RANCHO' + NL + NL +
+      'Vas a pasar de ' + _rViejo + ' a ' + _rNuevo + '.' + NL + NL +
+      'Lo capturado en ' + _rViejo + ' (' + _nW + ' trabajador(es)) se GUARDA completo.' + NL +
+      'Cuando regreses a ' + _rViejo + ' lo vas a encontrar tal cual.' + NL + NL +
+      'Aceptar = guardar y cambiar' + NL +
+      'Cancelar = quedarme en ' + _rViejo
+    );
+    if(!_ok){
+      var _rEl = gEl('rancho');
+      if(_rEl) _rEl.value = _rViejo; // revertir el dropdown, no tocamos nada mas
+      return;
+    }
+  }
+
+  // Archivar SIEMPRE con el rancho que se deja (gVal('rancho') ya trae el nuevo)
+  if(currentUser && _hayDatos){
+    _ctxRanchoForce = _rViejo;
+    try { saveQuiet(); } catch(e){ console.warn('[V1_0_0_82] no se pudo archivar', _rViejo, e); }
+    _ctxRanchoForce = null;
+  }
+  _lastRancho = _rNuevo;
 
   // V20_42: al cambiar rancho, refrescar dropdown de finca con el catálogo nuevo
   try { renderParamsFinca(); } catch(e){ console.warn('V20_42 renderParamsFinca fallo:', e); }
@@ -2973,6 +3009,46 @@ function onRanchoChange(){
     if(typeof onSemRanchoChange === 'function') onSemRanchoChange();
   }
   // V20: autoSave removido aquí — ya se guardó ANTES de re-filtrar ACTS (línea 1603)
+
+  // V1_0_0_82: ya con ACTS del rancho nuevo, traer SU captura de este dia (o dejar la mesa limpia)
+  if(_cambioReal) _cargarCtxRancho(_rNuevo);
+}
+
+// V1_0_0_82: carga la captura del rancho indicado para la fecha activa.
+// Si ese rancho no tiene nada capturado hoy, limpia trabajadores/grupales/ausencias
+// y el check-in — conservando fecha, bus y surquero, que son del dia, no del rancho.
+function _cargarCtxRancho(rancho){
+  var fecha = gVal('fecha') || new Date().toISOString().split('T')[0];
+  var key = _histKeyExistente(fecha, rancho);
+  if(key){
+    loadDay(key); // repinta trabajadores, grupales y ausencias
+    try { var _rEl2 = gEl('rancho'); if(_rEl2 && _rEl2.value !== rancho) _rEl2.value = rancho; } catch(e){}
+    toast('Rancho ' + rancho + ' — captura de este dia cargada');
+    return;
+  }
+  // Rancho sin captura hoy: mesa limpia
+  workers = []; wid = 0;
+  grpActs = []; ausencias = [];
+  estP = []; hilP = []; cajasP = [];
+  try { _dayFlow = _initDayFlow(); } catch(e){}
+  try {
+    var list = gEl('wlist');
+    if(list){
+      list.innerHTML = '';
+      var ph = document.createElement('div');
+      ph.id = 'wph';
+      ph.style.cssText = 'text-align:center;padding:40px 18px;color:var(--gr);font-size:14px';
+      ph.textContent = 'Escribe un nombre en la barra de abajo';
+      list.appendChild(ph);
+    }
+  } catch(e){}
+  try { if(typeof renderGrpActs === 'function') renderGrpActs(); } catch(e){}
+  try { if(typeof renderAusencias === 'function') renderAusencias(); } catch(e){}
+  try { if(typeof updParts === 'function') updParts(); } catch(e){}
+  try { if(typeof _renderIniciarDia === 'function') _renderIniciarDia(); } catch(e){}
+  try { if(typeof _renderHorarioLocks === 'function') _renderHorarioLocks(); } catch(e){}
+  try { if(typeof updParam === 'function') updParam(); } catch(e){}
+  toast('Rancho ' + rancho + ' — sin captura este dia');
 }
 
 var _welcomeBlocked = false; // V2: true si el surquero no tiene IOE → logout al cerrar
@@ -6065,6 +6141,7 @@ function onActInput(ev){
 // V8: getPH() eliminada — reemplazada por getHRate()
 // V20_91_10: rastrea la última fecha activa para detectar cambios manuales del input
 var _lastFecha = '';
+var _lastRancho = ''; // V1_0_0_82: rancho del contexto cargado (para archivar en la clave correcta al cambiar)
 var _fcPendingNew = '', _fcPendingOld = ''; // V1_0_0_2: fechas pendientes para el modal de cambio de día
 
 function updDate(){
@@ -6177,6 +6254,9 @@ function updParam(){
   gEl('hpill').innerHTML=h?'<div class="hpill">⏱️ Jornada base: <b>'+h+' h</b> <span style="font-size:12px;font-weight:400;color:var(--gr)">(lonche: '+lm+' min)</span></div>':'';
   updBanner();
   try { renderParamsFinca(); } catch(e){ console.warn('V20_42 renderParamsFinca fallo:', e); }
+  // V1_0_0_82: sembrar el rancho de contexto la primera vez (login, carga del dia, autofill).
+  // Sin esto, el PRIMER cambio de rancho no encontraria con que comparar y no avisaria.
+  if(!_lastRancho) _lastRancho = gVal('rancho') || '';
 }
 
 // V20_91_13: dropdown de finca en Parámetros — OCULTA todo el wrap si el rancho no tiene catálogo
@@ -8804,8 +8884,122 @@ function getUserKey(){
   }
   return 'pr9_u_' + currentUser.name.replace(/\s+/g,'').toLowerCase().slice(0,20);
 }
+// ─────────────────────────────────────────────────────────────────────────────
+// V1_0_0_82 — UN DIA POR RANCHO (idea de Serafin 2026-09-21)
+// Problema: hay surqueros llevando a su gente a 2 o 3 ranchos EL MISMO DIA. La clave
+// del dia era solo `usuario + fecha`, asi que al cambiar de rancho la captura del
+// anterior se PISABA: mismo dia, misma clave.
+// Solucion: la clave lleva el rancho. Cada rancho del dia es su propio archivo, se
+// guarda solo y se puede volver a el para editarlo. A FIELD_DROP viaja igual que
+// siempre, como si fueran dias distintos — no se toca el envio ni el PDF.
+//
+//   pr9_u_josedaniel_r_urbanvegatable_hist_2026-09-17
+//   pr9_u_josedaniel_r_pennrose_hist_2026-09-17
+//
+// El rancho va ANTES de '_hist_' a proposito: los 8 sitios que sacan la fecha con
+// split('_hist_').pop() siguen funcionando sin tocarlos.
+// Sin rancho seleccionado, la clave queda como siempre (compatibilidad con lo ya
+// capturado: al leer, si no existe la clave con rancho se prueba la vieja).
+//
+// LIMITE ACEPTADO (Serafin, 2026-09-21): cada rancho lleva su propio check-in, asi
+// que el chofer y el surquero se registran en cada uno. Un trabajador que se mueve
+// queda en dos archivos, de modo que el aviso de horarios encimados no cruza ranchos
+// y el redondeo de horas se hace por separado. Es para salir del apuro; el empalme
+// se resuelve despues sin deshacer esto.
+function _ranchoSlug(r){
+  return String(r||'').toLowerCase()
+    .normalize('NFD').replace(/[̀-ͯ]/g,'')
+    .replace(/[^a-z0-9]/g,'').slice(0,24);
+}
+// Permite guardar/leer con un rancho distinto al del dropdown (al cambiar de rancho
+// hay que archivar con el rancho que se DEJA, no con el que ya se selecciono).
+var _ctxRanchoForce = null;
+function getCtxKey(){
+  var r = (_ctxRanchoForce !== null) ? _ctxRanchoForce : (gVal('rancho')||'');
+  var slug = _ranchoSlug(r);
+  return slug ? (getUserKey() + '_r_' + slug) : getUserKey();
+}
 function getUserHistKey(fecha){
-  return getUserKey() + '_hist_' + fecha;
+  return getCtxKey() + '_hist_' + fecha;
+}
+// V1_0_0_83 — MIGRAR EL HISTORIAL YA CAPTURADO A LA CLAVE CON RANCHO
+// Pregunta de Serafin 2026-09-21: "el historial antiguo, aun servira?".
+// Si: los dias viejos se ABREN igual (_histKeyExistente cae a la clave sin rancho) y
+// siguen LISTANDOSE. El problema era otro: al abrir un dia viejo y volver a guardarlo,
+// la app lo escribia en la clave NUEVA y el dia quedaba DUPLICADO en el historial
+// (el viejo y el nuevo, misma fecha). No se perdia nada, pero ensuciaba la lista.
+//
+// Cada dia guardado trae su rancho adentro (d.v.rancho), asi que se puede renombrar
+// con precision: se lee el rancho del propio archivo y se reescribe con la clave nueva.
+// Corre una vez por sesion, al entrar. Es SEGURA: escribe la nueva, VERIFICA que quedo
+// escrita, y solo entonces borra la vieja. Si algo falla, la vieja se queda — en el peor
+// caso queda un duplicado, nunca una perdida.
+function _migrarHistorialARancho(){
+  var userKey, prefijo, viejas = [], i, k;
+  try { userKey = getUserKey(); } catch(e){ return; }
+  if(!userKey) return;
+  prefijo = userKey + '_hist_';
+  try {
+    for(i = 0; i < localStorage.length; i++){
+      k = localStorage.key(i);
+      if(k && k.indexOf(prefijo) === 0) viejas.push(k);
+    }
+  } catch(e){ return; }
+  if(!viejas.length) return;
+
+  var movidas = 0, sinRancho = 0, fallidas = 0;
+  for(i = 0; i < viejas.length; i++){
+    var kVieja = viejas[i];
+    try {
+      var raw = localStorage.getItem(kVieja);
+      if(!raw) continue;
+      var d = JSON.parse(raw);
+      var rancho = (d && d.v && d.v.rancho) ? d.v.rancho : '';
+      var slug = _ranchoSlug(rancho);
+      if(!slug){ sinRancho++; continue; } // dia sin rancho adentro: se queda como esta
+      var fecha = kVieja.split('_hist_').pop();
+      var kNueva = userKey + '_r_' + slug + '_hist_' + fecha;
+
+      var yaExiste = localStorage.getItem(kNueva);
+      if(yaExiste){
+        // Ya hay version nueva de ese dia+rancho: conservar la guardada mas reciente
+        var tVieja = (d && d.saved) ? d.saved : '';
+        var tNueva = '';
+        try { var dn = JSON.parse(yaExiste); tNueva = (dn && dn.saved) ? dn.saved : ''; } catch(e2){}
+        if(tVieja && (!tNueva || tVieja > tNueva)) localStorage.setItem(kNueva, raw);
+        localStorage.removeItem(kVieja);
+        movidas++;
+        continue;
+      }
+
+      localStorage.setItem(kNueva, raw);              // 1) escribir
+      if(localStorage.getItem(kNueva) === raw){       // 2) verificar
+        localStorage.removeItem(kVieja);              // 3) recien entonces borrar
+        movidas++;
+      } else {
+        fallidas++;
+      }
+    } catch(e){
+      fallidas++;
+      console.warn('[V1_0_0_83] no se pudo migrar ' + kVieja + ':', e && e.message);
+    }
+  }
+  if(movidas || fallidas){
+    console.log('[V1_0_0_83] historial migrado a clave con rancho — movidos:' + movidas +
+                ' sin rancho:' + sinRancho + ' fallidos:' + fallidas);
+  }
+}
+
+// Clave del dia SOLO si existe (con rancho, o la vieja sin rancho por compatibilidad)
+function _histKeyExistente(fecha, rancho){
+  var _prev = _ctxRanchoForce;
+  if(rancho !== undefined) _ctxRanchoForce = rancho;
+  var conRancho = getUserHistKey(fecha);
+  _ctxRanchoForce = _prev;
+  if(localStorage.getItem(conRancho)) return conRancho;
+  var legacy = getUserKey() + '_hist_' + fecha;
+  if(localStorage.getItem(legacy)) return legacy;
+  return '';
 }
 
 // Theta: recolectar/restaurar campos con data-save automáticamente
@@ -11130,11 +11324,14 @@ function showHistory(){
   } else {
     // Surquero ve solo SUS días
     var userKey = getUserKey();
+    // V1_0_0_82: ademas de `usuario_hist_fecha`, aceptar `usuario_r_<rancho>_hist_fecha`
     var histPrefix = userKey + '_hist_';
+    var ranchoPrefix = userKey + '_r_';
     for(i=0;i<localStorage.length;i++){
       var k=localStorage.key(i);
       if(!k) continue;
-      if(k.indexOf(histPrefix)===0) keys.push(k);
+      if(k.indexOf(histPrefix)===0){ keys.push(k); continue; }
+      if(k.indexOf(ranchoPrefix)===0 && k.indexOf('_hist_')>0) keys.push(k);
     }
     // También legacy keys que coincidan con su nombre
     for(i=0;i<localStorage.length;i++){
@@ -15744,7 +15941,8 @@ function _archGetVisibleUserKeys(){
     // V20_59: greedy desde el final — captura todo el userKey aunque tenga underscores en el nombre
     var m = k.match(/^(pr9_u_.+)_hist_(\d{4}-\d{2}-\d{2})$/);
     if(!m) continue;
-    var userKey = m[1];
+    // V1_0_0_82: la clave puede traer `_r_<rancho>` antes de `_hist_` — el dueño es el usuario
+    var userKey = m[1].replace(/_r_[a-z0-9]*$/, '');
     if(!isAdm){
       // Solo el surquero actual
       var myKey = (typeof getUserKey==='function')?getUserKey():'';
