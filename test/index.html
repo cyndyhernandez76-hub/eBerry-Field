@@ -35,7 +35,7 @@
 </script>
 <script>
 // V20_21: check versión + ackedVersion para romper loop infinito cuando version.txt≠APP_VERSION
-window.APP_VERSION = 'V2_0_0_4';
+window.APP_VERSION = 'V2_0_0_5';
 (function(){
   // V20_77: AUTO-LIMPIEZA de _ackedVersion envenenado.
   // Bug detectado: surqueros tocaban "Actualizar ahora" pero el SW interceptaba el reload con HTML viejo.
@@ -4657,6 +4657,63 @@ function resolveAct(a, assign){
   }
   if(!act && a.ai>=0 && a.ai<ACTS.length) act=ACTS[a.ai];
   return act;
+}
+
+// -----------------------------------------------------------------------------
+// V2_0_0_5 — CAJA NEGRA DE ENVIOS
+// Serafin 2026-09-22: "sigue sin llegar informacion, filas en blanco... hay forma de hacer
+// un test profundo?". Llevamos varias hipotesis fallidas por razonar sobre el codigo en vez
+// de ver QUE SALE del telefono. Esto lo graba.
+//
+// Guarda los ULTIMOS 5 envios: que se mando (resumido), cuando, y como termino (enviado /
+// timeout / encolado). Viaja dentro del Diagnostico Recovery (el escaneo toma todo lo que
+// empieza con 'eb_'), asi que basta con que el surquero comparta ese archivo.
+//
+// Es SOLO para diagnostico: no cambia el envio ni toca los datos del dia.
+var EB_LOG_KEY = 'eb_envios_log';
+function _logEnvio(payload, estado, detalle){
+  try {
+    var log = [];
+    try { log = JSON.parse(localStorage.getItem(EB_LOG_KEY) || '[]') || []; } catch(e){}
+    var ws = (payload && payload.workers) || [];
+    var filas = 0, sinActs = 0, conActs = 0, muestra = [];
+    for(var i = 0; i < ws.length; i++){
+      var acts = (ws[i] && ws[i].acts) || [];
+      filas += acts.length ? acts.length : 1; // sin acts el backend escribe 1 fila EN BLANCO
+      if(acts.length) conActs++; else sinActs++;
+      if(muestra.length < 4){
+        muestra.push({
+          name: ws[i] ? ws[i].name : '(sin nombre)',
+          empNum: ws[i] ? ws[i].empNum : '',
+          nActs: acts.length,
+          act1: acts.length ? {
+            actEs: acts[0].actEs, tipo: acts[0].tipo, qty: acts[0].qty,
+            totalHours: acts[0].totalHours, unitPrice: acts[0].unitPrice,
+            hEnt: acts[0].hEnt, hSal: acts[0].hSal
+          } : null
+        });
+      }
+    }
+    log.unshift({
+      cuando: new Date().toISOString(),
+      estado: estado || '?',
+      detalle: detalle || '',
+      appVersion: window.APP_VERSION || '?',
+      accion: (payload && payload.action) || 'diario',
+      fecha: (payload && (payload.fecha || payload.weekStart)) || '',
+      rancho: (payload && payload.rancho) || '',
+      surquero: (payload && payload.surquero) || '',
+      workers: ws.length,
+      conActividades: conActs,
+      SIN_ACTIVIDADES: sinActs,   // estos generan fila EN BLANCO en FIELD_DROP
+      filasEsperadas: filas,
+      queueId: (payload && payload._queueId) || '',
+      muestra: muestra
+    });
+    if(log.length > 5) log = log.slice(0, 5);
+    localStorage.setItem(EB_LOG_KEY, JSON.stringify(log));
+    if(sinActs > 0) console.warn('[eBerry] ' + sinActs + ' trabajador(es) van SIN actividades -> filas en blanco');
+  } catch(e){ console.warn('[V2_0_0_5] _logEnvio:', e && e.message); }
 }
 
 // V8: helper unificado — detecta si actividad es tipo hora (antes repetido 7+ veces)
@@ -13905,9 +13962,36 @@ function _sendToSheetsCore() {
     payload._queueId = Date.now() + '_' + Math.random().toString(36).substr(2,6);
   }
 
+  // V2_0_0_5: si un trabajador va SIN actividades, el backend le escribe una fila EN BLANCO
+  // (nombre y fecha, pero sin actividad ni cantidad). Avisar ANTES de mandarla — es justo
+  // lo que se ha estado viendo en FIELD_DROP.
+  try {
+    var _vacios = [];
+    for(var _vi = 0; _vi < payload.workers.length; _vi++){
+      var _pw = payload.workers[_vi];
+      if(!_pw || !_pw.acts || !_pw.acts.length) _vacios.push((_pw && _pw.name) || '(sin nombre)');
+    }
+    if(_vacios.length){
+      var NLv = String.fromCharCode(10);
+      var _seguir = confirm(
+        'ATENCION' + NLv + NLv +
+        _vacios.length + ' registro(s) van SIN actividad y llegarian a Payroll como filas EN BLANCO:' + NLv + NLv +
+        _vacios.slice(0, 10).join(NLv) + NLv + NLv +
+        'Aceptar = mandar asi' + NLv +
+        'Cancelar = revisar y ponerles su actividad'
+      );
+      if(!_seguir){
+        try { if(btn){ btn.disabled = false; btn.style.background = '#1a3a5c'; } } catch(e2){}
+        return;
+      }
+    }
+  } catch(e){ console.warn('[V2_0_0_5] guard filas en blanco:', e); }
+
+  _logEnvio(payload, 'enviando', 'diario'); // V2_0_0_5: grabar QUE se manda
   // V8: usa submitViaIframe unificado
   submitViaIframe(SHEETS_URL, payload,
     function(){ // onDone
+      _logEnvio(payload, 'ENVIADO', 'diario');
       recordLastSend(); checkDaysWithoutSend();
       _clearQueueForPayload(payload); // V1_0_0_34: barrer el duplicado encolado de un intento previo que timeouteó pero sí llegó → arregla el foquito atorado
       var msg = '✅ ' + workers.length + ' trabajador(es)';
@@ -13919,6 +14003,7 @@ function _sendToSheetsCore() {
         setTimeout(function(){ btn.textContent='📊 Enviar a Payroll Field Master'; btn.style.background='#1a3a5c'; },5000); }
     }, 45000, // V1_0_0_34: 30s→45s — el cold-start del Apps Script + cuadrillas grandes tardan; menos timeouts falsos
     function(){ // onTimeout
+      _logEnvio(payload, 'TIMEOUT', 'diario — se fue a la cola'); // V2_0_0_5
       addToOfflineQueue(payload);
       if(btn){ btn.textContent='📥 Timeout — guardado offline'; btn.style.background='#ff9800'; btn.disabled=false;
         setTimeout(function(){ btn.textContent='📊 Enviar a Payroll Field Master'; btn.style.background='#1a3a5c'; },4000); }
@@ -19094,11 +19179,12 @@ function sendSemToSheets(){
   if(!payload._queueId){
     payload._queueId = Date.now() + '_' + Math.random().toString(36).substr(2,6);
   }
+  _logEnvio(payload, 'enviando', 'semanal'); // V2_0_0_5
   // V8: usa submitViaIframe unificado
   submitViaIframe(SHEETS_URL, payload,
-    function(){ recordLastSend(); _clearQueueForPayload(payload); toast('✅ ' + payload.workers.length + ' trabajador(es) semanal enviado a Sheets'); }, // V1_0_0_34: barrer duplicado encolado
+    function(){ _logEnvio(payload, 'ENVIADO', 'semanal'); recordLastSend(); _clearQueueForPayload(payload); toast('✅ ' + payload.workers.length + ' trabajador(es) semanal enviado a Sheets'); }, // V1_0_0_34: barrer duplicado encolado
     45000, // V1_0_0_34: 30s→45s — cold-start + 7 días × N workers
-    function(){ addToOfflineQueue(payload); toast('📦 Timeout — semanal guardado en cola offline'); },
+    function(){ _logEnvio(payload, 'TIMEOUT', 'semanal — se fue a la cola'); addToOfflineQueue(payload); toast('📦 Timeout — semanal guardado en cola offline'); },
     '_gsSemFrame');
 }
 
@@ -19262,8 +19348,10 @@ function _sendNextInQueue(){
   // procesaba, cada timeout dejaba una copia más en FIELD_DROP (ver FieldSync v5.46).
   // Caso real: Gustavo Robledo Alaniz, Bedners, semana 2026-08-31, escrito 5 veces.
   // 90 s da margen de sobra incluso con las pestañas WE grandes.
+  _logEnvio(clean, 'reintentando', 'desde la cola'); // V2_0_0_5
   submitViaIframe(SHEETS_URL, clean,
     function(){ // onDone
+      _logEnvio(clean, 'ENVIADO', 'desde la cola');
       queue.shift();
       saveOfflineQueue(queue);
       updateQueueBadge();
@@ -19272,6 +19360,7 @@ function _sendNextInQueue(){
       else { toast('✅ Todos los registros pendientes enviados'); recordLastSend(); checkDaysWithoutSend(); }
     }, 90000,
     function(){ // onTimeout
+      _logEnvio(clean, 'TIMEOUT', 'desde la cola'); // V2_0_0_5
       var q = getOfflineQueue();
       if(q.length > 0){
         var head = q[0];
