@@ -35,7 +35,7 @@
 </script>
 <script>
 // V20_21: check versión + ackedVersion para romper loop infinito cuando version.txt≠APP_VERSION
-window.APP_VERSION = 'V2_0_0_9';
+window.APP_VERSION = 'V2_0_0_10';
 (function(){
   // V20_77: AUTO-LIMPIEZA de _ackedVersion envenenado.
   // Bug detectado: surqueros tocaban "Actualizar ahora" pero el SW interceptaba el reload con HTML viejo.
@@ -5802,6 +5802,42 @@ function _enterReadOnly(payload){
   // V20_48: limpiar payloads de semana — loadWeekFromSheets los setea DESPUÉS si aplica
   _readOnlyWeekPayloads = null;
 
+  // V2_0_0_10: el backend v5.52 escribe UNA FILA POR TURNO, con el mismo localRowId y un
+  // sufijo '_t1', '_t2'. Aqui se vuelven a juntar en una sola actividad con sus turnos; sin
+  // esto el dia cargado mostraria la misma actividad repetida, una vez por turno.
+  // Las filas SIN sufijo (todo lo capturado hasta hoy) no se tocan: cada una sigue siendo su
+  // propia actividad. Asi dos capturas legitimas de la misma actividad no se fusionan solas.
+  function _juntarTurnosRO(acts){
+    if(!acts || !acts.length) return acts || [];
+    var out = [], porBase = {};
+    for(var i=0; i<acts.length; i++){
+      var pa = acts[i] || {};
+      var m = String(pa.localRowId||'').match(/^(.+)_t(\d+)$/);
+      if(!m){ out.push(pa); continue; }
+      var base = m[1];
+      var _lon = (pa.hLIni && pa.hLFin) ? [{ini:pa.hLIni, fin:pa.hLFin}] : [];
+      if(!porBase[base]){
+        var _nu = {};
+        for(var k in pa) _nu[k] = pa[k];
+        _nu.localRowId = base;
+        _nu._shifts  = (pa.hEnt||pa.hSal) ? [{ini:pa.hEnt||'', fin:pa.hSal||''}] : [];
+        _nu._lonches = _lon;
+        _nu.qty      = parseFloat(pa.qty)    || 0;
+        _nu.payEst   = parseFloat(pa.payEst) || 0;
+        porBase[base] = _nu;
+        out.push(_nu);
+        continue;
+      }
+      var g = porBase[base];
+      if(pa.hEnt||pa.hSal) g._shifts.push({ini:pa.hEnt||'', fin:pa.hSal||''});
+      if(_lon.length) g._lonches = g._lonches.concat(_lon);
+      g.qty    += parseFloat(pa.qty)    || 0;   // horas: la suma de los turnos
+      g.payEst += parseFloat(pa.payEst) || 0;
+      g.hSal    = pa.hSal || g.hSal;            // salida = la del ultimo turno
+    }
+    return out;
+  }
+
   // 3) Hidratar workers desde payload — NO recalcular, usar qty/price congelados
   workers = []; wid = 1;
   var _iniAll = [], _finAll = [];
@@ -5816,7 +5852,7 @@ function _enterReadOnly(payload){
       checkOutLocked: true,
       canUndoUntil: 0
     };
-    (pw.acts||[]).forEach(function(pa){
+    (_juntarTurnosRO(pw.acts)||[]).forEach(function(pa){ // V2_0_0_10: filas por turno → 1 actividad
       // V20_181: helper de normalización (lowercase + sin acentos + trim) para matching tolerante.
       // Resuelve bug donde pa.actEs="Mecánico" de FIELD_DROP no matcheaba con ALL_ACTS[i].es="Mecanico"
       // (sin acento) o variantes de casing → _payType quedaba vacío → buildPDFWindow no podía construir
@@ -5925,11 +5961,14 @@ function _enterReadOnly(payload){
         // Usuario tenía que destildar/re-tildar para verlos. Ahora se ven al toque, listo para editar/visualizar.
         showTime: true,
         finca: pa.finca||'',
-        shifts: (pa.hEnt||pa.hSal) ? [{ini:pa.hEnt||'', fin:pa.hSal||''}] : [],
+        // V2_0_0_10: si el dia venia partido en filas por turno, se reponen TODOS los turnos.
+        shifts: (pa._shifts && pa._shifts.length) ? pa._shifts
+                : ((pa.hEnt||pa.hSal) ? [{ini:pa.hEnt||'', fin:pa.hSal||''}] : []),
         // V1_0_0_57: hidratar el LONCHE por actividad desde el backend (cols L.Inicio/L.Fin del FIELD_DROP).
         // Sin esto, al cargar el día `a.lonches` quedaba vacío → totalShiftHours no descontaba el lonche →
         // las HORAS salían completas (ej. Luis Javier Jarquin no se le quitaba el lonche). Reportado 2026-07-14.
-        lonches: (pa.hLIni && pa.hLFin) ? [{ini: pa.hLIni, fin: pa.hLFin}] : [],
+        lonches: (pa._lonches && pa._lonches.length) ? pa._lonches
+                 : ((pa.hLIni && pa.hLFin) ? [{ini: pa.hLIni, fin: pa.hLFin}] : []),
         bloques: _bloquesRO, // V20_76: bloques reconstruidos para VarDoor (null si no aplica)
         pay: payEst,
         // V20_180: preservar _actEs y _variable cuando admin carga día desde Sheets.
@@ -13582,6 +13621,27 @@ function onShift(wi,ai,si,field,val){
   } catch(_){}
 }
 
+// V2_0_0_10: de que lonche le toca a cada turno.
+// Solo para saber QUE lonche escribir en la fila de ese turno — el descuento de horas lo
+// sigue haciendo nh(), que ya los resta todos. Misma prueba de solape que usa nh (incluido
+// el ajuste de medianoche del V1_0_0_46), para que la fila diga lo mismo que el calculo.
+function _lonDeTurno(ini, fin, lonches){
+  var _v = {ini:'', fin:''};
+  if(!lonches || !lonches.length) return _v;
+  var e = t2m(ini), sF = t2m(fin);
+  if(e===null || sF===null) return _v;
+  if(sF<=e) sF += 1440;
+  for(var i=0; i<lonches.length; i++){
+    if(!lonches[i]) continue;
+    var li = t2m(lonches[i].ini), lf = t2m(lonches[i].fin);
+    if(li===null || lf===null) continue;
+    if(lf<=li) lf += 1440;
+    if(sF>1440 && li<e){ li += 1440; lf += 1440; }
+    if(Math.min(sF,lf) - Math.max(e,li) > 0) return {ini: lonches[i].ini||'', fin: lonches[i].fin||''};
+  }
+  return _v;
+}
+
 function totalShiftHours(a){
   // V1_0_0_6: usar el lonche de la actividad. Si no tiene (día viejo) → undefined → nh usa el global (compat).
   var _lon=(a&&Array.isArray(a.lonches))?a.lonches:undefined;
@@ -14001,6 +14061,32 @@ function _sendToSheetsCore() {
       // ini/fin son por actividad; lonche (lIni/lFin) es global de Parámetros
       // V20_127: garantizar localRowId (acts viejos pre-V20_127 sin migrar todavía)
       if(!a.localRowId) a.localRowId = _genRowId();
+      // V2_0_0_10: DESGLOSE POR TURNO. Antes esta fila llevaba `a.ini`/`a.fin`, que son
+      // SIEMPRE shifts[0] — el T2 no salia del telefono. Las horas si llegaban completas
+      // (totalHours suma todos los turnos), pero el horario del segundo se perdia, y al
+      // recargar el dia desde Sheets el comprobante solo pintaba el primero.
+      // Mismo patron que la SEMANAL desde V1_0_0_78: una fila por turno, cada una con SUS
+      // horas; la suma es identica a lo que se escribia antes, asi que la nomina no se mueve
+      // (el redondeo DOL ya se hacia turno por turno dentro de totalShiftHours).
+      // Solo Hora: en pieza/caja/daywork la cantidad es del DIA, partirla seria inventar datos.
+      // Con un solo turno no se manda nada — queda exactamente como antes.
+      var _shOut = [];
+      if(isHourAct(act) && a.shifts && a.shifts.length > 1){
+        // el mismo argumento que recibe totalShiftHours, para que la suma cuadre al centavo
+        var _lonCalc = Array.isArray(a.lonches) ? a.lonches : undefined;
+        var _lonRow  = (Array.isArray(a.lonches) && a.lonches.length) ? a.lonches
+                     : ((gVal('lIni')||gVal('lFin')) ? [{ini:gVal('lIni')||'', fin:gVal('lFin')||''}] : []);
+        for(var _si=0; _si<a.shifts.length; _si++){
+          var _sIni = (a.shifts[_si] && a.shifts[_si].ini) || '';
+          var _sFin = (a.shifts[_si] && a.shifts[_si].fin) || '';
+          if(!_sIni && !_sFin) continue;      // turno vacio: no genera fila
+          var _sHrs = nh(_sIni, _sFin, _lonCalc);
+          if(_sHrs <= 0) continue;
+          var _sLon = _lonDeTurno(_sIni, _sFin, _lonRow);
+          _shOut.push({ ini:_sIni, fin:_sFin, hrs:_sHrs, lIni:_sLon.ini, lFin:_sLon.fin });
+        }
+        if(_shOut.length < 2) _shOut = []; // un solo turno util: mandar la fila de siempre
+      }
       wOut.acts.push({
         actEs:      act.es,
         actEn:      act.en || act.es,
@@ -14016,7 +14102,10 @@ function _sendToSheetsCore() {
         // Fallback al global por retrocompat. Multi-turno: se manda el 1er lonche (las horas ya descuentan todos).
         hLIni:      (a.lonches && a.lonches[0] && a.lonches[0].ini) ? a.lonches[0].ini : (gVal('lIni') || ''),
         hLFin:      (a.lonches && a.lonches[0] && a.lonches[0].fin) ? a.lonches[0].fin : (gVal('lFin') || ''),
-        localRowId: a.localRowId // V20_127: ID único para UPSERT en FIELD_DROP (col 21 backend v5.30)
+        localRowId: a.localRowId, // V20_127: ID único para UPSERT en FIELD_DROP (col 21 backend v5.30)
+        // V2_0_0_10: backend v5.52 escribe una fila por turno (localRowId + '_t1', '_t2'...).
+        // Un backend anterior ignora este campo y escribe la fila de siempre — sin romperse.
+        shifts: _shOut.length ? _shOut : undefined
       });
     }
     if(wOut.acts.length) payload.workers.push(wOut); // V12-BUG3: no enviar workers sin actividades (filas fantasma)
