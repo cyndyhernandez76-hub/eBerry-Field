@@ -35,7 +35,7 @@
 </script>
 <script>
 // V20_21: check versión + ackedVersion para romper loop infinito cuando version.txt≠APP_VERSION
-window.APP_VERSION = 'V2_0_0_1';
+window.APP_VERSION = 'V2_0_0_4';
 (function(){
   // V20_77: AUTO-LIMPIEZA de _ackedVersion envenenado.
   // Bug detectado: surqueros tocaban "Actualizar ahora" pero el SW interceptaba el reload con HTML viejo.
@@ -18553,6 +18553,45 @@ function restoreSemInputs(){
 }
 
 // ── PDF Semanal ──
+// V2_0_0_2 — EL SEMANAL SE COMPORTA COMO LA DIARIA CON QUIEN NO TIENE NADA CAPTURADO.
+// Reportado por Serafin 2026-09-21: en la semanal, una persona sin nada capturado igual salia
+// impresa en el PDF y en la imagen — una fila con su nombre y todo en blanco. En la diaria eso
+// ya estaba resuelto: avisa antes (_confirmSinActividad) y la hoja se genera sin esa persona
+// (filtro V20_191). Aqui se hace lo mismo.
+// Criterio: sin una sola entrada en los 7 dias (ni horas ni cantidad) = no se imprime.
+// La semana entera se sigue guardando igual; esto solo decide QUIEN sale en la hoja.
+function _semWorkersSinDatos(){
+  var out = [];
+  for(var w = 0; w < workers.length; w++){
+    var wk = workers[w];
+    if(!wk) continue;
+    var tiene = false;
+    for(var d = 0; d < 7 && !tiene; d++){
+      var cellId = 'sem_' + wk.id + '_d' + d;
+      var hrsEl = gEl(cellId + '_hrs');
+      if(hrsEl && (parseFloat(hrsEl.textContent) || 0) > 0){ tiene = true; break; }
+      if((parseFloat(gVal(cellId + '_qty')) || 0) > 0){ tiene = true; break; }
+    }
+    if(!tiene) out.push(wk.name);
+  }
+  return out;
+}
+// Aviso previo. Devuelve true si se puede seguir. Mismo texto y misma logica que la diaria.
+function _confirmSemSinDatos(accion){
+  if(typeof _readOnlyMode !== 'undefined' && _readOnlyMode) return true;
+  var sa = _semWorkersSinDatos();
+  if(!sa.length) return true;
+  var NL = String.fromCharCode(10);
+  var plural = sa.length > 1;
+  var lista = sa.map(function(n){ return '• ' + n; }).join(NL);
+  return confirm('⚠️ ' + (plural ? 'Estas personas estan' : 'Esta persona esta')
+    + ' en la lista de la semana pero ' + (plural ? 'NO tienen' : 'NO tiene') + ' nada capturado:' + NL + NL
+    + lista + NL + NL
+    + (plural ? 'No van a salir' : 'No va a salir') + ' en ' + (accion || 'la hoja') + '.' + NL + NL
+    + 'Aceptar = continuar sin ' + (plural ? 'ellos' : 'esa persona') + NL
+    + 'Cancelar = revisar y capturar');
+}
+
 // V2_0_0_1: si en la hoja hay trabajadores con actividades distintas, el titulo lo dice —
 // antes decia una sola actividad y podia contradecir lo que traen las filas.
 function _semTituloAct(actGlobalName){
@@ -18569,6 +18608,8 @@ function _semTituloAct(actGlobalName){
 }
 
 function generateSemPDF(){
+  // V2_0_0_2: avisar de quien no tiene nada capturado antes de imprimir (paridad con la diaria)
+  if(!_confirmSemSinDatos('la hoja semanal')) return;
   var weekStart = gVal('semWeekStart');
   if(!weekStart){ toast('⚠️ Selecciona la semana primero'); return; }
   // V1_0_0_62: blindar el PDF — SIEMPRE lunes a domingo (por si semWeekStart quedó en un día que no es lunes)
@@ -18695,11 +18736,20 @@ function generateSemPDF(){
       }
       entries.push(dayEntries);
     }
+    // V2_0_0_2: sin una sola entrada en los 7 dias, esta persona no se imprime (igual que la diaria).
+    // La semana se sigue guardando completa — esto solo decide quien sale en la hoja.
+    if(!rowTotal && !(entries && entries.some && entries.some(function(e){ return e && e.length; }))) continue;
     // V2_0_0_1: guardar la actividad de ESTE trabajador para poder imprimirla en su fila
     var _actWPdf = _semActWorker(wk.id);
     workerData.push({wk:wk, entries:entries, total:rowTotal,
                      actName: _actWPdf ? (_actWPdf.es || _actWPdf.en || '') : '',
                      actPrice: _actWPdf ? (parseFloat(_actWPdf.p)||0) : 0});
+  }
+
+  // V2_0_0_2: si NADIE tiene nada capturado, no tiene sentido imprimir una hoja en blanco.
+  if(!workerData.length){
+    toast('⚠️ No hay nada capturado esta semana — la hoja saldria vacia');
+    return;
   }
 
   // ── Paso 2: Para cada día, agrupar los TURNOS por horario único → sub-columnas T1/T2/... ──
@@ -18777,6 +18827,19 @@ function generateSemPDF(){
   }
   html += '<td style="'+metaStyle+';background:#0f1a3d;color:#fff;font-weight:900;border-top:3px solid #1a2b8c">'+smartNum(grandTotal)+'</td></tr>';
 
+  // Fila Actividad
+  // V2_0_0_4 (Serafin 2026-09-22): "debe aparecer arriba del encabezado del precio, asi como es
+  // la estructura de la que es diaria". En la diaria la actividad encabeza la columna y el precio
+  // va debajo; aqui las columnas son DIAS, asi que la actividad va como una fila mas de meta —
+  // justo arriba de Pago Unit., que es su lugar en la diaria.
+  // Muestra la actividad de la HOJA. Quien lleva una distinta la trae bajo su nombre (V2_0_0_3).
+  html += '<tr style="background:#fff"><td style="'+metaEmpty+'"></td><td style="'+metaEmpty+'"></td>'
+    +'<td style="'+metaLabel+';color:#000">Actividad</td>';
+  for(var c=0;c<dayCols.length;c++){
+    html += '<td style="'+metaStyle+';color:#1a2b8c;font-weight:700;font-size:9px">'+esc(actName)+'</td>';
+  }
+  html += '<td style="'+metaEmpty+'"></td></tr>';
+
   // Fila Pago Unit.
   // V1_0_0_28: tarifa del TASK (unitPrice = selAct.p), NUNCA contractRate. Eliminado el override V20_99 que
   // mostraba contractRate del primer worker. Serafín: el task rate es el contrato verificado. Paridad con PDF V25.
@@ -18835,9 +18898,19 @@ function generateSemPDF(){
   // ── WORKER ROWS ──
   for(var w=0;w<workerData.length;w++){
     var wd = workerData[w];
+    // V2_0_0_3 FIX: imprimir la actividad de ESTE trabajador debajo de su nombre.
+    // En V2_0_0_1 se guardo wd.actName en workerData pero nunca se pinto — la hoja no decia
+    // quien era el soldador y quien el mecanico, que era justo el punto de esa version.
+    // Solo se escribe cuando DIFIERE de la actividad de la hoja: si todos hacen lo mismo, ya
+    // lo dice el encabezado y repetirlo 16 veces solo ensucia.
+    var _actFila = '';
+    if(wd.actName && wd.actName !== actName){
+      _actFila = '<div style="font-size:8px;font-weight:700;color:#14663a;line-height:1.2">'
+               + esc(wd.actName) + '</div>';
+    }
     html += '<tr><td>'+(w+1)+'</td>'
       +'<td style="color:#8b0000;font-weight:700;font-size:9px">'+(wd.wk.empNum?'#'+wd.wk.empNum:'')+'</td>'
-      +'<td class="name">'+esc(wd.wk.name)+'</td>';
+      +'<td class="name">'+esc(wd.wk.name)+_actFila+'</td>';
     for(var c=0;c<dayCols.length;c++){
       var colVal = dayCols[c].vals[w];
       html += '<td>'+(colVal && colVal > 0 ? smartNum(colVal) : '')+'</td>';
@@ -18847,7 +18920,7 @@ function generateSemPDF(){
 
   html += '</tbody></table>';
   // Gamma2: Footer + botones Imprimir/Cerrar
-  html += '<div class="ft">'+(gVal('semRancho')||'—')+' &nbsp;|&nbsp; Semana: '+dates[0]+' al '+dates[6]+' &nbsp;|&nbsp; '+workers.length+' trabajadores &nbsp;|&nbsp; Surquero: '+surqueroName+' &nbsp;|&nbsp; Generado: '+new Date().toLocaleString()+' &nbsp;|&nbsp; App: '+(window.APP_VERSION||'?')+'</div>';
+  html += '<div class="ft">'+(gVal('semRancho')||'—')+' &nbsp;|&nbsp; Semana: '+dates[0]+' al '+dates[6]+' &nbsp;|&nbsp; '+workerData.length+' trabajadores &nbsp;|&nbsp; Surquero: '+surqueroName+' &nbsp;|&nbsp; Generado: '+new Date().toLocaleString()+' &nbsp;|&nbsp; App: '+(window.APP_VERSION||'?')+'</div>';
   html += '</div>';  // V1_0_0_35: cierra imgPageW (hoja semanal) antes de la barra de botones
   // V1_0_0_76: el nombre (_semFnBase) se arma arriba, compartido con el <title> del PDF
   html += '<div class="nopr" style="text-align:center;margin-top:16px">'
