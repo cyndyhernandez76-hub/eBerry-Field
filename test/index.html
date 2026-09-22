@@ -35,7 +35,7 @@
 </script>
 <script>
 // V20_21: check versión + ackedVersion para romper loop infinito cuando version.txt≠APP_VERSION
-window.APP_VERSION = 'V2_0_0_6';
+window.APP_VERSION = 'V2_0_0_8';
 (function(){
   // V20_77: AUTO-LIMPIEZA de _ackedVersion envenenado.
   // Bug detectado: surqueros tocaban "Actualizar ahora" pero el SW interceptaba el reload con HTML viejo.
@@ -1466,6 +1466,15 @@ html.login-locked{overflow:hidden!important;height:100%!important}
   <div class="md" style="max-height:80vh;overflow-y:auto">
     <div class="mt">📅 Historial de Días</div>
     <div class="ms">Toca un día para cargarlo</div>
+    <!-- V2_0_0_8: con un día por rancho, la fecha sola ya no identifica la captura -->
+    <div id="histRanchoBox" style="display:none;margin:10px 0 4px">
+      <label style="font-size:11px;color:var(--gr);font-weight:700">Rancho:</label>
+      <select id="histRancho" onchange="showHistory()" aria-label="Filtrar historial por rancho"
+              style="width:100%;padding:10px;border:1.5px solid var(--bd);border-radius:8px;font-size:16px;min-height:44px;background:#fff;margin-top:4px">
+        <option value="">— Todos los ranchos —</option>
+      </select>
+    </div>
+    <div id="histVentanaMsg" style="display:none;font-size:11px;color:var(--gr);margin:6px 0 0;line-height:1.4"></div>
     <div id="histList" style="margin:12px 0"></div>
 
     <!-- V20_34: Cargar día desde Sheets (FIELD_DROP) -->
@@ -3028,8 +3037,45 @@ function _cargarCtxRancho(rancho){
     toast('Rancho ' + rancho + ' — captura de este dia cargada');
     return;
   }
-  // Rancho sin captura hoy: mesa limpia
-  workers = []; wid = 0;
+  // ── V2_0_0_7: rancho sin captura hoy -> ofrecer LLEVAR la cuadrilla ──────────
+  // Pedido de Serafin 2026-09-22: la misma gente se mueve de rancho el mismo dia; volver a
+  // escanear 16 gafetes no tiene sentido. Mismo trato que "Nuevo Dia": preguntar si se
+  // conservan los integrantes o se empieza vacio.
+  // Se llevan SIN actividades y SIN check-in — cada rancho tiene su propia jornada.
+  // El chofer y el surquero NO se llevan, por la misma razon que en startNewDay (V1_0_0_13):
+  // si se conservan, al re-escanearlos el check-in los ve "ya en la lista" y no los registra,
+  // el dia nunca se inicia y hay que borrarlos a mano con PIN de admin.
+  var _llevar = [];
+  var _chofSurq = 0;
+  try {
+    for(var _li = 0; _li < workers.length; _li++){
+      var _lw = workers[_li];
+      if(!_lw) continue;
+      if(_lw.role === 'chofer' || _lw.role === 'surquero' || _lw.role === 'choferSurquero'){ _chofSurq++; continue; }
+      _llevar.push({
+        id: _lw.id, name: _lw.name, empNum: _lw.empNum || '', contractRate: _lw.contractRate || 0,
+        open: false, acts: [], totalPay: 0,
+        role: 'trabajador', checkInTime: '', checkInTs: 0, checkInLocked: false,
+        checkOutTime: '', checkOutLocked: false, canUndoUntil: 0
+      });
+    }
+  } catch(e){ _llevar = []; }
+
+  var _traerCuadrilla = false;
+  if(_llevar.length && !_readOnlyMode){
+    var NLc = String.fromCharCode(10);
+    _traerCuadrilla = confirm(
+      'PASAR A ' + rancho.toUpperCase() + NLc + NLc +
+      'No hay nada capturado hoy en ' + rancho + '.' + NLc + NLc +
+      'Aceptar = llevar a los mismos ' + _llevar.length + ' trabajador(es)' + NLc +
+      'Cancelar = empezar vacio' +
+      (_chofSurq ? (NLc + NLc + 'El chofer y el surquero se registran aparte en cada rancho.') : '')
+    );
+  }
+
+  workers = _traerCuadrilla ? _llevar : [];
+  wid = 0;
+  try { for(var _wi2 = 0; _wi2 < workers.length; _wi2++){ if(workers[_wi2].id >= wid) wid = workers[_wi2].id + 1; } } catch(e){}
   grpActs = []; ausencias = [];
   estP = []; hilP = []; cajasP = [];
   try { _dayFlow = _initDayFlow(); } catch(e){}
@@ -3037,11 +3083,16 @@ function _cargarCtxRancho(rancho){
     var list = gEl('wlist');
     if(list){
       list.innerHTML = '';
-      var ph = document.createElement('div');
-      ph.id = 'wph';
-      ph.style.cssText = 'text-align:center;padding:40px 18px;color:var(--gr);font-size:14px';
-      ph.textContent = 'Escribe un nombre en la barra de abajo';
-      list.appendChild(ph);
+      if(workers.length){
+        // V2_0_0_7: pintar la cuadrilla que se trajo
+        for(var _ci = 0; _ci < workers.length; _ci++) list.appendChild(mkCard(workers[_ci], _ci));
+      } else {
+        var ph = document.createElement('div');
+        ph.id = 'wph';
+        ph.style.cssText = 'text-align:center;padding:40px 18px;color:var(--gr);font-size:14px';
+        ph.textContent = 'Escribe un nombre en la barra de abajo';
+        list.appendChild(ph);
+      }
     }
   } catch(e){}
   try { if(typeof renderGrpActs === 'function') renderGrpActs(); } catch(e){}
@@ -3050,7 +3101,9 @@ function _cargarCtxRancho(rancho){
   try { if(typeof _renderIniciarDia === 'function') _renderIniciarDia(); } catch(e){}
   try { if(typeof _renderHorarioLocks === 'function') _renderHorarioLocks(); } catch(e){}
   try { if(typeof updParam === 'function') updParam(); } catch(e){}
-  toast('Rancho ' + rancho + ' — sin captura este dia');
+  toast(workers.length
+    ? ('Rancho ' + rancho + ' — ' + workers.length + ' trabajador(es) traidos, sin actividades')
+    : ('Rancho ' + rancho + ' — sin captura este dia'));
 }
 
 var _welcomeBlocked = false; // V2: true si el surquero no tiene IOE → logout al cerrar
@@ -11371,6 +11424,40 @@ window.addEventListener('DOMContentLoaded',function(){
   window._autoSaveListenersRegistered = true;
 });
 
+// V2_0_0_8 — HISTORIAL CON FILTRO DE RANCHO
+// Desde V1_0_0_82 un mismo dia puede tener 2 o 3 ranchos (clave `usuario_r_<rancho>_hist_<fecha>`).
+// BUG que eso introdujo: la lista deduplicaba por FECHA, asi que de dos ranchos del mismo dia
+// solo sobrevivia uno y el otro DESAPARECIA del historial. Ahora la identidad es fecha+rancho.
+//
+// Ademas (pedido Serafin 2026-09-22):
+//  - el ADMIN ve todo el historial, sin limite de antiguedad;
+//  - el SURQUERO solo los ultimos HIST_DIAS_SURQUERO dias. Para algo mas viejo, que lo pida a
+//    las oficinas de eBerry. Asi el telefono no se vuelve un archivo historico y la lista no crece
+//    sin fin; los dias siguen guardados, solo no se listan.
+var HIST_DIAS_SURQUERO = 60;
+
+// Slug de rancho que lleva la clave ('' si es una clave vieja sin rancho)
+function _histRanchoSlug(key){
+  var m = String(key||'').match(/_r_([a-z0-9]+)_hist_/);
+  return m ? m[1] : '';
+}
+// Nombre legible del rancho: se lee del propio dia guardado
+function _histRanchoNombre(key){
+  try {
+    var d = JSON.parse(localStorage.getItem(key) || '{}');
+    if(d && d.v && d.v.rancho) return d.v.rancho;
+  } catch(e){}
+  var slug = _histRanchoSlug(key);
+  return slug || '(sin rancho)';
+}
+function _histDiasDesde(fechaStr){
+  try {
+    var d = new Date(fechaStr + 'T12:00:00');
+    if(isNaN(d.getTime())) return 0;
+    return Math.floor((Date.now() - d.getTime()) / 86400000);
+  } catch(e){ return 0; }
+}
+
 function showHistory(){
   var keys=[], i;
 
@@ -11409,11 +11496,26 @@ function showHistory(){
   }
   keys.sort().reverse();
 
+  // ── V2_0_0_8: ventana de antiguedad para el surquero ────────────────────────
+  var _esAdmin = !!(currentUser && currentUser.isAdmin);
+  var _recortados = 0;
+  if(!_esAdmin){
+    var _dentro = [];
+    for(i=0;i<keys.length;i++){
+      var _f = keys[i].split('_hist_').pop();
+      if(_histDiasDesde(_f) <= HIST_DIAS_SURQUERO) _dentro.push(keys[i]);
+      else _recortados++;
+    }
+    keys = _dentro;
+  }
+
   // ✅ Fix: deduplicar por fecha real — si dos keys tienen la misma fecha,
   // preferir la key nueva (pr9_u_xxx_hist_) sobre la legacy (pr9_hist_)
-  var seen = {}; // fecha → key ganadora
+  // V2_0_0_8 FIX: la identidad es fecha + RANCHO. Antes era solo la fecha, así que de dos
+  // ranchos del mismo día sobrevivía uno y el otro desaparecía de la lista.
+  var seen = {}; // fecha|rancho → key ganadora
   for(i=0;i<keys.length;i++){
-    var fecha_ = keys[i].split('_hist_').pop();
+    var fecha_ = keys[i].split('_hist_').pop() + '|' + _histRanchoSlug(keys[i]);
     if(!seen[fecha_]){
       seen[fecha_] = keys[i];
     } else {
@@ -11430,6 +11532,56 @@ function showHistory(){
   for(var f_ in seen){ dedupKeys.push(seen[f_]); }
   dedupKeys.sort().reverse();
 
+  // ── V2_0_0_8: poblar el filtro de rancho con lo que realmente hay ───────────
+  try {
+    var _selR = gEl('histRancho');
+    var _boxR = gEl('histRanchoBox');
+    if(_selR){
+      var _ranchos = {};
+      for(i=0;i<dedupKeys.length;i++){
+        var _sl = _histRanchoSlug(dedupKeys[i]);
+        if(!_sl) continue; // días viejos sin rancho en la clave
+        if(!_ranchos[_sl]) _ranchos[_sl] = _histRanchoNombre(dedupKeys[i]);
+      }
+      var _slugs = Object.keys(_ranchos).sort(function(a,b){
+        return String(_ranchos[a]).toLowerCase() < String(_ranchos[b]).toLowerCase() ? -1 : 1;
+      });
+      var _prev = _selR.value || '';
+      var _htmlR = '<option value="">— Todos los ranchos —</option>';
+      for(var _ri=0; _ri<_slugs.length; _ri++){
+        _htmlR += '<option value="'+esc(_slugs[_ri])+'">'+esc(_ranchos[_slugs[_ri]])+'</option>';
+      }
+      _selR.innerHTML = _htmlR;
+      // conservar la selección si ese rancho sigue existiendo
+      var _sigue = false;
+      for(var _oi=0; _oi<_selR.options.length; _oi++){ if(_selR.options[_oi].value === _prev){ _sigue = true; break; } }
+      _selR.value = _sigue ? _prev : '';
+      // el filtro solo aparece si de verdad hay más de un rancho que elegir
+      if(_boxR) _boxR.style.display = (_slugs.length > 1) ? 'block' : 'none';
+      // aplicar el filtro
+      if(_selR.value){
+        var _filtradas = [];
+        for(i=0;i<dedupKeys.length;i++){ if(_histRanchoSlug(dedupKeys[i]) === _selR.value) _filtradas.push(dedupKeys[i]); }
+        dedupKeys = _filtradas;
+      }
+    }
+  } catch(e){ console.warn('[V2_0_0_8] filtro de rancho:', e); }
+
+  // Aviso de la ventana de antigüedad (solo al surquero, y solo si de verdad recortó algo)
+  try {
+    var _msgV = gEl('histVentanaMsg');
+    if(_msgV){
+      if(!_esAdmin && _recortados > 0){
+        _msgV.innerHTML = 'Se muestran los últimos <b>' + HIST_DIAS_SURQUERO + ' días</b>. '
+          + 'Hay ' + _recortados + ' día(s) más antiguos guardados en este equipo: '
+          + 'para consultarlos, pídelos a las oficinas de eBerry.';
+        _msgV.style.display = 'block';
+      } else {
+        _msgV.style.display = 'none';
+      }
+    }
+  } catch(e){}
+
   if(!dedupKeys.length){
     gEl('histList').innerHTML='<div style="text-align:center;color:var(--gr);padding:20px;font-size:14px">No hay días guardados aún.<br>Guarda el día actual y aparecerá aquí.</div>';
   } else {
@@ -11445,7 +11597,8 @@ function showHistory(){
       var surquero=info.v?info.v.surquero:'';
       h+='<div style="display:flex;align-items:center;justify-content:space-between;padding:11px 13px;background:#fff;border-radius:8px;margin-bottom:8px;border:1.5px solid var(--bd);cursor:pointer" data-hkey="'+dedupKeys[i]+'" onclick="loadDay(this.dataset.hkey)">'
         +'<div>'
-          +'<div style="font-weight:700;font-size:15px;color:var(--dk)">'+esc(date)+'</div>'
+          +'<div style="font-weight:700;font-size:15px;color:var(--dk)">'+esc(date)
+            +(rancho?'<span style="font-size:12px;font-weight:800;color:var(--g);margin-left:7px">'+esc(rancho)+'</span>':'')+'</div>'
           +'<div style="font-size:12px;color:var(--gr)">'+esc(rancho)+(surquero?' · '+esc(surquero.split(' ')[0]):'')+' · '+wCount+' trabajadores</div>'
         +'</div>'
         +'<div style="display:flex;gap:8px;align-items:center">'
