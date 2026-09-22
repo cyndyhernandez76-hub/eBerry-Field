@@ -35,7 +35,7 @@
 </script>
 <script>
 // V20_21: check versión + ackedVersion para romper loop infinito cuando version.txt≠APP_VERSION
-window.APP_VERSION = 'V2_0_0_5';
+window.APP_VERSION = 'V2_0_0_6';
 (function(){
   // V20_77: AUTO-LIMPIEZA de _ackedVersion envenenado.
   // Bug detectado: surqueros tocaban "Actualizar ahora" pero el SW interceptaba el reload con HTML viejo.
@@ -14001,7 +14001,11 @@ function _sendToSheetsCore() {
       toast(msg);
       if(btn){ btn.textContent='✅ Enviado'; btn.style.background='#2d7a2d'; btn.disabled=false;
         setTimeout(function(){ btn.textContent='📊 Enviar a Payroll Field Master'; btn.style.background='#1a3a5c'; },5000); }
-    }, 45000, // V1_0_0_34: 30s→45s — el cold-start del Apps Script + cuadrillas grandes tardan; menos timeouts falsos
+    // V2_0_0_6: 45s -> 180s. Medido 2026-09-22 mandando un envio real de 22 filas al backend
+    // y LEYENDO su respuesta (la app nunca la lee): tardo 125.8 s y devolvio success. O sea el
+    // envio SI funcionaba — el telefono se rendia a los 45 s y el backend seguia trabajando solo.
+    // Eso es exactamente "dice enviado y no llega". 180 s da margen incluso con cold start.
+    }, 180000,
     function(){ // onTimeout
       _logEnvio(payload, 'TIMEOUT', 'diario — se fue a la cola'); // V2_0_0_5
       addToOfflineQueue(payload);
@@ -19183,7 +19187,7 @@ function sendSemToSheets(){
   // V8: usa submitViaIframe unificado
   submitViaIframe(SHEETS_URL, payload,
     function(){ _logEnvio(payload, 'ENVIADO', 'semanal'); recordLastSend(); _clearQueueForPayload(payload); toast('✅ ' + payload.workers.length + ' trabajador(es) semanal enviado a Sheets'); }, // V1_0_0_34: barrer duplicado encolado
-    45000, // V1_0_0_34: 30s→45s — cold-start + 7 días × N workers
+    180000, // V2_0_0_6: 45s→180s — medido 125.8 s en un envio real (ver comentario del diario)
     function(){ _logEnvio(payload, 'TIMEOUT', 'semanal — se fue a la cola'); addToOfflineQueue(payload); toast('📦 Timeout — semanal guardado en cola offline'); },
     '_gsSemFrame');
 }
@@ -19358,7 +19362,7 @@ function _sendNextInQueue(){
       console.log('[eBerry] Cola: enviado 1, quedan ' + queue.length);
       if(queue.length > 0){ setTimeout(_sendNextInQueue, 1500); }
       else { toast('✅ Todos los registros pendientes enviados'); recordLastSend(); checkDaysWithoutSend(); }
-    }, 90000,
+    }, 180000, // V2_0_0_6: 90s→180s — igualar al envio normal
     function(){ // onTimeout
       _logEnvio(clean, 'TIMEOUT', 'desde la cola'); // V2_0_0_5
       var q = getOfflineQueue();
