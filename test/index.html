@@ -35,7 +35,7 @@
 </script>
 <script>
 // V20_21: check versión + ackedVersion para romper loop infinito cuando version.txt≠APP_VERSION
-window.APP_VERSION = 'V2_0_0_8';
+window.APP_VERSION = 'V2_0_0_9';
 (function(){
   // V20_77: AUTO-LIMPIEZA de _ackedVersion envenenado.
   // Bug detectado: surqueros tocaban "Actualizar ahora" pero el SW interceptaba el reload con HTML viejo.
@@ -1484,16 +1484,24 @@ html.login-locked{overflow:hidden!important;height:100%!important}
       <!-- V20_38: admin ve dropdown de surquero; surqueros normales solo ven el suyo -->
       <div id="cloudLoadSurqBox" style="display:none;margin-bottom:8px">
         <label style="font-size:11px;color:var(--gr);font-weight:700">Surquero:</label>
-        <select id="cloudLoadSurquero" aria-label="Selecciona surquero a consultar"
+        <select id="cloudLoadSurquero" aria-label="Selecciona surquero a consultar" onchange="_cloudResetRanchos()"
                 style="width:100%;padding:10px;border:1.5px solid var(--bd);border-radius:8px;font-size:16px;min-height:44px;background:#fff;margin-top:4px">
           <option value="">— Selecciona surquero —</option>
         </select>
       </div>
       <div style="display:flex;gap:8px;align-items:stretch">
-        <input type="date" id="cloudLoadDate" aria-label="Fecha a consultar en Sheets"
+        <input type="date" id="cloudLoadDate" aria-label="Fecha a consultar en Sheets" onchange="_cloudResetRanchos()"
                style="flex:1;min-width:140px;padding:10px;border:1.5px solid var(--bd);border-radius:8px;font-size:16px;min-height:44px;background:#fff">
         <button class="btn" id="cloudLoadBtn" onclick="loadDayFromSheets()"
                 style="background:var(--g);color:#fff;min-height:44px;padding:0 18px;white-space:nowrap;font-weight:700">☁️ Cargar día</button>
+      </div>
+      <!-- V2_0_0_9: aparece solo cuando ese día el surquero anduvo en más de un rancho -->
+      <div id="cloudLoadRanchoBox" style="display:none;margin-top:8px">
+        <label style="font-size:11px;color:var(--gr);font-weight:700">Rancho de ese día:</label>
+        <select id="cloudLoadRancho" aria-label="Rancho a cargar"
+                style="width:100%;padding:10px;border:1.5px solid var(--bd);border-radius:8px;font-size:16px;min-height:44px;background:#fff;margin-top:4px">
+          <option value="">— Elige el rancho —</option>
+        </select>
       </div>
       <!-- V20_48: nueva opción para cargar SEMANA completa (7 fetches paralelos) -->
       <div style="margin-top:8px">
@@ -5362,6 +5370,37 @@ function _setCloudDateLimits(){
   if(!inp.value) inp.value = fmt(today);
 }
 
+// -----------------------------------------------------------------------------
+// V2_0_0_9 — CARGAR UN DIA QUE TUVO VARIOS RANCHOS
+// Serafin 2026-09-22: "yo desde el admin selecciono el surquero y me debe aparecer los
+// ranchos... o mejor que seleccionemos el dia y ya cargue los ranchos que el surquero
+// trabajo, sii asi debe ser".
+//
+// El backend (v5.51) devuelve en 'ranchos' todos los ranchos que ese surquero tuvo ese dia.
+// Si fue mas de uno, aqui NO se abre nada todavia: se pinta la lista y se pide elegir. La
+// segunda llamada ya va con &rancho= y trae solo esa cuadrilla.
+// Antes el backend tomaba el rancho de la PRIMERA fila, asi que un dia de 3 ranchos se abria
+// como si todo hubiera pasado en uno solo.
+function _cloudSetRanchos(lista, preferir){
+  var box = gEl('cloudLoadRanchoBox'), sel = gEl('cloudLoadRancho');
+  if(!sel) return;
+  var h = '<option value="">— Elige el rancho —</option>';
+  for(var i=0; i<(lista||[]).length; i++){
+    h += '<option value="'+esc(lista[i])+'">'+esc(lista[i])+'</option>';
+  }
+  sel.innerHTML = h;
+  sel.value = preferir || '';
+  if(box) box.style.display = (lista && lista.length) ? 'block' : 'none';
+}
+// La lista pertenece a UN dia y UN surquero: al cambiar cualquiera de los dos se borra,
+// para no mandar el rancho de una consulta anterior.
+function _cloudResetRanchos(){ _cloudSetRanchos([], ''); }
+function _cloudRanchoPedido(){
+  var sel = gEl('cloudLoadRancho'), box = gEl('cloudLoadRanchoBox');
+  if(!sel || !box || box.style.display === 'none') return '';
+  return sel.value || '';
+}
+
 function loadDayFromSheets(){
   if(_readOnlyMode){ toast('⚠️ Ya estás en modo lectura — sal primero'); return; }
   var inp=gEl('cloudLoadDate'); var st=gEl('cloudLoadStatus'); var btn=gEl('cloudLoadBtn');
@@ -5379,6 +5418,7 @@ function loadDayFromSheets(){
     if(!targetSurquero){ toast('⚠️ No se detecta surquero activo'); return; }
   }
   var myName = (currentUser && currentUser.name) || gVal('surquero') || '';
+  var ranchoPedido = _cloudRanchoPedido(); // V2_0_0_9: vacío en la primera consulta
 
   btn.disabled=true; btn.textContent='…';
   if(st) st.textContent='⏳ Consultando Sheets…';
@@ -5388,7 +5428,8 @@ function loadDayFromSheets(){
     + '&fecha='    + encodeURIComponent(fecha)
     + '&surquero=' + encodeURIComponent(myName)
     + '&isAdmin='  + (isAdmin?'true':'false')
-    + '&claimedSurquero=' + encodeURIComponent(targetSurquero);
+    + '&claimedSurquero=' + encodeURIComponent(targetSurquero)
+    + (ranchoPedido ? ('&rancho=' + encodeURIComponent(ranchoPedido)) : '');
 
   // V20_135: enviar hash PIN admin para validación server-side (FieldSync v5.35).
   // Backend: si el hash coincide con sha256(CONFIG.admin_pin) → permite; si no coincide → 403.
@@ -5412,12 +5453,29 @@ function loadDayFromSheets(){
         } else {
           msg += '\n\n(No hay datos de NINGÚN surquero ese día)';
         }
+        // V2_0_0_9: si pidió un rancho donde no hubo nada, decirle en cuáles sí
+        if(res.ranchos && res.ranchos.length){
+          msg += '\n\nRanchos con datos ese día:\n• ' + res.ranchos.join('\n• ');
+          _cloudSetRanchos(res.ranchos, '');
+        }
         alert(msg);
         return;
       }
+      // V2_0_0_9: ese día tuvo más de un rancho y todavía no dice cuál — preguntar antes
+      // de abrir nada, en vez de revolver las cuadrillas bajo el nombre del primero.
+      if(!ranchoPedido && res.ranchos && res.ranchos.length > 1){
+        _cloudSetRanchos(res.ranchos, '');
+        if(st) st.textContent='';
+        alert('Ese día ' + (res.pedido||targetSurquero) + ' trabajó en ' + res.ranchos.length +
+              ' ranchos:' + String.fromCharCode(10) + String.fromCharCode(10) +
+              '• ' + res.ranchos.join(String.fromCharCode(10) + '• ') + String.fromCharCode(10) + String.fromCharCode(10) +
+              'Elige cuál quieres ver y vuelve a tocar "Cargar día".');
+        return;
+      }
       _enterReadOnly(res);
+      _cloudResetRanchos();
       gEl('histOv').classList.remove('on');
-      toast('📖 Día cargado en modo lectura');
+      toast('📖 Día cargado en modo lectura' + (ranchoPedido ? (' — ' + ranchoPedido) : ''));
     })
     .catch(function(err){
       console.warn('[eBerry] loadDayFromSheets error:', err);
@@ -5461,6 +5519,7 @@ function loadWeekFromSheets(){
     if(!targetSurquero){ alert('⚠️ No se detecta surquero activo. Cierra sesión y vuelve a entrar.'); return; }
   }
   var myName = (currentUser && currentUser.name) || gVal('surquero') || '';
+  var ranchoSem = _cloudRanchoPedido(); // V2_0_0_9: si eligió rancho, la semana lo respeta
 
   // Calcular el lunes de la semana de la fecha elegida
   var refD = new Date(fecha + 'T12:00:00');
@@ -5485,7 +5544,8 @@ function loadWeekFromSheets(){
       + '&fecha='    + encodeURIComponent(f)
       + '&surquero=' + encodeURIComponent(myName)
       + '&isAdmin='  + (isAdmin?'true':'false')
-      + '&claimedSurquero=' + encodeURIComponent(targetSurquero);
+      + '&claimedSurquero=' + encodeURIComponent(targetSurquero)
+      + (ranchoSem ? ('&rancho=' + encodeURIComponent(ranchoSem)) : ''); // V2_0_0_9
     // V20_135: hash admin PIN para validación server-side (loadWeek hace 7 fetches loadDay)
     if(currentUser && currentUser.isAdmin && currentUser._adminPinHash){
       url += '&adminPinHash=' + encodeURIComponent(currentUser._adminPinHash);
@@ -11441,14 +11501,28 @@ function _histRanchoSlug(key){
   var m = String(key||'').match(/_r_([a-z0-9]+)_hist_/);
   return m ? m[1] : '';
 }
-// Nombre legible del rancho: se lee del propio dia guardado
-function _histRanchoNombre(key){
+// Rancho tal como quedo guardado DENTRO del dia (no en el nombre de la clave)
+function _histRanchoDelDia(key){
   try {
     var d = JSON.parse(localStorage.getItem(key) || '{}');
-    if(d && d.v && d.v.rancho) return d.v.rancho;
+    if(d && d.v && d.v.rancho) return String(d.v.rancho);
   } catch(e){}
+  return '';
+}
+// Nombre legible del rancho: se lee del propio dia guardado
+function _histRanchoNombre(key){
+  var n = _histRanchoDelDia(key);
+  if(n) return n;
   var slug = _histRanchoSlug(key);
   return slug || '(sin rancho)';
+}
+// V2_0_0_9: identidad del rancho para agrupar y filtrar.
+// Manda lo que dice el dia por dentro, y solo si viene vacio se usa el nombre de la clave.
+// Un dia capturado ANTES del cambio de claves no lleva rancho en el nombre, asi que contra
+// el mismo dia ya guardado con rancho parecian dos dias distintos y la lista lo mostraba
+// DOS VECES (lo que se vio con 'Animal Edventures').
+function _histIdRancho(key){
+  return _ranchoSlug(_histRanchoDelDia(key)) || _histRanchoSlug(key);
 }
 function _histDiasDesde(fechaStr){
   try {
@@ -11515,7 +11589,7 @@ function showHistory(){
   // ranchos del mismo día sobrevivía uno y el otro desaparecía de la lista.
   var seen = {}; // fecha|rancho → key ganadora
   for(i=0;i<keys.length;i++){
-    var fecha_ = keys[i].split('_hist_').pop() + '|' + _histRanchoSlug(keys[i]);
+    var fecha_ = keys[i].split('_hist_').pop() + '|' + _histIdRancho(keys[i]);
     if(!seen[fecha_]){
       seen[fecha_] = keys[i];
     } else {
@@ -11539,7 +11613,7 @@ function showHistory(){
     if(_selR){
       var _ranchos = {};
       for(i=0;i<dedupKeys.length;i++){
-        var _sl = _histRanchoSlug(dedupKeys[i]);
+        var _sl = _histIdRancho(dedupKeys[i]);
         if(!_sl) continue; // días viejos sin rancho en la clave
         if(!_ranchos[_sl]) _ranchos[_sl] = _histRanchoNombre(dedupKeys[i]);
       }
@@ -11561,7 +11635,7 @@ function showHistory(){
       // aplicar el filtro
       if(_selR.value){
         var _filtradas = [];
-        for(i=0;i<dedupKeys.length;i++){ if(_histRanchoSlug(dedupKeys[i]) === _selR.value) _filtradas.push(dedupKeys[i]); }
+        for(i=0;i<dedupKeys.length;i++){ if(_histIdRancho(dedupKeys[i]) === _selR.value) _filtradas.push(dedupKeys[i]); }
         dedupKeys = _filtradas;
       }
     }
@@ -11599,7 +11673,7 @@ function showHistory(){
         +'<div>'
           +'<div style="font-weight:700;font-size:15px;color:var(--dk)">'+esc(date)
             +(rancho?'<span style="font-size:12px;font-weight:800;color:var(--g);margin-left:7px">'+esc(rancho)+'</span>':'')+'</div>'
-          +'<div style="font-size:12px;color:var(--gr)">'+esc(rancho)+(surquero?' · '+esc(surquero.split(' ')[0]):'')+' · '+wCount+' trabajadores</div>'
+          +'<div style="font-size:12px;color:var(--gr)">'+(surquero?esc(surquero.split(' ')[0])+' · ':'')+wCount+' trabajadores</div>'
         +'</div>'
         +'<div style="display:flex;gap:8px;align-items:center">'
           +'<button data-pkey="'+dedupKeys[i]+'" onclick="event.stopPropagation();genPDFFromKey(this.dataset.pkey)" style="background:var(--r);color:#fff;border:none;border-radius:6px;padding:10px 12px;font-size:12px;font-weight:700;cursor:pointer;min-height:44px">📄 PDF</button>'
