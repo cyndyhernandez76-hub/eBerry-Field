@@ -35,7 +35,7 @@
 </script>
 <script>
 // V20_21: check versión + ackedVersion para romper loop infinito cuando version.txt≠APP_VERSION
-window.APP_VERSION = 'V2_0_0_10';
+window.APP_VERSION = 'V2_0_0_12';
 (function(){
   // V20_77: AUTO-LIMPIEZA de _ackedVersion envenenado.
   // Bug detectado: surqueros tocaban "Actualizar ahora" pero el SW interceptaba el reload con HTML viejo.
@@ -3910,6 +3910,186 @@ function startQRMode(mode){
 
 // V20_91_01: re-renderiza el bloque "Iniciar Día" según el estado actual de _dayFlow.
 // Reemplaza botones por chips estáticos cuando ya se escaneó.
+// =============================================================================
+// V2_0_0_12 — ODOMETRO DEL BUS
+// Serafin 2026-09-25: "cuando el surquero registra al chofer, necesito que te abra el
+// contador para el odometro... y otro boton que diga cerrar odometro... y cuando ponga la
+// actividad de busero te sugiera poner las millas".
+//
+// Vive en _dayFlow (se guarda con el dia, se manda a Sheets y vuelve en modo lectura).
+// El odometro es del BUS, no del chofer: la ultima lectura de cada bus se guarda APARTE
+// (EB_ODO_BUS), fuera del dia, porque el surquero puede moverse a otro rancho y ese es OTRO
+// archivo — sin esto la salida quedaria en un dia y el regreso en otro, y la resta no cruza.
+var EB_ODO_BUS = 'eb_odo_bus';       // { '043': {odo: 123456, fecha: '2026-09-25'} }
+var ODO_MAX_MILLAS_DIA = 500;        // arriba de esto pide confirmacion (no bloquea)
+
+function _odoBusActual(){ return String(gVal('numBus')||'').trim(); }
+function _odoNum(v){
+  var n = parseFloat(String(v==null?'':v).replace(/[^0-9.]/g,''));
+  return (isFinite(n) && n > 0) ? Math.round(n) : null;
+}
+function _odoMillas(){
+  if(!_dayFlow) return 0;
+  var i = _odoNum(_dayFlow.odoIni), f = _odoNum(_dayFlow.odoFin);
+  if(i==null || f==null || f < i) return 0;
+  return f - i;
+}
+function _odoUltimaDelBus(bus){
+  try {
+    var m = JSON.parse(localStorage.getItem(EB_ODO_BUS) || '{}') || {};
+    return m[String(bus||'').trim()] || null;
+  } catch(e){ return null; }
+}
+function _odoGuardarUltima(bus, val){
+  if(!bus || val==null) return;
+  try {
+    var m = JSON.parse(localStorage.getItem(EB_ODO_BUS) || '{}') || {};
+    m[String(bus).trim()] = { odo: val, fecha: gVal('fecha')||'' };
+    localStorage.setItem(EB_ODO_BUS, JSON.stringify(m));
+  } catch(e){ console.warn('[V2_0_0_12] odo ultima:', e && e.message); }
+}
+
+// Guardar la SALIDA. Devuelve true si quedo guardada.
+function _odoSetIni(val){
+  var n = _odoNum(val);
+  if(n==null){ toast('\u26a0\ufe0f Escribe el numero del odometro'); return false; }
+  var bus = _odoBusActual();
+  var ult = _odoUltimaDelBus(bus);
+  // Contra la ultima lectura conocida de ESE bus: un numero menor casi siempre es un error de
+  // dedo. Se avisa, no se bloquea — pueden cambiar de bus conservando el numero economico.
+  if(ult && ult.odo != null && n < ult.odo){
+    if(!confirm('El odometro que pusiste (' + n.toLocaleString() + ') es MENOR que la ultima lectura del bus ' +
+                (bus||'?') + ' (' + Number(ult.odo).toLocaleString() + ', del ' + (ult.fecha||'?') + ').\n\n' +
+                '\u00bfEs correcto?')) return false;
+  }
+  _dayFlow.odoIni = n;
+  _dayFlow.odoBus = bus;
+  _odoGuardarUltima(bus, n);
+  _renderIniciarDia();
+  saveQuiet();   // evento puntual: persistir YA, sin esperar el debounce
+  toast('\u2713 Odometro de salida: ' + n.toLocaleString());
+  return true;
+}
+
+// Guardar el REGRESO + sugerir las millas del busero.
+function _odoSetFin(val){
+  var n = _odoNum(val);
+  if(n==null){ toast('\u26a0\ufe0f Escribe el numero del odometro'); return false; }
+  var ini = _odoNum(_dayFlow.odoIni);
+  if(ini==null){ toast('\u26a0\ufe0f Primero pon el odometro de salida'); return false; }
+  if(n < ini){
+    alert('El odometro de regreso (' + n.toLocaleString() + ') no puede ser MENOR que el de salida (' +
+          ini.toLocaleString() + ').\n\nRevisa los numeros.');
+    return false;
+  }
+  if((n - ini) > ODO_MAX_MILLAS_DIA){
+    if(!confirm('Serian ' + (n-ini).toLocaleString() + ' millas en un dia.\n\n\u00bfEs correcto?')) return false;
+  }
+  _dayFlow.odoFin = n;
+  _odoGuardarUltima(_dayFlow.odoBus || _odoBusActual(), n);
+  var mi = _odoMillas();
+  _odoSugerirMillas();
+  _renderIniciarDia();
+  saveQuiet();
+  toast('\u2713 Odometro cerrado \u2014 ' + mi.toLocaleString() + ' millas');
+  return true;
+}
+
+function _odoPedirFin(){
+  var ini = _odoNum(_dayFlow && _dayFlow.odoIni);
+  if(ini==null){ toast('\u26a0\ufe0f No hay odometro de salida'); return; }
+  var v = prompt('Odometro de REGRESO del bus ' + (_dayFlow.odoBus || _odoBusActual() || '') +
+                 '\n\nSalida: ' + ini.toLocaleString(), '');
+  if(v===null) return;   // cancelo
+  _odoSetFin(v);
+}
+
+// ¿Este worker es el chofer registrado del dia?
+function _odoEsChofer(w){
+  return !!(w && _dayFlow && _dayFlow.choferWorkerId != null && w.id === _dayFlow.choferWorkerId);
+}
+// ¿Esta columna del motor es la de millas? Data-driven: manda la variable del MASTER (VarMil);
+// la etiqueta solo desempata cuando la actividad pide varias cantidades.
+function _odoColEsMillas(spec, act, inputs){
+  var esVarMil = String((act && act.variable) || '').toLowerCase() === 'varmil';
+  if(!esVarMil) return false;
+  if(inputs && inputs.length === 1) return true;
+  return /milla|mile/i.test(String((spec && spec.label) || ''));
+}
+// Llenar las millas en las actividades de busero del chofer que sigan vacias.
+// Solo sugiere UNA vez por actividad (_odoSug): si el surquero la borra a proposito, se respeta.
+function _odoSugerirMillas(){
+  var mi = _odoMillas();
+  if(!mi || !_dayFlow || _dayFlow.choferWorkerId == null) return 0;
+  var w = (typeof getW==='function') ? getW(_dayFlow.choferWorkerId) : null;
+  if(!w || !w.acts) return 0;
+  var tocadas = 0;
+  for(var i=0; i<w.acts.length; i++){
+    var a = w.acts[i]; if(!a || a._odoSug) continue;
+    var act = ACTS[a.ai]; if(!act) continue;
+    var inputs = [];
+    try { inputs = getRequiredInputs(act) || []; } catch(e){ continue; }
+    for(var k=0; k<inputs.length; k++){
+      if(!_odoColEsMillas(inputs[k], act, inputs)) continue;
+      a.inputs = a.inputs || {};
+      var actual = a.inputs[inputs[k].column];
+      if(actual != null && actual !== '') break;  // ya tiene numero: no pisarlo
+      a.inputs[inputs[k].column] = mi;
+      a._odoSug = true;
+      try {
+        var q = computeQty(act, a.inputs, 1);
+        if(q !== null && isFinite(q)) a.qty = q;
+      } catch(e){ console.warn('[V2_0_0_12] millas computeQty:', e && e.message); }
+      try { recalc(w.id, i); } catch(e){}
+      tocadas++;
+      break;
+    }
+  }
+  if(tocadas){
+    try { renderWlist(); } catch(e){}
+    toast('\u2713 ' + mi.toLocaleString() + ' millas puestas en la actividad del busero');
+  }
+  return tocadas;
+}
+
+// Bloque visual dentro de "Iniciar Dia", debajo del chip del chofer.
+function _odoBloqueHTML(){
+  if(!_dayFlow || !_dayFlow.choferScanned) return '';
+  var bus = _dayFlow.odoBus || _odoBusActual();
+  var busTxt = bus ? ('Bus ' + esc(bus)) : 'Bus (sin numero)';
+  var ini = _odoNum(_dayFlow.odoIni), fin = _odoNum(_dayFlow.odoFin);
+  var cerrado = !!(_dayFlow && _dayFlow.checkOutDone);
+  var caja = 'padding:11px 12px;border:1.5px solid #d8a13a;border-radius:8px;background:#fff8e8;margin-bottom:8px';
+
+  if(ini == null){
+    if(cerrado) return '';
+    return '<div style="'+caja+'">' +
+      '<div style="font-weight:700;color:#8a5a00;margin-bottom:6px">\ud83d\ude8c Odometro de salida \u2014 ' + busTxt + '</div>' +
+      '<div style="display:flex;gap:8px">' +
+        '<input id="odoIniInp" type="number" inputmode="numeric" step="1" min="0" placeholder="Millas del tablero" ' +
+          'style="flex:1;min-width:0;padding:10px;border:1.5px solid var(--bd);border-radius:8px;font-size:16px;min-height:44px;background:#fff">' +
+        '<button class="btn" onclick="_odoSetIni((gEl(\'odoIniInp\')||{}).value)" ' +
+          'style="background:#d8a13a;color:#fff;min-height:44px;padding:0 16px;font-weight:700">Guardar</button>' +
+      '</div>' +
+      '<div style="font-size:11px;color:#8a5a00;margin-top:5px">Es opcional \u2014 si no lo pones, el dia se cierra igual.</div>' +
+    '</div>';
+  }
+
+  var filaIni = '<span>\ud83d\ude8c ' + busTxt + ' \u00b7 Salida: <b>' + ini.toLocaleString() + '</b></span>';
+  if(fin == null){
+    return '<div style="'+caja+'">' +
+      '<div style="display:flex;align-items:center;justify-content:space-between;color:#8a5a00;font-weight:600">' + filaIni + '</div>' +
+      (cerrado ? '' :
+      '<button class="btn" onclick="_odoPedirFin()" style="width:100%;margin-top:8px;background:#8a5a00;color:#fff;min-height:44px;font-weight:700">\ud83c\udfc1 Cerrar odometro</button>') +
+    '</div>';
+  }
+  return '<div style="'+caja.replace('#fff8e8','#eef9ee').replace('#d8a13a','var(--g)')+'">' +
+    '<div style="color:var(--dk);font-weight:600">' + filaIni +
+      ' \u00b7 Regreso: <b>' + fin.toLocaleString() + '</b></div>' +
+    '<div style="margin-top:4px;font-weight:800;color:var(--g)">= ' + _odoMillas().toLocaleString() + ' millas</div>' +
+  '</div>';
+}
+
 function _renderIniciarDia(){
   var card = gEl('iniciarDiaCard');
   if(!card || !_dayFlow) return;
@@ -3976,6 +4156,8 @@ function _renderIniciarDia(){
     if(btnSurq) btnSurq.style.display = 'none';
     // V20_105 FASE A: ref a btnLapizSurquero eliminada
   }
+  // V2_0_0_12: el odometro del bus va pegado al chip del chofer
+  try { html += _odoBloqueHTML(); } catch(eOdo){ console.warn('[V2_0_0_12] odo bloque:', eOdo && eOdo.message); }
   status.innerHTML = html;
 }
 
@@ -5838,6 +6020,15 @@ function _enterReadOnly(payload){
     return out;
   }
 
+  // V2_0_0_12: reponer el odometro del dia cargado (backend v5.53 lo devuelve).
+  try {
+    if(payload.odometro && _dayFlow){
+      _dayFlow.odoIni = payload.odometro.ini != null ? payload.odometro.ini : '';
+      _dayFlow.odoFin = payload.odometro.fin != null ? payload.odometro.fin : '';
+      _dayFlow.odoBus = payload.odometro.bus || '';
+    }
+  } catch(eOdoR){ console.warn('[V2_0_0_12] odo modo lectura:', eOdoR && eOdoR.message); }
+
   // 3) Hidratar workers desde payload — NO recalcular, usar qty/price congelados
   workers = []; wid = 1;
   var _iniAll = [], _finAll = [];
@@ -6306,6 +6497,22 @@ function renderActInputs(actCard, act, wi, ai){
       var lblL=(spec.label||'').toLowerCase();
       if(/pies/i.test(lblL) && a.indPies) val=a.indPies;
       else if(/ancho/i.test(lblL) && a.indAncho) val=a.indAncho;
+      // V2_0_0_12: si el chofer del dia ya tiene odometro cerrado, el cuadrito de millas
+      // llega con la resta ya puesta. Es SUGERENCIA: queda editable, y si el surquero la
+      // borra no se vuelve a poner (_odoSug). Las millas pagadas no siempre son las del
+      // tablero — el chofer puede dar vueltas que no son de la cuadrilla.
+      else if(!a._odoSug && typeof _odoMillas==='function' && _odoMillas()>0
+              && _odoEsChofer(w) && _odoColEsMillas(spec, act, inputs)){
+        val = _odoMillas();
+        a.inputs[spec.column] = val;
+        a._odoSug = true;
+        try {
+          var _qOdo = computeQty(act, a.inputs, 1);
+          if(_qOdo !== null && isFinite(_qOdo)) a.qty = _qOdo;
+        } catch(e){}
+        // fuera del render para no reentrar en el mismo dibujo de la tarjeta
+        (function(_wi,_ai){ setTimeout(function(){ try{ recalc(_wi,_ai); autoSave(); }catch(e){} }, 0); })(wi, ai);
+      }
     }
     inp.value=(val!=null && val!=='')?val:'';
     inp.addEventListener('input', onActInput);
@@ -7210,6 +7417,16 @@ function onQRSuccess(decoded){
       var _hh2 = _hhmmNow();
       _applyCheckOutForWorker(_wCh, _hh2);
       _dayFlow.choferClosed = true;
+      // V2_0_0_12: el bus acaba de regresar — es EL momento de cerrar el odometro.
+      // Opcional por decision de Serafin: si falta, avisa y deja cerrar igual (un tablero
+      // sucio o un chofer que ya se fue no pueden detener el envio de la nomina).
+      try {
+        if(_odoNum(_dayFlow.odoIni) != null && _odoNum(_dayFlow.odoFin) == null){
+          _odoPedirFin();
+        } else if(_odoNum(_dayFlow.odoIni) == null){
+          toast('\u2139\ufe0f Se cerro sin odometro');
+        }
+      } catch(eOdoC){ console.warn('[V2_0_0_12] odo cierre:', eOdoC && eOdoC.message); }
       // V20_149: chofer ahora cierra al ÚLTIMO. Si surquero ya cerró, el día queda cerrado.
       var _surqClS = false;
       if(_dayFlow.surqueroWorkerId){
@@ -12032,17 +12249,36 @@ function buildPDFWindow(vals, wks, ep, hp, cp, ausArr, grpActsArr){
         // VACÍA (TOTAL 0h). Caso reportado: Alberto "General Farm Labor" PDF Gadsen Tomato 2026-06-18.
         actPayT  = a_._payType || a_.payType || (ACTS[ai] ? ACTS[ai].payType : '') || '';
         actHr    = !!(_stableAct && _stableAct.hr);
-        // Para label en inglés (PDF para Cindy), intentar ALL_ACTS por nombre+payType estable
+        // Para label en inglés (PDF para Cindy), intentar ALL_ACTS por nombre+payType estable.
+        // V2_0_0_11: ALL_ACTS trae las tareas de TODOS los ranchos y dos ranchos pueden tener una
+        // tarea con el MISMO nombre en español. Antes esto se quedaba con el PRIMER match, así que
+        // el título podía venir del rancho equivocado. Caso real (PDF Tacc 2026-09-16): la columna
+        // de "Limpieza de Bodega" salió titulada "-" porque McClenny Farms tiene una tarea con ese
+        // mismo nombre y un guion en la columna de inglés — y aparece antes que la de Tacc.
+        // Ahora se elige por puntaje: primero que sea del rancho de la hoja, después que el precio
+        // coincida. Con un solo match el resultado es el mismo de siempre.
         actLabel = actName;
         try {
           if(typeof ALL_ACTS !== 'undefined' && ALL_ACTS && ALL_ACTS.length){
+            var _rHoja = (typeof _ranchoSlug === 'function') ? _ranchoSlug(vals.rancho||'') : '';
+            var _pDia  = parseFloat(a_._unitPrice);
+            var _mejor = null, _pts = -1;
             for(var _aaI=0; _aaI<ALL_ACTS.length; _aaI++){
               var _aa = ALL_ACTS[_aaI];
-              if(_aa && (_aa.es||'').trim() === actName.trim()
-                 && (!actPayT || (_aa.payType||'').trim() === actPayT.trim())){
-                actLabel = _aa.en || _aa.es || actName;
-                break;
-              }
+              if(!_aa) continue;
+              if((_aa.es||'').trim() !== actName.trim()) continue;
+              if(actPayT && (_aa.payType||'').trim() !== actPayT.trim()) continue;
+              var _p = 0;
+              if(_rHoja && typeof _ranchoSlug === 'function' && _ranchoSlug(_aa.farm||'') === _rHoja) _p += 2;
+              if(!isNaN(_pDia) && _pDia > 0 && Math.abs((parseFloat(_aa.p)||0) - _pDia) < 0.005) _p += 1;
+              if(_p > _pts){ _pts = _p; _mejor = _aa; }
+              if(_p === 3) break; // rancho y precio: no hay mejor que ese
+            }
+            if(_mejor){
+              // Un guion en la columna de inglés del MASTER no es un nombre: antes que imprimir "-"
+              // en la hoja de Cindy, se pone el nombre en español.
+              var _en = String(_mejor.en||'').trim();
+              actLabel = (_en && _en !== '-' && _en !== '--') ? _en : (_mejor.es || actName);
             }
           }
         } catch(_eL){}
@@ -14304,6 +14540,20 @@ function _sendToSheetsCore() {
   } catch(e){ console.warn('[V2_0_0_5] guard filas en blanco:', e); }
 
   _logEnvio(payload, 'enviando', 'diario'); // V2_0_0_5: grabar QUE se manda
+  // V2_0_0_12: el odometro del bus viaja con el dia (pestana propia en el MASTER, no en
+  // FIELD_DROP: es UN dato del dia, no de cada fila — repetirlo en las 24 filas de la
+  // cuadrilla ensuciaria el log). Solo se manda si al menos hay salida.
+  try {
+    if(_dayFlow && _odoNum(_dayFlow.odoIni) != null){
+      payload.odometro = {
+        bus:    _dayFlow.odoBus || _odoBusActual() || '',
+        ini:    _odoNum(_dayFlow.odoIni),
+        fin:    _odoNum(_dayFlow.odoFin),
+        millas: _odoMillas()
+      };
+    }
+  } catch(eOdoP){ console.warn('[V2_0_0_12] odo payload:', eOdoP && eOdoP.message); }
+
   // V8: usa submitViaIframe unificado
   submitViaIframe(SHEETS_URL, payload,
     function(){ // onDone
