@@ -35,7 +35,7 @@
 </script>
 <script>
 // V20_21: check versión + ackedVersion para romper loop infinito cuando version.txt≠APP_VERSION
-window.APP_VERSION = 'V2_0_0_12';
+window.APP_VERSION = 'V2_0_0_14';
 (function(){
   // V20_77: AUTO-LIMPIEZA de _ackedVersion envenenado.
   // Bug detectado: surqueros tocaban "Actualizar ahora" pero el SW interceptaba el reload con HTML viejo.
@@ -3957,7 +3957,10 @@ function _odoSetIni(val){
   var ult = _odoUltimaDelBus(bus);
   // Contra la ultima lectura conocida de ESE bus: un numero menor casi siempre es un error de
   // dedo. Se avisa, no se bloquea — pueden cambiar de bus conservando el numero economico.
-  if(ult && ult.odo != null && n < ult.odo){
+  // V2_0_0_14: si esa ultima lectura es de HOY, es la que guardo el propio surquero hace un
+  // momento — al corregirla hacia abajo se estaria quejando contra si mismo. Se omite.
+  var _mismaFecha = !!(ult && ult.fecha && ult.fecha === (gVal('fecha')||''));
+  if(ult && !_mismaFecha && ult.odo != null && n < ult.odo){
     if(!confirm('El odometro que pusiste (' + n.toLocaleString() + ') es MENOR que la ultima lectura del bus ' +
                 (bus||'?') + ' (' + Number(ult.odo).toLocaleString() + ', del ' + (ult.fecha||'?') + ').\n\n' +
                 '\u00bfEs correcto?')) return false;
@@ -3993,6 +3996,61 @@ function _odoSetFin(val){
   saveQuiet();
   toast('\u2713 Odometro cerrado \u2014 ' + mi.toLocaleString() + ' millas');
   return true;
+}
+
+// V2_0_0_14: corregir un numero ya guardado.
+// El dia cerrado no se toca: ahi ya es historico y probablemente ya se envio.
+function _odoEditar(cual){
+  if(!_dayFlow){ return; }
+  if(_dayFlow.checkOutDone){ toast('\u26a0\ufe0f El dia ya esta cerrado'); return; }
+  var esIni = (cual === 'ini');
+  var actual = _odoNum(esIni ? _dayFlow.odoIni : _dayFlow.odoFin);
+  var bus = _dayFlow.odoBus || _odoBusActual();
+  var v = prompt('Corregir odometro de ' + (esIni ? 'SALIDA' : 'REGRESO') +
+                 (bus ? ('\n\nBus ' + bus) : '') +
+                 '\nAhora dice: ' + (actual != null ? actual.toLocaleString() : '\u2014'),
+                 actual != null ? String(actual) : '');
+  if(v === null) return;             // cancelo
+  var _miAntes = _odoMillas();
+  var ok = esIni ? _odoSetIni(v) : _odoSetFin(v);
+  if(ok) _odoResugerirMillas(_miAntes);
+}
+
+// Si las millas cambiaron por la correccion, arrastrar el cambio a la actividad del busero.
+// Regla: solo se actualiza si el cuadrito TODAVIA trae el numero que nosotros sugerimos. Si el
+// surquero lo cambio a mano, ese numero es suyo y no se toca.
+function _odoResugerirMillas(miAntes){
+  var miAhora = _odoMillas();
+  if(miAhora === miAntes) return 0;
+  if(!_dayFlow || _dayFlow.choferWorkerId == null) return 0;
+  var w = (typeof getW==='function') ? getW(_dayFlow.choferWorkerId) : null;
+  if(!w || !w.acts) return 0;
+  var n = 0;
+  for(var i=0; i<w.acts.length; i++){
+    var a = w.acts[i]; if(!a || !a._odoSug) continue;
+    var act = ACTS[a.ai]; if(!act) continue;
+    var inputs = [];
+    try { inputs = getRequiredInputs(act) || []; } catch(e){ continue; }
+    for(var k=0; k<inputs.length; k++){
+      if(!_odoColEsMillas(inputs[k], act, inputs)) continue;
+      a.inputs = a.inputs || {};
+      if(_odoNum(a.inputs[inputs[k].column]) !== miAntes) break; // lo cambio a mano: respetarlo
+      a.inputs[inputs[k].column] = miAhora > 0 ? miAhora : '';
+      if(!(miAhora > 0)) a._odoSug = false;
+      try {
+        var q = computeQty(act, a.inputs, 1);
+        if(q !== null && isFinite(q)) a.qty = q;
+      } catch(e){ console.warn('[V2_0_0_14] re-sugerir computeQty:', e && e.message); }
+      try { recalc(w.id, i); } catch(e){}
+      n++;
+      break;
+    }
+  }
+  if(n){
+    try { renderWlist(); } catch(e){}
+    toast('\u2713 Millas del busero actualizadas a ' + miAhora.toLocaleString());
+  }
+  return n;
 }
 
 function _odoPedirFin(){
@@ -4056,7 +4114,9 @@ function _odoSugerirMillas(){
 function _odoBloqueHTML(){
   if(!_dayFlow || !_dayFlow.choferScanned) return '';
   var bus = _dayFlow.odoBus || _odoBusActual();
-  var busTxt = bus ? ('Bus ' + esc(bus)) : 'Bus (sin numero)';
+  // V2_0_0_13: sin numero de bus el titulo decia "Bus (sin numero)" y se partia en dos lineas
+  // sin aportar nada. Si no hay bus, no se nombra.
+  var busTxt = bus ? ('Bus ' + esc(bus)) : '';
   var ini = _odoNum(_dayFlow.odoIni), fin = _odoNum(_dayFlow.odoFin);
   var cerrado = !!(_dayFlow && _dayFlow.checkOutDone);
   var caja = 'padding:11px 12px;border:1.5px solid #d8a13a;border-radius:8px;background:#fff8e8;margin-bottom:8px';
@@ -4064,29 +4124,46 @@ function _odoBloqueHTML(){
   if(ini == null){
     if(cerrado) return '';
     return '<div style="'+caja+'">' +
-      '<div style="font-weight:700;color:#8a5a00;margin-bottom:6px">\ud83d\ude8c Odometro de salida \u2014 ' + busTxt + '</div>' +
-      '<div style="display:flex;gap:8px">' +
-        '<input id="odoIniInp" type="number" inputmode="numeric" step="1" min="0" placeholder="Millas del tablero" ' +
-          'style="flex:1;min-width:0;padding:10px;border:1.5px solid var(--bd);border-radius:8px;font-size:16px;min-height:44px;background:#fff">' +
-        '<button class="btn" onclick="_odoSetIni((gEl(\'odoIniInp\')||{}).value)" ' +
-          'style="background:#d8a13a;color:#fff;min-height:44px;padding:0 16px;font-weight:700">Guardar</button>' +
-      '</div>' +
+      '<div style="font-weight:700;color:#8a5a00;margin-bottom:8px">\ud83d\ude8c Odometro de salida' +
+        (busTxt ? (' \u2014 ' + busTxt) : '') + '</div>' +
+      // V2_0_0_13: APILADO, no en un renglon. `.btn` trae width:100% (L396), asi que dentro de
+      // un flex el boton reclamaba todo y el input (min-width:0) se encogia a una ranura: el
+      // surquero tecleaba a ciegas. Asi el numero se ve completo en cualquier telefono.
+      '<input id="odoIniInp" type="number" inputmode="numeric" step="1" min="0" autocomplete="off" ' +
+        'placeholder="Millas del tablero" ' +
+        'style="display:block;width:100%;padding:12px;border:1.5px solid var(--bd);border-radius:8px;' +
+        'font-size:18px;font-weight:700;letter-spacing:.5px;min-height:50px;background:#fff;text-align:center">' +
+      '<button class="btn" onclick="_odoSetIni((gEl(\'odoIniInp\')||{}).value)" ' +
+        'style="background:#d8a13a;color:#fff;min-height:48px;margin-top:8px;margin-bottom:0;font-weight:700">Guardar</button>' +
       '<div style="font-size:11px;color:#8a5a00;margin-top:5px">Es opcional \u2014 si no lo pones, el dia se cierra igual.</div>' +
     '</div>';
   }
 
-  var filaIni = '<span>\ud83d\ude8c ' + busTxt + ' \u00b7 Salida: <b>' + ini.toLocaleString() + '</b></span>';
+  // V2_0_0_14: lapiz para corregir. Chiquito y al lado del numero, como el "Deshacer" del chip
+  // del chofer — visible para quien lo busca, sin competir con el boton principal.
+  function _lapiz(cual, titulo){
+    if(cerrado) return '';
+    return '<button onclick="_odoEditar(\'' + cual + '\')" title="' + titulo + '" ' +
+      'style="margin-left:8px;background:#fff;color:#8a5a00;border:1px solid #d8a13a;border-radius:10px;' +
+      'padding:3px 9px;font-size:11px;font-weight:700;cursor:pointer;min-height:26px">\u270e Editar</button>';
+  }
+  var filaIni = '<span>\ud83d\ude8c ' + (busTxt ? (busTxt + ' \u00b7 ') : '') +
+                'Salida: <b>' + ini.toLocaleString() + '</b></span>';
   if(fin == null){
     return '<div style="'+caja+'">' +
-      '<div style="display:flex;align-items:center;justify-content:space-between;color:#8a5a00;font-weight:600">' + filaIni + '</div>' +
+      '<div style="display:flex;align-items:center;flex-wrap:wrap;color:#8a5a00;font-weight:600">' +
+        filaIni + _lapiz('ini', 'Corregir el odometro de salida') + '</div>' +
       (cerrado ? '' :
       '<button class="btn" onclick="_odoPedirFin()" style="width:100%;margin-top:8px;background:#8a5a00;color:#fff;min-height:44px;font-weight:700">\ud83c\udfc1 Cerrar odometro</button>') +
     '</div>';
   }
   return '<div style="'+caja.replace('#fff8e8','#eef9ee').replace('#d8a13a','var(--g)')+'">' +
-    '<div style="color:var(--dk);font-weight:600">' + filaIni +
-      ' \u00b7 Regreso: <b>' + fin.toLocaleString() + '</b></div>' +
-    '<div style="margin-top:4px;font-weight:800;color:var(--g)">= ' + _odoMillas().toLocaleString() + ' millas</div>' +
+    '<div style="display:flex;align-items:center;flex-wrap:wrap;color:var(--dk);font-weight:600">' +
+      filaIni + _lapiz('ini', 'Corregir el odometro de salida') + '</div>' +
+    '<div style="display:flex;align-items:center;flex-wrap:wrap;color:var(--dk);font-weight:600;margin-top:4px">' +
+      '<span>\ud83c\udfc1 Regreso: <b>' + fin.toLocaleString() + '</b></span>' +
+      _lapiz('fin', 'Corregir el odometro de regreso') + '</div>' +
+    '<div style="margin-top:6px;font-weight:800;color:var(--g)">= ' + _odoMillas().toLocaleString() + ' millas</div>' +
   '</div>';
 }
 
