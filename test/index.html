@@ -35,7 +35,7 @@
 </script>
 <script>
 // V20_21: check versión + ackedVersion para romper loop infinito cuando version.txt≠APP_VERSION
-window.APP_VERSION = 'V2_0_0_14';
+window.APP_VERSION = 'V2_0_0_15';
 (function(){
   // V20_77: AUTO-LIMPIEZA de _ackedVersion envenenado.
   // Bug detectado: surqueros tocaban "Actualizar ahora" pero el SW interceptaba el reload con HTML viejo.
@@ -10222,6 +10222,22 @@ function buildActViewGroups(){
       var a = w.acts[ai];
       // Resolver act: primero ACTS[a.ai], si no por nombre
       var act = (a.ai != null && ACTS[a.ai]) ? ACTS[a.ai] : null;
+      // V2_0_0_15: si el indice resolvio contra ACTS (el catalogo del rancho activo), esa es la
+      // actividad REAL que se asigno y su modo es concluyente. Se guarda aparte porque los
+      // filtros de abajo necesitan distinguir "lo se de cierto" de "lo estoy adivinando".
+      var _actPorIdx = act;
+      if(!act && (a.esName || a._actEs)){
+        // V2_0_0_15: antes de ir a _resolveActByName (que busca en ALL_ACTS, donde conviven
+        // grupales e individuales y gana la primera), buscar en ACTS por nombre. Con homonimos
+        // como los de Mecca, _resolveActByName puede devolver la GRUPAL y entonces el filtro 1
+        // descarta una actividad individual perfectamente valida.
+        var _nomBusca = String(a.esName || a._actEs || '').toLowerCase().trim();
+        for(var _axI=0; _axI<ACTS.length; _axI++){
+          if(ACTS[_axI] && (ACTS[_axI].es||'').toLowerCase().trim() === _nomBusca){
+            act = ACTS[_axI]; _actPorIdx = ACTS[_axI]; break;
+          }
+        }
+      }
       if(!act && (a.esName || a._actEs)){
         try { act = _resolveActByName(a.esName || a._actEs); } catch(e){ act = null; }
       }
@@ -10237,10 +10253,16 @@ function buildActViewGroups(){
         try { console.log('[V20_137] omitir grupal (filtro 1: por act.modo):', a.esName, 'ai:', a.ai); } catch(e){}
         continue;
       }
-      // Filtro 2 (V20_137 red de seguridad): por nombre en GRUPAL_ACTS — corre SIEMPRE (no solo cuando !act).
-      // Antes (V20_134_b) este filtro solo se evaluaba si act era null; ahora cubre todos los casos.
+      // V2_0_0_15: los filtros 2 y 3 deciden POR NOMBRE, y un nombre NO basta: el mismo rancho
+      // puede tener la actividad dada de alta como Grupal y como Individual (Mecca lo hace a
+      // proposito con "Colocacion de plastico", "Amarre de tomate" y "Colocacion de estacas").
+      // Si el catalogo del rancho ya resolvio la actividad asignada y NO dice grupal, eso es
+      // concluyente: no hay nada que adivinar y las redes por nombre se apagan. Cuando NO se
+      // pudo resolver (`_actPorIdx` nulo), siguen corriendo igual que antes.
+      var _modoCat = (_actPorIdx && (_actPorIdx.modo||'').toLowerCase().trim()) || '';
+      var _individualConfirmada = !!_actPorIdx && _modoCat !== 'grupal';
       var _nombrePosibleGrupal = String((a.esName || a._actEs || (act && act.es) || '')).toLowerCase().trim();
-      if(_nombrePosibleGrupal && typeof GRUPAL_ACTS !== 'undefined' && GRUPAL_ACTS && GRUPAL_ACTS.length){
+      if(!_individualConfirmada && _nombrePosibleGrupal && typeof GRUPAL_ACTS !== 'undefined' && GRUPAL_ACTS && GRUPAL_ACTS.length){
         var _esGrupal2 = false;
         for(var _grpI=0; _grpI<GRUPAL_ACTS.length; _grpI++){
           if(GRUPAL_ACTS[_grpI] && (GRUPAL_ACTS[_grpI].es||'').toLowerCase().trim() === _nombrePosibleGrupal){
@@ -10255,7 +10277,7 @@ function buildActViewGroups(){
       // Filtro 3 (V20_137 segunda red): por nombre en ALL_ACTS donde modo==='grupal'.
       // Cubre el caso donde GRUPAL_ACTS no contiene la act (ej. filtrado por rancho del admin)
       // pero ALL_ACTS si la tiene marcada como grupal en el MASTER.
-      if(_nombrePosibleGrupal && typeof ALL_ACTS !== 'undefined' && ALL_ACTS && ALL_ACTS.length){
+      if(!_individualConfirmada && _nombrePosibleGrupal && typeof ALL_ACTS !== 'undefined' && ALL_ACTS && ALL_ACTS.length){
         var _ranchoActualV175 = (typeof gVal === 'function' ? (gVal('rancho')||'') : '').toLowerCase().trim();
         var _esGrupalGlobal = false;
         for(var _allI=0; _allI<ALL_ACTS.length; _allI++){
