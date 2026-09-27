@@ -35,7 +35,7 @@
 </script>
 <script>
 // V20_21: check versión + ackedVersion para romper loop infinito cuando version.txt≠APP_VERSION
-window.APP_VERSION = 'V2_0_0_15';
+window.APP_VERSION = 'V2_0_0_16';
 (function(){
   // V20_77: AUTO-LIMPIEZA de _ackedVersion envenenado.
   // Bug detectado: surqueros tocaban "Actualizar ahora" pero el SW interceptaba el reload con HTML viejo.
@@ -4076,7 +4076,9 @@ function _odoColEsMillas(spec, act, inputs){
 }
 // Llenar las millas en las actividades de busero del chofer que sigan vacias.
 // Solo sugiere UNA vez por actividad (_odoSug): si el surquero la borra a proposito, se respeta.
-function _odoSugerirMillas(){
+// V2_0_0_16: `sinRender` para llamarla desde un flujo que ya va a repintar la lista (evita
+// re-entrar en el render y evita el parpadeo).
+function _odoSugerirMillas(sinRender){
   var mi = _odoMillas();
   if(!mi || !_dayFlow || _dayFlow.choferWorkerId == null) return 0;
   var w = (typeof getW==='function') ? getW(_dayFlow.choferWorkerId) : null;
@@ -4104,7 +4106,7 @@ function _odoSugerirMillas(){
     }
   }
   if(tocadas){
-    try { renderWlist(); } catch(e){}
+    if(!sinRender){ try { renderWlist(); } catch(e){} }
     toast('\u2713 ' + mi.toLocaleString() + ' millas puestas en la actividad del busero');
   }
   return tocadas;
@@ -8762,6 +8764,9 @@ function chAct(wi,ai,nai){
   // V20_28: al cambiar actividad, limpiar a.inputs (fix frontend/QA — inputs de act viejo no son válidos para nuevo)
   // V20_76: limpia bloques también al cambiar actividad
   w.acts[ai]={ai:nai,esName:actName,tipo:actTipo,qty:'',ini:preservedIni,fin:'',showTime:preservedShowTime,pay:0,finca:prevFinca,inputs:{},bloques:[{pies:'',surcos:''}],_iniLocked:preservedIniLocked};
+  // V2_0_0_16: mismo trato que en "Asignar a varios" — si al cambiar la actividad resulta ser la
+  // del busero y el odometro ya esta cerrado, las millas entran solas. Se llama al final de la
+  // funcion (ver abajo), cuando el act ya quedo armado con su metadata.
   // V1_0_0_45: congelar metadata del task seleccionado (paridad con confirmAssignMany "Asignar a varios").
   // Sin esto el flujo individual creaba el act SIN _unitPrice → 2 tasks homónimos con distinto precio
   // (ej "Cosecha de elote" $0.80 y $1.00) se guardaban con el precio del PRIMERO y al recargar del
@@ -8783,6 +8788,9 @@ function chAct(wi,ai,nai){
   var ex=findTime(nai, wi);
   // V20_91_07: si la primera activity tiene check-in congelado, NO sobrescribir con findTime
   if(ex && !preservedIniLocked){ var _wi=wi,_ai=ai,_e=ex; setTimeout(function(){ showTm(_wi,_ai,_e.ini,_e.fin); },100); }
+  // V2_0_0_16: si la actividad recien elegida es la del busero y el odometro ya esta cerrado,
+  // las millas entran solas (mismo trato que en "Asignar a varios").
+  try { _odoSugerirMillas(true); } catch(eOdoC){ console.warn('[V2_0_0_16] sugerir millas en chAct:', eOdoC && eOdoC.message); }
   autoSave(); // V17-FIX1: cambiar actividad debe guardar
 }
 
@@ -11498,6 +11506,12 @@ function confirmAssignMany(){
   // de que pasaran los 800ms, localStorage estaba stale y buildPDFWindow leía workers con
   // _payType vacío → columnas no matcheaban → PDF salía con horas vacías. "Esperar un rato"
   // arreglaba porque se completaba el timeout. saveQuiet() persiste de inmediato.
+  // V2_0_0_16: si el odometro del dia ya esta cerrado y esta actividad es la del busero, dejarle
+  // las millas puestas AHORA. Antes solo se sugeria al cerrar el odometro (y ese dia la actividad
+  // todavia no existia) o al pintar la tarjeta clasica — pero el surquero captura en la vista por
+  // actividad, que tiene su propio cuadrito y no pasa por ahi. Aqui lo ve cualquier pantalla,
+  // porque queda en el dato y no en el dibujo.
+  try { _odoSugerirMillas(true); } catch(eOdoA){ console.warn('[V2_0_0_16] sugerir millas al asignar:', eOdoA && eOdoA.message); }
   try { saveQuiet(); } catch(e){}
   closeAssignManyModal();
   toast && toast('✅ Actividad asignada a ' + n + ' trabajadores');
