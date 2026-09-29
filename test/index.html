@@ -35,7 +35,7 @@
 </script>
 <script>
 // V20_21: check versión + ackedVersion para romper loop infinito cuando version.txt≠APP_VERSION
-window.APP_VERSION = 'V2_0_0_16';
+window.APP_VERSION = 'V2_0_0_17';
 (function(){
   // V20_77: AUTO-LIMPIEZA de _ackedVersion envenenado.
   // Bug detectado: surqueros tocaban "Actualizar ahora" pero el SW interceptaba el reload con HTML viejo.
@@ -11433,6 +11433,36 @@ function confirmAssignMany(){
   var _fincaReqAM = !!(_fincasCatAM && _fincasCatAM.length);
   if(_fincaReqAM && !finca){ toast && toast('⚠️ Selecciona finca'); return; }
 
+  // V2_0_0_17: ALERTA DE LONCHE (pedido de Serafin 2026-09-28).
+  // Caso Marquez 2026-09-24: a tres personas se les quedo la actividad sin lonche y nadie lo noto
+  // hasta cuadrar el PDF cuatro dias despues. Sin lonche esas 9 h se pagan completas, asi que es
+  // una decision, no un descuido: se pregunta y queda asentado que fue a proposito.
+  // Solo aplica a actividades por HORA (en pieza/caja el lonche no cambia lo que se paga) y solo
+  // cuando el turno es largo — nadie espera lonche en un turno de dos horas.
+  try {
+    var _hayLon = false;
+    for(var _lq=0; _lq<_assignLonches.length; _lq++){
+      if(_assignLonches[_lq] && _assignLonches[_lq].ini && _assignLonches[_lq].fin){ _hayLon = true; break; }
+    }
+    if(!_hayLon && isHourAct(act)){
+      var _hTurno = 0;
+      for(var _sq=0; _sq<_shifts.length; _sq++){
+        _hTurno += nh(_shifts[_sq].ini||'', _shifts[_sq].fin||'', []) || 0;
+      }
+      if(_hTurno >= 6){
+        var _NLa = String.fromCharCode(10);
+        var _segLon = confirm(
+          '\u00bfSeguro que NO hubo lonche en esta actividad?' + _NLa + _NLa +
+          smartNum(_hTurno) + ' h de corrido, ' + _assignSelectedIds.length + ' trabajador(es).' + _NLa +
+          'Sin lonche se pagan las ' + smartNum(_hTurno) + ' h completas.' + _NLa + _NLa +
+          'Aceptar = asi es, no hubo lonche' + _NLa +
+          'Cancelar = volver y capturarlo'
+        );
+        if(!_segLon) return;
+      }
+    }
+  } catch(eLon){ console.warn('[V2_0_0_17] alerta de lonche:', eLon && eLon.message); }
+
   // VALIDACIÓN TRANSLAPE — usar checkOverlapsInWorker existente (regresa {ok:true/false,...})
   // V20_186: usar TODOS los shifts (incluye extras) al validar
   var conflicts = [];
@@ -12999,12 +13029,22 @@ function buildPDFWindow(vals, wks, ep, hp, cp, ausArr, grpActsArr){
     // Buscar unitPr y laborLbl (valor único para toda la columna)
     // V20_152: matcher unificado con payType.
     var unitPr=''; var laborLbl=''; var _lonI4=''; var _lonF4=''; // V1_0_0_68: lonche de la actividad para el PDF
+    var _lonRef4=null, _lonMix4=false; // V2_0_0_17: ¿todos los de la columna tienen el MISMO lonche?
     for(var w2=0;w2<wks.length;w2++){
       for(var a2=0;a2<wks[w2].acts.length;a2++){
         var wAct4_=wks[w2].acts[a2];
         if(_colMatchesWAct(col4, wAct4_)){
           var act2=wks[w2].acts[a2];
           // V1_0_0_68: capturar el lonche del 1er worker que matchea (el lonche es por actividad)
+          // V2_0_0_17: ...pero SOLO vale si toda la columna comparte ese lonche. En Marquez 2026-09-24
+          // el encabezado decia 12:00-1:00 para los 8 de "Gen Farm/Javier" cuando TRES no lo tuvieron:
+          // la hoja afirmaba un lonche que esas personas nunca tomaron y nadie podia notarlo.
+          // `_lonMix` marca la mezcla; abajo se imprime en blanco en vez de mentir.
+          var _lonKey4 = (act2.lonches && act2.lonches.length)
+            ? act2.lonches.map(function(_l){ return (_l&&_l.ini||'')+'-'+(_l&&_l.fin||''); }).join(',')
+            : '';
+          if(_lonRef4 === null) _lonRef4 = _lonKey4;
+          else if(_lonRef4 !== _lonKey4) _lonMix4 = true;
           if(!_lonI4 && !_lonF4 && act2.lonches && act2.lonches[0]){ _lonI4=act2.lonches[0].ini||''; _lonF4=act2.lonches[0].fin||''; }
           if(!unitPr){
             // V1_0_0_25 FIX: la tarifa SIEMPRE viene del TASK del MASTER (act._unitPrice / ACTS[ai].p),
@@ -13191,8 +13231,12 @@ function buildPDFWindow(vals, wks, ep, hp, cp, ausArr, grpActsArr){
       }
     }
     // V1_0_0_68: L.Inicio/L.Fin de la actividad (colspan=N — el lonche es por actividad, compartido entre sub-shifts)
-    trLunchIni+='<td'+_csp+' style="text-align:center;border:1px solid #000;color:#8a6d1a">'+(_lonI4?to12h(_lonI4):'')+'</td>';
-    trLunchFin+='<td'+_csp+' style="text-align:center;border:1px solid #000;color:#8a6d1a">'+(_lonF4?to12h(_lonF4):'')+'</td>';
+    // V2_0_0_17: con lonches distintos dentro de la columna no se imprime ninguno — cada quien
+    // lleva el suyo en sus horas, y un valor unico aqui seria falso para parte de la cuadrilla.
+    var _lonITxt = (_lonMix4 || !_lonI4) ? '' : to12h(_lonI4);
+    var _lonFTxt = (_lonMix4 || !_lonF4) ? '' : to12h(_lonF4);
+    trLunchIni+='<td'+_csp+' style="text-align:center;border:1px solid #000;color:#8a6d1a">'+_lonITxt+'</td>';
+    trLunchFin+='<td'+_csp+' style="text-align:center;border:1px solid #000;color:#8a6d1a">'+_lonFTxt+'</td>';
   }
   if(cp&&cp.length&&cajasT){ trTotal+='<td style="border-top:3px solid #1a2b8c"></td>'; trPrice+='<td></td>'; trLabor+='<td></td>'; trEntry+='<td></td>'; trExit+='<td></td>'; trLunchIni+='<td></td>'; trLunchFin+='<td></td>'; }
   if(ep&&ep.length&&estA&&estAn){ trTotal+='<td style="border-top:3px solid #1a2b8c"></td>'; trPrice+='<td></td>'; trLabor+='<td></td>'; trEntry+='<td></td>'; trExit+='<td></td>'; trLunchIni+='<td></td>'; trLunchFin+='<td></td>'; }
@@ -13414,8 +13458,15 @@ function buildPDFWindow(vals, wks, ep, hp, cp, ausArr, grpActsArr){
           // (col2._lonches, capturado del PRIMER worker que matchea L10937 → si ese tiene lonche vacío/
           // distinto, las celdas de los demás NO descuentan el lonche). El TOTAL por sub-turno usa el
           // lonche por worker → la celda mostraba 10h pero el total 27h (9h×3). Reportado Tacc 2026-06-23
-          // "Reparando Plastico" T2. Fallback a col2._lonches por compat.
-          var _cellLon = (found2 && Array.isArray(found2.lonches)) ? found2.lonches : col2._lonches;
+          // "Reparando Plastico" T2.
+          // V2_0_0_17: se QUITA el fallback a col2._lonches. Cuando el worker no traia el campo, la
+          // celda le aplicaba el lonche de OTRA persona (el del primero de la columna) y descontaba
+          // una hora que nunca tomo: mostraba 8 h mientras el TOTAL y el envio decian 9. Caso Marquez
+          // 2026-09-24 "Gen Farm/Javier" (TOTAL 67, celdas 64). Ahora el lonche del worker se pasa tal
+          // cual a nh(), que ya tiene su propio fallback al lonche global de Parametros — el mismo que
+          // usan el TOTAL (L13091/13146) y totalShiftHours() en el envio. Un solo criterio en los tres
+          // lados: lo impreso, lo sumado y lo que se paga coinciden siempre.
+          var _cellLon = (found2 && Array.isArray(found2.lonches)) ? found2.lonches : undefined;
           if(col2.hr){
             var _sumH=0;
             for(var kk=sci_;kk<sci_+_fr.span;kk++){
