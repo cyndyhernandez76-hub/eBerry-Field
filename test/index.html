@@ -35,7 +35,7 @@
 </script>
 <script>
 // V20_21: check versión + ackedVersion para romper loop infinito cuando version.txt≠APP_VERSION
-window.APP_VERSION = 'V2_0_0_17';
+window.APP_VERSION = 'V2_0_0_19';
 (function(){
   // V20_77: AUTO-LIMPIEZA de _ackedVersion envenenado.
   // Bug detectado: surqueros tocaban "Actualizar ahora" pero el SW interceptaba el reload con HTML viejo.
@@ -4998,21 +4998,46 @@ function _logEnvio(payload, estado, detalle){
     var log = [];
     try { log = JSON.parse(localStorage.getItem(EB_LOG_KEY) || '[]') || []; } catch(e){}
     var ws = (payload && payload.workers) || [];
+    // V2_0_0_19: hay DOS formas de payload y esto contaba solo la diaria.
+    //   diaria  -> workers[].acts[]  (una actividad por fila)
+    //   semanal -> workers[].days[]  (7 dias; cada uno puede traer turnos)
+    // Al buscar `.acts` en el semanal, TODOS sus trabajadores salian como "sin actividades"
+    // (Serafin 2026-09-30: "1 trabajador(es) van SIN actividades" al enviar el semanal).
+    var esSemanal = !!(ws.length && ws[0] && Array.isArray(ws[0].days));
     var filas = 0, sinActs = 0, conActs = 0, muestra = [];
     for(var i = 0; i < ws.length; i++){
-      var acts = (ws[i] && ws[i].acts) || [];
-      filas += acts.length ? acts.length : 1; // sin acts el backend escribe 1 fila EN BLANCO
-      if(acts.length) conActs++; else sinActs++;
+      var _w = ws[i] || {};
+      var nUnidades = 0;   // actividades (diaria) o dias CON datos (semanal)
+      if(esSemanal){
+        var _ds = _w.days || [];
+        for(var _d = 0; _d < _ds.length; _d++){
+          var _dd = _ds[_d] || {};
+          var _hrs = parseFloat(_dd.hrs) || 0;
+          var _qty = parseFloat(_dd.qty) || 0;
+          if(_hrs <= 0 && _qty <= 0) continue;   // dia vacio: el backend no escribe fila
+          nUnidades++;
+          // el backend v5.45+ escribe una fila por turno cuando vienen desglosados
+          filas += (_dd.shifts && _dd.shifts.length) ? _dd.shifts.length : 1;
+        }
+      } else {
+        var acts = _w.acts || [];
+        nUnidades = acts.length;
+        filas += acts.length ? acts.length : 1; // sin acts el backend escribe 1 fila EN BLANCO
+      }
+      if(nUnidades) conActs++; else sinActs++;
       if(muestra.length < 4){
+        var _acts1 = _w.acts || [];
         muestra.push({
-          name: ws[i] ? ws[i].name : '(sin nombre)',
-          empNum: ws[i] ? ws[i].empNum : '',
-          nActs: acts.length,
-          act1: acts.length ? {
-            actEs: acts[0].actEs, tipo: acts[0].tipo, qty: acts[0].qty,
-            totalHours: acts[0].totalHours, unitPrice: acts[0].unitPrice,
-            hEnt: acts[0].hEnt, hSal: acts[0].hSal
-          } : null
+          name: _w.name || '(sin nombre)',
+          empNum: _w.empNum || '',
+          nActs: nUnidades,
+          act1: esSemanal
+            ? { actEs: _w.actEs, tipo: _w.tipo, unitPrice: _w.unitPrice, diasConDatos: nUnidades }
+            : (_acts1.length ? {
+                actEs: _acts1[0].actEs, tipo: _acts1[0].tipo, qty: _acts1[0].qty,
+                totalHours: _acts1[0].totalHours, unitPrice: _acts1[0].unitPrice,
+                hEnt: _acts1[0].hEnt, hSal: _acts1[0].hSal
+              } : null)
         });
       }
     }
@@ -5021,7 +5046,7 @@ function _logEnvio(payload, estado, detalle){
       estado: estado || '?',
       detalle: detalle || '',
       appVersion: window.APP_VERSION || '?',
-      accion: (payload && payload.action) || 'diario',
+      accion: (payload && payload.action) || (esSemanal ? 'semanal' : 'diario'), // V2_0_0_19
       fecha: (payload && (payload.fecha || payload.weekStart)) || '',
       rancho: (payload && payload.rancho) || '',
       surquero: (payload && payload.surquero) || '',
@@ -5034,7 +5059,12 @@ function _logEnvio(payload, estado, detalle){
     });
     if(log.length > 5) log = log.slice(0, 5);
     localStorage.setItem(EB_LOG_KEY, JSON.stringify(log));
-    if(sinActs > 0) console.warn('[eBerry] ' + sinActs + ' trabajador(es) van SIN actividades -> filas en blanco');
+    // V2_0_0_19: el aviso distingue de que envio habla; en el semanal "sin datos" significa que
+    // los 7 dias vienen en cero, no que falte la actividad.
+    if(sinActs > 0){
+      console.warn('[eBerry] ' + sinActs + ' trabajador(es) van ' +
+        (esSemanal ? 'SIN datos en los 7 dias' : 'SIN actividades -> filas en blanco'));
+    }
   } catch(e){ console.warn('[V2_0_0_5] _logEnvio:', e && e.message); }
 }
 
@@ -13250,6 +13280,21 @@ function buildPDFWindow(vals, wks, ep, hp, cp, ausArr, grpActsArr){
     var _gcsp=_NG2>1?' colspan="'+_NG2+'"':'';
     // V20_30: emitir TOTAL por sub-col (no colspan) — cada sub con su propio total
     // V20_131 FASE 3: acres via helper único (col P MASTER). Warning visible si falta factor (paridad invoice/individuales).
+    // V2_0_0_18: si V1_0_0_79 redistribuyó las PUERTAS entre sub-columnas, los ACRES capturados a
+    // mano tienen que moverse con ellas. Sin esto, en la misma celda convivía el reparto nuevo
+    // (puertas) con el viejo (acres) y se leía invertido — caso Tacc 2026-09-23 "sacar estaca":
+    // T1 663.33 puertas junto a 3.50 acres, T2 56.67 puertas junto a 8.50. Aquí se saca la
+    // proporción una sola vez para todo el bloque: acres_impresos = acres_totales × (lo impreso /
+    // el total del bloque). La suma de acres no cambia, solo se acomoda igual que las puertas.
+    var _acScale = null;
+    if(_gp2._v79Any && _gp2._v79Printed){
+      var _sumAc = 0, _sumPu = 0;
+      for(var _as=0; _as<_NG2; _as++){
+        _sumAc += parseFloat(_gp2.subs[_as].grandAcres) || 0;
+        _sumPu += parseFloat(_gp2.subs[_as].totalVal) || 0;
+      }
+      if(_sumAc > 0 && _sumPu > 0) _acScale = { ac:_sumAc, pu:_sumPu };
+    }
     for(var gs2_=0;gs2_<_NG2;gs2_++){
       var _subT=_gp2.subs[gs2_];
       // V1_0_0_79 (Opcion B): el TOTAL de la sub-columna es lo REALMENTE impreso en ella,
@@ -13274,6 +13319,11 @@ function buildPDFWindow(vals, wks, ep, hp, cp, ausArr, grpActsArr){
         // V1_0_0_21 FIX: si col H es label'Acres' (input directo, ej. Tacc estacas), usar grandAcres
         // del sub directamente en vez de getAcresFromPuertas (que falla sin col P → "Falta FactorAcres").
         var _subGrAc=parseFloat(_subT.grandAcres)||0;
+        // V2_0_0_18: con el bloque redistribuido, los acres de ESTA sub-columna son los que
+        // corresponden a lo que de verdad se imprimió en ella, no los del turno original.
+        if(_acScale && _subGrAc >= 0){
+          _subGrAc = Math.round((_acScale.ac * ((parseFloat(_subTotVal)||0) / _acScale.pu)) * 100) / 100;
+        }
         if(_subT.isAcresInput && _subGrAc>0){ _acTxt=smartNum(_subGrAc)+' acres'; }
         else if(_subAcRes && _subAcRes.ok && _subAcRes.acres>0) _acTxt=smartNum(_subAcRes.acres)+' acres';
         else if(_subAcRes && !_subAcRes.ok && _subTotVal>0){ _acTxt=_subAcRes.error; _acCol='#c0392b'; }
