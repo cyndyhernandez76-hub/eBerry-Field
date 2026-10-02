@@ -35,7 +35,7 @@
 </script>
 <script>
 // V20_21: check versión + ackedVersion para romper loop infinito cuando version.txt≠APP_VERSION
-window.APP_VERSION = 'V2_0_0_24';
+window.APP_VERSION = 'V2_0_0_25';
 (function(){
   // V20_77: AUTO-LIMPIEZA de _ackedVersion envenenado.
   // Bug detectado: surqueros tocaban "Actualizar ahora" pero el SW interceptaba el reload con HTML viejo.
@@ -13486,18 +13486,21 @@ function _colMatchesWAct(col, wa){
   var trMed='<tr style="font-size:9px;background:#fffdf4">'
     +'<td style="border:1px solid #000"></td>'
     +'<td style="border:1px solid #000"></td>'
-    +'<td style="text-align:right;padding:2px 4px;border:1px solid #000;border-right:2px solid #407623;color:#8a5a00;font-weight:700">{{LBL_MED}}</td>';
+    +'<td style="text-align:right;padding:2px 4px;border:1px solid #000;border-right:2px solid #407623;color:#000;font-weight:700">{{LBL_MED}}</td>';
   var trDet='<tr style="font-size:9px;background:#fffdf4">'
     +'<td style="border:1px solid #000"></td>'
     +'<td style="border:1px solid #000"></td>'
-    +'<td style="text-align:right;padding:2px 4px;border:1px solid #000;border-right:2px solid #407623;color:#8a5a00;font-weight:700">{{LBL_DET}}</td>';
+    +'<td style="text-align:right;padding:2px 4px;border:1px solid #000;border-right:2px solid #407623;color:#000;font-weight:700">{{LBL_DET}}</td>';
   // Una celda de medida: el número con su unidad en chiquito. Vacío = raya.
   function _medCelda(med, etiqueta, span, esDet){
     var v = med ? String((esDet ? med.r : med.q) || '').trim() : '';
     var csp = (span > 1) ? (' colspan="' + span + '"') : '';
     if(!v) return '<td'+csp+' style="text-align:center;border:1px solid #000;color:#bbb">\u2014</td>';
-    var uni = (!esDet && etiqueta) ? ('<span style="font-size:8px;color:#5b6673;font-weight:400"> '+esc(etiqueta.toLowerCase())+'</span>') : '';
-    return '<td'+csp+' style="text-align:center;border:1px solid #000;color:#8a5a00;font-weight:700">'+esc(v)+uni+'</td>';
+    // V2_0_0_25: negro, no gris ni cafe. Serafin: "la letra del renglon de la medida que sea negro
+    // porque no se alcanza a ver en gris". Estas hojas se imprimen en blanco y negro, donde
+    // cualquier color claro se pierde del todo.
+    var uni = (!esDet && etiqueta) ? ('<span style="font-size:8px;color:#000;font-weight:400"> '+esc(etiqueta.toLowerCase())+'</span>') : '';
+    return '<td'+csp+' style="text-align:center;border:1px solid #000;color:#000;font-weight:700">'+esc(v)+uni+'</td>';
   }
   var trEntry='<tr style="font-size:9px;background:#f9f9f9">'
     +'<td style="border:1px solid #000"></td>'
@@ -13744,7 +13747,7 @@ function _colMatchesWAct(col, wa){
         // nadie capturo: el acre calculado ocupa toda la columna
         var _cspI = (_NS>1) ? (' colspan="'+_NS+'"') : '';
         trMed += '<td'+_cspI+' style="text-align:center;border:1px solid #000;font-weight:700;color:' +
-                 (_acCalcI.err?'#c0392b':'#0f6e56') + '">' + _acCalcI.txt + '</td>';
+                 (_acCalcI.err?'#c0392b':'#000') + '">' + _acCalcI.txt + '</td>';
         _hayMed = true; if(!_acCalcI.err) _medLbls['Acres'] = 1;
         for(var _fd=0; _fd<_fus.length; _fd++){
           trDet += _medCelda(_fus[_fd].med, _LM.r, _fus[_fd].span, true);
@@ -13897,7 +13900,7 @@ function _colMatchesWAct(col, wa){
         } else if(_acG){
           var _cspG = (_fusG[_fg].span>1) ? (' colspan="'+_fusG[_fg].span+'"') : '';
           trMed += '<td'+_cspG+' style="text-align:center;border:1px solid #000;font-weight:700;color:' +
-                   (_acG.err?'#c0392b':'#0f6e56') + '">' + _acG.txt + '</td>';
+                   (_acG.err?'#c0392b':'#000') + '">' + _acG.txt + '</td>';
           _hayMed = true; if(!_acG.err) _medLbls['Acres'] = 1;
         } else {
           trMed += _medCelda(null, _LG.q, _fusG[_fg].span, false);
