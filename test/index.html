@@ -35,7 +35,7 @@
 </script>
 <script>
 // V20_21: check versión + ackedVersion para romper loop infinito cuando version.txt≠APP_VERSION
-window.APP_VERSION = 'V2_0_0_19';
+window.APP_VERSION = 'V2_0_0_24';
 (function(){
   // V20_77: AUTO-LIMPIEZA de _ackedVersion envenenado.
   // Bug detectado: surqueros tocaban "Actualizar ahora" pero el SW interceptaba el reload con HTML viejo.
@@ -1251,6 +1251,8 @@ html.login-locked{overflow:hidden!important;height:100%!important}
     </div>
 
     <div id="assignVarInputs" style="margin-bottom:12px"></div>
+    <!-- V2_0_0_20: Medida (col Q) y Detalle (col R). Solo aparece si el MASTER las define. -->
+    <div id="assignMedBox" style="display:none;margin-bottom:12px"></div>
 
     <p style="font-size:13px;color:#666;margin:14px 0 6px"><b>Toca quiénes trabajaron en esta actividad:</b></p>
     <div id="assignWlist" style="background:#f8f9fa;border:1px solid #dee2e6;border-radius:8px;padding:6px;max-height:300px;overflow-y:auto"></div>
@@ -6129,6 +6131,12 @@ function _enterReadOnly(payload){
     return out;
   }
 
+  // V2_0_0_24: reponer las medidas del dia cargado (backend v5.56 las devuelve).
+  // Cada medida vuelve a sus actividades buscando por nombre + horario, conservando su `mid`:
+  // por eso los turnos que compartian siguen compartiendo y el PDF los dibuja otra vez con una
+  // sola celda. Se guarda para usarla despues de hidratar workers y grupales (mas abajo).
+  var _medsPayload = (payload && payload.medidas && payload.medidas.length) ? payload.medidas : null;
+
   // V2_0_0_12: reponer el odometro del dia cargado (backend v5.53 lo devuelve).
   try {
     if(payload.odometro && _dayFlow){
@@ -6421,6 +6429,10 @@ function _enterReadOnly(payload){
   Object.keys(topFields).forEach(function(id){
     var el = gEl(id); if(el && topFields[id]!=null && topFields[id]!=='') el.value = topFields[id];
   });
+
+  // V2_0_0_24: las medidas se reponen ANTES de dibujar, para que la tarjeta y el PDF ya las vean.
+  try { if(_medsPayload) _medRepartir(_medsPayload); }
+  catch(eMdR){ console.warn('[V2_0_0_24] reponer medidas:', eMdR && eMdR.message); }
 
   // 7) Re-render
   var list = gEl('wlist'); if(list) list.innerHTML = '';
@@ -9637,6 +9649,7 @@ function _serializeState(){
       if(sa.indAcres) actSv.indAcres=sa.indAcres;
       if(sa.bloques && sa.bloques.length) actSv.bloques=sa.bloques; // V20_76: persistir bloques VarDoor
       if(sa.inputs && Object.keys(sa.inputs).length) actSv.inputs=sa.inputs; // V20_28: persistir motor inputs
+      if(sa._med) actSv._med = sa._med; // V2_0_0_20: Medida/Detalle (col Q y R del MASTER)
       actSv.localRowId = sa.localRowId || ''; // V20_127: persistir ID único para UPSERT
       ws.acts.push(actSv);
     }
@@ -11268,6 +11281,8 @@ function openAssignManyModal(){
   var finEl = gEl('assignFin'); if(finEl) finEl.value = '';
   var fincaSlot = gEl('assignFincaSlot'); if(fincaSlot) fincaSlot.innerHTML = '';
   var varSlot = gEl('assignVarInputs'); if(varSlot) varSlot.innerHTML = '';
+  // V2_0_0_20: cada asignación empieza con su propia medida
+  try { _medReset(); var _mb = gEl('assignMedBox'); if(_mb){ _mb.style.display='none'; _mb.innerHTML=''; } } catch(e){}
   var tag = gEl('assignTypeTag'); if(tag) tag.textContent = 'Selecciona actividad';
   // Renderizar lista de workers
   renderAssignWlist();
@@ -11296,6 +11311,7 @@ function onAssignActChange(){
   if(isNaN(ai) || ai < 0){
     _assignCurrentActIdx = -1;
     var slot = gEl('assignVarInputs'); if(slot) slot.innerHTML = '';
+    try { _medReset(); var _mb2 = gEl('assignMedBox'); if(_mb2){ _mb2.style.display='none'; _mb2.innerHTML=''; } } catch(e){} // V2_0_0_20
     var tag = gEl('assignTypeTag'); if(tag) tag.textContent = 'Selecciona actividad';
     return;
   }
@@ -11343,7 +11359,400 @@ function _renderAssignFinca(act){
   }
 }
 
+// =============================================================================
+// V2_0_0_20 — MEDIDA (col Q) y DETALLE (col R)
+// Serafin 2026-09-30/10-02: dos campos informativos por actividad, con la etiqueta que el se
+// ponga en el MASTER. Q es numerico, R es texto libre. Si la celda va vacia, no existe el campo.
+//
+// Se capturan por ACTIVIDAD Y TURNO, nunca por trabajador. Cuando una actividad tiene varios
+// turnos en el dia, el segundo y siguientes preguntan de cual turno anterior tomar el valor:
+// elegir uno NO copia el numero, lo COMPARTE (mismo `mid`). Por eso 12.68 acres que cubren dos
+// turnos siguen siendo 12.68 en el dia, no 25.36 — y el PDF los dibujara con una sola celda.
+// =============================================================================
+
+// Etiquetas que el MASTER define para esta actividad ('' si no tiene)
+function _medLabels(act){
+  return {
+    q: String((act && act.Q) || '').trim(),
+    r: String((act && act.R) || '').trim()
+  };
+}
+function _medTieneCampos(act){
+  var L = _medLabels(act);
+  return !!(L.q || L.r);
+}
+function _medNuevoId(){
+  return 'm' + Date.now().toString(36) + Math.random().toString(36).substr(2,5);
+}
+
+// Los bloques (actividad+horario) de HOY que ya traen medida, para ofrecerlos.
+// Se agrupan por `mid`: si dos turnos comparten el dato, aparecen como una sola opcion.
+function _medBloquesHoy(act){
+  var out = [], vistos = {};
+  if(!act) return out;
+  var nombre = String(act.es||'').toLowerCase().trim();
+  // V2_0_0_21: las GRUPALES viven en grpActs[], no en workers[].acts[] — sin esto, una actividad
+  // grupal nunca veria sus propios turnos anteriores y preguntaria siempre desde cero.
+  try {
+    for(var gq=0; gq<grpActs.length; gq++){
+      var gg = grpActs[gq];
+      if(!gg || !gg.vars || !gg.vars._med || !gg.vars._med.mid) continue;
+      var gn = String(gg.esName || (GRUPAL_ACTS[gg.gai] && GRUPAL_ACTS[gg.gai].es) || '').toLowerCase().trim();
+      if(gn !== nombre) continue;
+      if(vistos[gg.vars._med.mid]) continue;
+      vistos[gg.vars._med.mid] = true;
+      out.push({
+        mid: gg.vars._med.mid,
+        q: gg.vars._med.q || '',
+        r: gg.vars._med.r || '',
+        ini: (gg.vars && gg.vars.ini) || '',
+        fin: (gg.vars && gg.vars.fin) || ''
+      });
+    }
+  } catch(eGB){ console.warn('[V2_0_0_21] bloques grupales:', eGB && eGB.message); }
+  for(var wi=0; wi<workers.length; wi++){
+    var w = workers[wi]; if(!w || !w.acts) continue;
+    for(var ai=0; ai<w.acts.length; ai++){
+      var a = w.acts[ai];
+      if(!a || !a._med || !a._med.mid) continue;
+      var an = String(a._actEs || a.esName || '').toLowerCase().trim();
+      if(an !== nombre) continue;
+      if(vistos[a._med.mid]) continue;
+      vistos[a._med.mid] = true;
+      out.push({
+        mid: a._med.mid,
+        q: a._med.q || '',
+        r: a._med.r || '',
+        ini: a.ini || (a.shifts && a.shifts[0] && a.shifts[0].ini) || '',
+        fin: a.fin || (a.shifts && a.shifts[0] && a.shifts[0].fin) || ''
+      });
+    }
+  }
+  // ordenar por hora de entrada para que T1, T2, T3 salgan en orden
+  out.sort(function(x,y){ return String(x.ini).localeCompare(String(y.ini)); });
+  return out;
+}
+
+// Estado del modal
+var _assignMed = { mid:null, q:'', r:'', ref:null };  // ref = mid del bloque con el que comparte
+
+function _medReset(){ _assignMed = { mid:null, q:'', r:'', ref:null }; }
+
+function _medElegirRef(mid){
+  _assignMed.ref = mid || null;
+  _renderAssignMed(_assignCurrentActIdx >= 0 ? ACTS[_assignCurrentActIdx] : null);
+}
+function _medOnInput(campo, valor){
+  var v = String(valor||'').trim();
+  if(campo === 'q') _assignMed.q = v;
+  else _assignMed.r = v;
+  // V2_0_0_21: si se está editando un dato que ya comparten otros bloques, el cambio llega a todos.
+  if(_assignMed.mid) _medPropagar(_assignMed.mid, campo, v);
+}
+
+// Dibuja la caja: la pregunta de turnos (si aplica) y los campos.
+function _renderAssignMed(act){
+  var box = gEl('assignMedBox'); if(!box) return;
+  if(!act || !_medTieneCampos(act)){ box.style.display='none'; box.innerHTML=''; return; }
+  var L = _medLabels(act);
+  var previos = _medBloquesHoy(act);
+  var h = '';
+
+  if(previos.length){
+    // Regla de Serafin: el primer turno no pregunta; del segundo en adelante se ofrecen los
+    // anteriores CON SU VALOR a la vista, para que el surquero reconozca cual es cual.
+    h += '<div style="font-size:12px;font-weight:700;color:#8a5a00;margin-bottom:6px">' +
+         'Esta actividad ya tiene ' + previos.length + ' turno(s) hoy. \u00bfEstos ' +
+         esc((L.q || L.r).toLowerCase()) + ' cu\u00e1les son?</div>';
+    for(var i=0; i<previos.length; i++){
+      var p = previos[i];
+      var sel = (_assignMed.ref === p.mid);
+      var txt = 'Los mismos de T' + (i+1);
+      var val = p.q || p.r;
+      if(val) txt += ' \u00b7 ' + esc(val);
+      h += '<button type="button" onclick="_medElegirRef(\'' + p.mid + '\')" ' +
+           'style="display:block;width:100%;padding:9px;margin-bottom:5px;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;' +
+           'border:1.5px solid #1a3a5c;background:' + (sel?'#1a3a5c':'#fff') + ';color:' + (sel?'#fff':'#1a3a5c') + '">' +
+           txt + '</button>';
+    }
+    var selOtros = !_assignMed.ref;
+    h += '<button type="button" onclick="_medElegirRef(null)" ' +
+         'style="display:block;width:100%;padding:9px;margin-bottom:8px;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;' +
+         'border:1.5px solid #b3541e;background:' + (selOtros?'#b3541e':'#fff') + ';color:' + (selOtros?'#fff':'#b3541e') + '">' +
+         'Otros</button>';
+  }
+
+  // Si eligio compartir, no se teclea nada: se muestra el valor heredado.
+  if(_assignMed.ref){
+    var ref = null;
+    for(var k=0; k<previos.length; k++){ if(previos[k].mid === _assignMed.ref){ ref = previos[k]; break; } }
+    if(ref){
+      h += '<div style="padding:10px;border:1.5px dashed #1a3a5c;border-radius:8px;background:#f4f7fb;font-size:13px">';
+      if(L.q) h += '<div><b>' + esc(L.q) + ':</b> ' + esc(ref.q || '\u2014') + '</div>';
+      if(L.r) h += '<div><b>' + esc(L.r) + ':</b> ' + esc(ref.r || '\u2014') + '</div>';
+      h += '<div style="font-size:11px;color:#5b6673;margin-top:4px">Es el mismo dato, no una copia.</div>';
+      h += '</div>';
+    }
+  } else {
+    if(L.q){
+      h += '<div style="margin-bottom:8px"><label style="display:block;font-size:12px;font-weight:700;color:#8a5a00;margin-bottom:4px">' +
+           esc(L.q) + '</label>' +
+           '<input id="assignMedQ" type="number" step="any" inputmode="decimal" value="' + esc(_assignMed.q) + '" ' +
+           'oninput="_medOnInput(\'q\', this.value)" placeholder="' + esc(L.q) + '" ' +
+           'style="width:100%;padding:10px;border:1.5px solid #d8a13a;border-radius:8px;font-size:16px;min-height:44px;background:#fffdf6;text-align:center;font-weight:700"></div>';
+    }
+    if(L.r){
+      h += '<div><label style="display:block;font-size:12px;font-weight:700;color:#8a5a00;margin-bottom:4px">' +
+           esc(L.r) + '</label>' +
+           '<input id="assignMedR" type="text" maxlength="60" value="' + esc(_assignMed.r) + '" ' +
+           'oninput="_medOnInput(\'r\', this.value)" placeholder="' + esc(L.r) + '" ' +
+           'style="width:100%;padding:10px;border:1.5px solid #d8a13a;border-radius:8px;font-size:16px;min-height:44px;background:#fffdf6"></div>';
+    }
+  }
+
+  box.innerHTML = h;
+  box.style.display = '';
+}
+
+// V2_0_0_24: devuelve cada medida a sus actividades al cargar un dia desde Sheets.
+// Se busca por nombre de actividad + horario (los turnos que abarca vienen listados en la fila).
+// Conserva el `mid`, que es lo que hace que los turnos que compartian sigan compartiendo — sin
+// eso, el PDF los dibujaria como datos distintos y el dia sumaria de mas.
+function _medRepartir(medidas){
+  if(!medidas || !medidas.length) return 0;
+  var n = 0;
+  function _norm(x){ return String(x||'').toLowerCase().trim(); }
+  try {
+    for(var i=0; i<medidas.length; i++){
+      var md = medidas[i] || {};
+      if(!md.mid) continue;
+      var nombre = _norm(md.actEs);
+      var turnos = String(md.turnos||'').split(',');
+      var setT = {};
+      for(var t=0; t<turnos.length; t++){
+        var tt = turnos[t].trim();
+        if(tt) setT[tt] = 1;
+      }
+      var hayTurnos = Object.keys(setT).length > 0;
+      var dato = { mid: md.mid, q: (md.valQ==null?'':String(md.valQ)), r: (md.valR==null?'':String(md.valR)) };
+
+      if(md.esGrupal){
+        for(var gi=0; gi<grpActs.length; gi++){
+          var g = grpActs[gi]; if(!g || !g.vars) continue;
+          var gn = _norm(g.esName || (GRUPAL_ACTS[g.gai] && GRUPAL_ACTS[g.gai].es));
+          if(gn !== nombre) continue;
+          var gt = (g.vars.ini||'') + '-' + (g.vars.fin||'');
+          if(hayTurnos && !setT[gt]) continue;
+          g.vars._med = { mid: dato.mid, q: dato.q, r: dato.r };
+          n++;
+        }
+      } else {
+        for(var wi=0; wi<workers.length; wi++){
+          var w = workers[wi]; if(!w || !w.acts) continue;
+          for(var ai=0; ai<w.acts.length; ai++){
+            var a = w.acts[ai];
+            if(_norm(a._actEs || a.esName) !== nombre) continue;
+            if(hayTurnos){
+              var cae = false;
+              var sh = (a.shifts && a.shifts.length) ? a.shifts : [{ini:a.ini, fin:a.fin}];
+              for(var si=0; si<sh.length; si++){
+                if(setT[(sh[si].ini||'') + '-' + (sh[si].fin||'')]){ cae = true; break; }
+              }
+              if(!cae) continue;
+            }
+            a._med = { mid: dato.mid, q: dato.q, r: dato.r };
+            n++;
+          }
+        }
+      }
+    }
+  } catch(e){ console.warn('[V2_0_0_24] repartir medidas:', e && e.message); }
+  if(n) console.log('[eBerry] ' + medidas.length + ' medida(s) repuestas en ' + n + ' actividad(es)');
+  return n;
+}
+
+// V2_0_0_24: junta las medidas del dia para mandarlas al MASTER.
+// UNA entrada por `mid`, no por turno ni por trabajador: si un dato cubre varios turnos va una
+// sola vez, con los turnos listados. Asi la columna Valor se puede sumar sin contar doble.
+function _medRecolectar(){
+  var porMid = {};
+  function _meter(mid, q, r, actEs, finca, ini, fin, esGrupal, act){
+    if(!mid) return;
+    if(!porMid[mid]){
+      var L = (typeof _medLabels === 'function') ? _medLabels(act) : {q:'',r:''};
+      porMid[mid] = {
+        mid: mid, actEs: actEs || '', finca: finca || '',
+        esGrupal: !!esGrupal,
+        etiqQ: L.q || '', valQ: (q==null?'':String(q)),
+        etiqR: L.r || '', valR: (r==null?'':String(r)),
+        _turnos: []
+      };
+    }
+    var t = (ini||'') + '-' + (fin||'');
+    if(t !== '-' && porMid[mid]._turnos.indexOf(t) < 0) porMid[mid]._turnos.push(t);
+  }
+  try {
+    for(var wi=0; wi<workers.length; wi++){
+      var w = workers[wi]; if(!w || !w.acts) continue;
+      for(var ai=0; ai<w.acts.length; ai++){
+        var a = w.acts[ai];
+        if(!a || !a._med || !a._med.mid) continue;
+        if(!a._med.q && !a._med.r) continue;
+        var actI = (a.ai != null && ACTS[a.ai]) ? ACTS[a.ai] : null;
+        var sh = (a.shifts && a.shifts.length) ? a.shifts : [{ini:a.ini, fin:a.fin}];
+        for(var si=0; si<sh.length; si++){
+          _meter(a._med.mid, a._med.q, a._med.r, a._actEs || a.esName || '',
+                 a.finca || '', sh[si].ini, sh[si].fin, false, actI);
+        }
+      }
+    }
+    for(var gi=0; gi<grpActs.length; gi++){
+      var g = grpActs[gi];
+      if(!g || !g.vars || !g.vars._med || !g.vars._med.mid) continue;
+      if(!g.vars._med.q && !g.vars._med.r) continue;
+      var actG = (typeof GRUPAL_ACTS !== 'undefined' && GRUPAL_ACTS[g.gai]) ? GRUPAL_ACTS[g.gai] : null;
+      _meter(g.vars._med.mid, g.vars._med.q, g.vars._med.r,
+             g.esName || (actG && actG.es) || '', g.vars.finca || '',
+             g.vars.ini, g.vars.fin, true, actG);
+    }
+  } catch(e){ console.warn('[V2_0_0_24] recolectar medidas:', e && e.message); }
+
+  var out = [];
+  for(var k in porMid){
+    var m = porMid[k];
+    m.turnos = m._turnos.join(', ');
+    delete m._turnos;
+    out.push(m);
+  }
+  return out;
+}
+
+// V2_0_0_21: compartir es el MISMO dato. Si se corrige el valor de un bloque, cambia en TODOS
+// los que llevan ese mid — individuales y grupales. (Lo mismo que ya pasa con el Pago Unit. de
+// una columna: no son dos números que casualmente coinciden, es uno solo.)
+function _medPropagar(mid, campo, valor){
+  if(!mid) return 0;
+  var n = 0;
+  try {
+    for(var wi=0; wi<workers.length; wi++){
+      var w = workers[wi]; if(!w || !w.acts) continue;
+      for(var ai=0; ai<w.acts.length; ai++){
+        var a = w.acts[ai];
+        if(a && a._med && a._med.mid === mid){ a._med[campo] = valor; n++; }
+      }
+    }
+    for(var gi=0; gi<grpActs.length; gi++){
+      var g = grpActs[gi];
+      if(g && g.vars && g.vars._med && g.vars._med.mid === mid){ g.vars._med[campo] = valor; n++; }
+    }
+  } catch(e){ console.warn('[V2_0_0_21] propagar medida:', e && e.message); }
+  return n;
+}
+
+// ── Captura en la tarjeta de una GRUPAL ──────────────────────────────────────
+function _medGrpInput(gi, campo, valor){
+  var g = grpActs[gi]; if(!g) return;
+  g.vars = g.vars || {};
+  var v = String(valor||'').trim();
+  if(!g.vars._med || !g.vars._med.mid){
+    g.vars._med = { mid: _medNuevoId(), q:'', r:'' };
+  }
+  g.vars._med[campo] = v;
+  // si este dato lo comparten otros bloques, el cambio llega a todos
+  _medPropagar(g.vars._med.mid, campo, v);
+  autoSave();
+}
+
+function _medGrpElegirRef(gi, mid){
+  var g = grpActs[gi]; if(!g) return;
+  g.vars = g.vars || {};
+  if(!mid){
+    // "Otros": estrena identidad propia y queda listo para teclear
+    g.vars._med = { mid: _medNuevoId(), q:'', r:'' };
+  } else {
+    var act = GRUPAL_ACTS[g.gai] || { es: g.esName };
+    var previos = _medBloquesHoy(act);
+    for(var i=0; i<previos.length; i++){
+      if(previos[i].mid === mid){
+        // MISMO mid y mismos valores: es el mismo dato, no una copia
+        g.vars._med = { mid: mid, q: previos[i].q, r: previos[i].r };
+        break;
+      }
+    }
+  }
+  autoSave();
+  renderGrpActs();
+}
+
+// HTML de la caja dentro de la tarjeta grupal ('' si el MASTER no definió Q ni R)
+function _medGrpHtml(gi, g, act){
+  if(!act || !_medTieneCampos(act)) return '';
+  var L = _medLabels(act);
+  var med = (g && g.vars && g.vars._med) ? g.vars._med : null;
+  // los bloques de ESTA actividad que NO son este mismo
+  var previos = [];
+  try {
+    var todos = _medBloquesHoy(act);
+    for(var i=0; i<todos.length; i++){
+      if(med && med.mid === todos[i].mid) continue;
+      previos.push(todos[i]);
+    }
+  } catch(e){}
+  var h = '<div style="margin-bottom:10px;padding:10px;border:1.5px solid #d8a13a;border-radius:9px;background:#fffdf6">';
+  h += '<div style="font-size:11px;font-weight:700;color:#8a5a00;text-transform:uppercase;letter-spacing:.5px;margin-bottom:7px">' +
+       esc(L.q || L.r) + (L.q && L.r ? (' / ' + esc(L.r)) : '') + '</div>';
+
+  if(previos.length){
+    h += '<div style="font-size:11.5px;color:#8a5a00;margin-bottom:5px">Ya hay otro turno de esta actividad hoy:</div>';
+    for(var k=0; k<previos.length; k++){
+      var p = previos[k];
+      var val = p.q || p.r || '';
+      var sel = !!(med && med.mid === p.mid);
+      h += '<button type="button" onclick="_medGrpElegirRef(' + gi + ',\'' + p.mid + '\')" ' +
+           'style="display:block;width:100%;padding:8px;margin-bottom:4px;border-radius:7px;font-size:12px;font-weight:700;cursor:pointer;' +
+           'border:1.5px solid #1a3a5c;background:' + (sel?'#1a3a5c':'#fff') + ';color:' + (sel?'#fff':'#1a3a5c') + '">' +
+           'Los mismos de T' + (k+1) + (val ? (' \u00b7 ' + esc(val)) : '') + '</button>';
+    }
+    h += '<button type="button" onclick="_medGrpElegirRef(' + gi + ',null)" ' +
+         'style="display:block;width:100%;padding:8px;margin-bottom:8px;border-radius:7px;font-size:12px;font-weight:700;cursor:pointer;' +
+         'border:1.5px solid #b3541e;background:#fff;color:#b3541e">Otros</button>';
+  }
+
+  if(L.q){
+    h += '<label style="display:block;font-size:10px;font-weight:700;color:#8a5a00;margin-bottom:3px">' + esc(L.q) + '</label>' +
+         '<input type="number" step="any" inputmode="decimal" value="' + esc(med && med.q || '') + '" ' +
+         'oninput="_medGrpInput(' + gi + ',\'q\', this.value)" placeholder="' + esc(L.q) + '" ' +
+         'style="width:100%;padding:9px;border:1.5px solid var(--bd);border-radius:7px;font-size:16px;min-height:42px;text-align:center;font-weight:700;margin-bottom:' + (L.r?'8px':'0') + '">';
+  }
+  if(L.r){
+    h += '<label style="display:block;font-size:10px;font-weight:700;color:#8a5a00;margin-bottom:3px">' + esc(L.r) + '</label>' +
+         '<input type="text" maxlength="60" value="' + esc(med && med.r || '') + '" ' +
+         'oninput="_medGrpInput(' + gi + ',\'r\', this.value)" placeholder="' + esc(L.r) + '" ' +
+         'style="width:100%;padding:9px;border:1.5px solid var(--bd);border-radius:7px;font-size:16px;min-height:42px">';
+  }
+  h += '</div>';
+  return h;
+}
+
+// Lo que se guarda en cada act al asignar. Compartir = MISMO mid y mismos valores.
+function _medParaGuardar(act, previos){
+  if(!act || !_medTieneCampos(act)) return null;
+  if(_assignMed.ref){
+    for(var i=0; i<previos.length; i++){
+      if(previos[i].mid === _assignMed.ref){
+        return { mid: previos[i].mid, q: previos[i].q, r: previos[i].r };
+      }
+    }
+  }
+  if(!_assignMed.q && !_assignMed.r) return null;   // el surquero lo dejo vacio: no se inventa nada
+  if(!_assignMed.mid) _assignMed.mid = _medNuevoId();
+  return { mid: _assignMed.mid, q: _assignMed.q, r: _assignMed.r };
+}
+
 function _renderAssignVarInputs(act){
+  // V2_0_0_20: la caja de Medida/Detalle se refresca junto con los inputs del motor — así sigue
+  // a la actividad elegida y aparece solo si el MASTER le definió col Q o col R.
+  try { _renderAssignMed(act); } catch(eMed){ console.warn('[V2_0_0_20] renderAssignMed:', eMed && eMed.message); }
   // El motor V20_27 dice qué inputs requiere esta actividad (cols H-M del MASTER).
   // Solo renderizamos inputs "globales" del grupo (precio variable, etc.) — los per-worker
   // (cantidad/piezas/cajas/pies/puertas) se capturan después en cada tarjeta.
@@ -11554,6 +11963,10 @@ function confirmAssignMany(){
       // V20_186: shifts ahora incluye turnos extras del modal (deep copy por worker)
       shifts: JSON.parse(JSON.stringify(_shifts)),
       inputs: JSON.parse(JSON.stringify(commonVars)),
+      // V2_0_0_20: Medida (col Q) y Detalle (col R). `mid` es la identidad del dato: si varios
+      // turnos lo comparten llevan el MISMO mid, y por eso el día no los suma dos veces.
+      // null = la actividad no tiene esos campos, o el surquero los dejó vacíos.
+      _med: _medGuardar ? JSON.parse(JSON.stringify(_medGuardar)) : null,
       lonches: JSON.parse(JSON.stringify(_assignLonches)) // V1_0_0_22 FIX: guardar el lonche en el newAct FINAL. Antes el lonche solo iba al tempAct de validación de translape (que se descarta con pop) → al ASIGNAR a varios el lonche se PERDÍA (act sin el campo). Mismo bug que V14 arregló en EDITAR, pero faltaba en ASIGNAR.
     };
     var newAi = w.acts.length;
@@ -11566,6 +11979,12 @@ function confirmAssignMany(){
   // de que pasaran los 800ms, localStorage estaba stale y buildPDFWindow leía workers con
   // _payType vacío → columnas no matcheaban → PDF salía con horas vacías. "Esperar un rato"
   // arreglaba porque se completaba el timeout. saveQuiet() persiste de inmediato.
+  // V2_0_0_20: resolver la medida ANTES del bucle — es una sola para toda la asignación, no una
+  // por trabajador. Se calcula aquí porque _medBloquesHoy mira los acts que ya existen.
+  var _medGuardar = null;
+  try { _medGuardar = _medParaGuardar(act, _medBloquesHoy(act)); }
+  catch(eMedG){ console.warn('[V2_0_0_20] medida al asignar:', eMedG && eMedG.message); }
+
   // V2_0_0_16: si el odometro del dia ya esta cerrado y esta actividad es la del busero, dejarle
   // las millas puestas AHORA. Antes solo se sugeria al cerrar el odometro (y ese dia la actividad
   // todavia no existia) o al pintar la tarjeta clasica — pero el surquero captura en la vista por
@@ -12517,7 +12936,49 @@ function buildPDFWindow(vals, wks, ep, hp, cp, ausArr, grpActsArr){
     return (Math.round(n*100)/100).toFixed(2);
   }
   // V20_152: comparación columna-vs-worker-act incluyendo payType para separar Hours/Pieces homónimas.
-  function _colMatchesWAct(col, wa){
+  // V2_0_0_22: la medida (col Q) y el detalle (col R) de una columna individual, para el turno
+// indicado. Se busca en los workers porque ahi vive `_med`: todos los que comparten actividad y
+// horario llevan el mismo, asi que basta con el primero que matchee.
+function _medDeColShift(col, wks, shiftKey){
+  try {
+    for(var wi=0; wi<wks.length; wi++){
+      var w = wks[wi]; if(!w || !w.acts) continue;
+      for(var ai=0; ai<w.acts.length; ai++){
+        var a = w.acts[ai];
+        if(!a || !a._med || !a._med.mid) continue;
+        if(!_colMatchesWAct(col, a)) continue;
+        if(shiftKey){
+          var hay = false;
+          var sh = a.shifts || [];
+          for(var si=0; si<sh.length; si++){
+            if(((sh[si].ini||'') + '|' + (sh[si].fin||'')) === shiftKey){ hay = true; break; }
+          }
+          if(!hay && ((a.ini||'') + '|' + (a.fin||'')) !== shiftKey) continue;
+        }
+        return a._med;
+      }
+    }
+  } catch(e){ console.warn('[V2_0_0_22] medida de columna:', e && e.message); }
+  return null;
+}
+
+// Agrupa celdas contiguas que comparten el MISMO dato (mismo mid) para dibujarlas con colspan.
+// Devuelve [{span, med}] — una entrada por celda a emitir.
+function _medFusionar(lista){
+  var out = [];
+  for(var i=0; i<lista.length; i++){
+    var m = lista[i];
+    var mid = m && m.mid;
+    if(out.length && mid && out[out.length-1]._mid === mid){
+      out[out.length-1].span++;
+      continue;
+    }
+    out.push({ span:1, med:m||null, _mid:mid||null });
+  }
+  return out;
+}
+
+function _colMatchesWAct(col, wa){
     var ident = _wActIdent(wa);
     var cName = col.esName || (ACTS[col.ai]?ACTS[col.ai].es:'') || '';
     var cTipo = col.tipo || '';
@@ -12795,7 +13256,7 @@ function buildPDFWindow(vals, wks, ep, hp, cp, ausArr, grpActsArr){
       // para mostrar suma de acres en header del PDF junto a "Doors p/p".
       var _hColAcr_ = (typeof parseFormulaCell === 'function' && gact_ && gact_.H) ? parseFormulaCell(gact_.H) : null;
       var _isAcresInputCol_ = !!(_hColAcr_ && _hColAcr_.type==='input' && _hColAcr_.label && String(_hColAcr_.label).toLowerCase()==='acres');
-      col_={label:(gact_.en||gact_.es), ct:'puertas', perPersona:{}, totalVal:puertas_, np:np_, precio:gact_.p, unitLabel:'Doors p/p', finca:g_.vars.finca||'', ini:g_.vars.ini||'', fin:g_.vars.fin||'', lIni:(g_.vars.lonches&&g_.vars.lonches[0]?g_.vars.lonches[0].ini:''), lFin:(g_.vars.lonches&&g_.vars.lonches[0]?g_.vars.lonches[0].fin:''), anchoCama:anchoCama_, gact:gact_, grandAcres:grandAcres_, isAcresInput:_isAcresInputCol_};
+      col_={med:(g_.vars&&g_.vars._med)||null, label:(gact_.en||gact_.es), ct:'puertas', perPersona:{}, totalVal:puertas_, np:np_, precio:gact_.p, unitLabel:'Doors p/p', finca:g_.vars.finca||'', ini:g_.vars.ini||'', fin:g_.vars.fin||'', lIni:(g_.vars.lonches&&g_.vars.lonches[0]?g_.vars.lonches[0].ini:''), lFin:(g_.vars.lonches&&g_.vars.lonches[0]?g_.vars.lonches[0].fin:''), anchoCama:anchoCama_, gact:gact_, grandAcres:grandAcres_, isAcresInput:_isAcresInputCol_};
       for(var pi_=0;pi_<g_.participantes.length;pi_++) col_.perPersona[g_.participantes[pi_]]=ppx_;
     } else if(ct_==='cajas'){
       var totalC_=parseFloat(g_.vars.totalC)||0;
@@ -12810,13 +13271,13 @@ function buildPDFWindow(vals, wks, ep, hp, cp, ausArr, grpActsArr){
       if(!totalC_) continue;
       var cpx_=totalC_/np_;
       // V20_71 Fase B: usar nombre en inglés en label (PDF es para Cindy en EN)
-      col_={label:(gact_.en||gact_.es), ct:'cajas', perPersona:{}, totalVal:totalC_, np:np_, precio:precioC_, unitLabel:'Boxes p/p', finca:g_.vars.finca||'', ini:g_.vars.ini||'', fin:g_.vars.fin||'', lIni:(g_.vars.lonches&&g_.vars.lonches[0]?g_.vars.lonches[0].ini:''), lFin:(g_.vars.lonches&&g_.vars.lonches[0]?g_.vars.lonches[0].fin:'')};
+      col_={med:(g_.vars&&g_.vars._med)||null, label:(gact_.en||gact_.es), ct:'cajas', perPersona:{}, totalVal:totalC_, np:np_, precio:precioC_, unitLabel:'Boxes p/p', finca:g_.vars.finca||'', ini:g_.vars.ini||'', fin:g_.vars.fin||'', lIni:(g_.vars.lonches&&g_.vars.lonches[0]?g_.vars.lonches[0].ini:''), lFin:(g_.vars.lonches&&g_.vars.lonches[0]?g_.vars.lonches[0].fin:'')};
       for(var pi2_=0;pi2_<g_.participantes.length;pi2_++) col_.perPersona[g_.participantes[pi2_]]=cpx_;
     } else if(ct_==='hora'){
       var hGrp_=nh(g_.vars.ini||'',g_.vars.fin||'',g_.vars.lonches);
       if(!hGrp_) continue;
       // V20_71 Fase B: usar nombre en inglés en label (PDF es para Cindy en EN)
-      col_={label:(gact_.en||gact_.es), ct:'hora', perPersona:{}, totalVal:hGrp_, np:np_, precio:gact_.p, unitLabel:'Hours', finca:'', ini:g_.vars.ini||'', fin:g_.vars.fin||'', lIni:(g_.vars.lonches&&g_.vars.lonches[0]?g_.vars.lonches[0].ini:''), lFin:(g_.vars.lonches&&g_.vars.lonches[0]?g_.vars.lonches[0].fin:'')};
+      col_={med:(g_.vars&&g_.vars._med)||null, label:(gact_.en||gact_.es), ct:'hora', perPersona:{}, totalVal:hGrp_, np:np_, precio:gact_.p, unitLabel:'Hours', finca:'', ini:g_.vars.ini||'', fin:g_.vars.fin||'', lIni:(g_.vars.lonches&&g_.vars.lonches[0]?g_.vars.lonches[0].ini:''), lFin:(g_.vars.lonches&&g_.vars.lonches[0]?g_.vars.lonches[0].fin:'')};
       for(var pi3_=0;pi3_<g_.participantes.length;pi3_++) col_.perPersona[g_.participantes[pi3_]]=hGrp_;
     } else {
       var totalP_=parseFloat(g_.vars.totalP)||0;
@@ -12834,7 +13295,7 @@ function buildPDFWindow(vals, wks, ep, hp, cp, ausArr, grpActsArr){
       var qpx_=totalP_/np_;
       var _prcG_=parseFloat(g_.vars.precioC)||parseFloat(gact_.p)||0; // V1_0_0_10: precio del grupal (precioC) si existe
       // V20_71 Fase B: usar nombre en inglés en label (PDF es para Cindy en EN)
-      col_={label:(gact_.en||gact_.es), ct:'generic', perPersona:{}, totalVal:totalP_, np:np_, precio:_prcG_, unitLabel:(gact_.payType||'Pieces')+' p/p', finca:g_.vars.finca||'', ini:g_.vars.ini||'', fin:g_.vars.fin||'', lIni:(g_.vars.lonches&&g_.vars.lonches[0]?g_.vars.lonches[0].ini:''), lFin:(g_.vars.lonches&&g_.vars.lonches[0]?g_.vars.lonches[0].fin:'')};
+      col_={med:(g_.vars&&g_.vars._med)||null, label:(gact_.en||gact_.es), ct:'generic', perPersona:{}, totalVal:totalP_, np:np_, precio:_prcG_, unitLabel:(gact_.payType||'Pieces')+' p/p', finca:g_.vars.finca||'', ini:g_.vars.ini||'', fin:g_.vars.fin||'', lIni:(g_.vars.lonches&&g_.vars.lonches[0]?g_.vars.lonches[0].ini:''), lFin:(g_.vars.lonches&&g_.vars.lonches[0]?g_.vars.lonches[0].fin:'')};
       for(var pi4_=0;pi4_<g_.participantes.length;pi4_++) col_.perPersona[g_.participantes[pi4_]]=qpx_;
     }
     if(col_) grpPuertasCols.push(col_);
@@ -13018,6 +13479,26 @@ function buildPDFWindow(vals, wks, ep, hp, cp, ausArr, grpActsArr){
     +'<td style="border:1px solid #000"></td>'
     +'<td style="border:1px solid #000"></td>'
     +'<td style="text-align:right;padding:2px 4px;border:1px solid #000;border-right:2px solid #407623;color:#000;font-weight:600">Labor</td>';
+  // V2_0_0_22: Medida (col Q) y Detalle (col R). La etiqueta va como marcador porque solo se
+  // sabe al terminar de recorrer las columnas: si todas miden lo mismo se usa esa palabra
+  // ("Acres"); si se mezclan acres y bines, se usa el genérico y la unidad viaja en cada celda.
+  var _medLbls = {}, _detLbls = {}, _hayMed = false, _hayDet = false;
+  var trMed='<tr style="font-size:9px;background:#fffdf4">'
+    +'<td style="border:1px solid #000"></td>'
+    +'<td style="border:1px solid #000"></td>'
+    +'<td style="text-align:right;padding:2px 4px;border:1px solid #000;border-right:2px solid #407623;color:#8a5a00;font-weight:700">{{LBL_MED}}</td>';
+  var trDet='<tr style="font-size:9px;background:#fffdf4">'
+    +'<td style="border:1px solid #000"></td>'
+    +'<td style="border:1px solid #000"></td>'
+    +'<td style="text-align:right;padding:2px 4px;border:1px solid #000;border-right:2px solid #407623;color:#8a5a00;font-weight:700">{{LBL_DET}}</td>';
+  // Una celda de medida: el número con su unidad en chiquito. Vacío = raya.
+  function _medCelda(med, etiqueta, span, esDet){
+    var v = med ? String((esDet ? med.r : med.q) || '').trim() : '';
+    var csp = (span > 1) ? (' colspan="' + span + '"') : '';
+    if(!v) return '<td'+csp+' style="text-align:center;border:1px solid #000;color:#bbb">\u2014</td>';
+    var uni = (!esDet && etiqueta) ? ('<span style="font-size:8px;color:#5b6673;font-weight:400"> '+esc(etiqueta.toLowerCase())+'</span>') : '';
+    return '<td'+csp+' style="text-align:center;border:1px solid #000;color:#8a5a00;font-weight:700">'+esc(v)+uni+'</td>';
+  }
   var trEntry='<tr style="font-size:9px;background:#f9f9f9">'
     +'<td style="border:1px solid #000"></td>'
     +'<td style="border:1px solid #000"></td>'
@@ -13111,32 +13592,20 @@ function buildPDFWindow(vals, wks, ep, hp, cp, ausArr, grpActsArr){
     // Si falta col P: la celda TOTAL ahora muestra warning visible (antes silenciaba acres y dejaba solo puertas).
     var _rAcVD81 = _isVD81 ? getAcresFromPuertas(_actC81, tot) : null;
     if(_isVD81 && tot>0){
-      if(_rAcVD81 && _rAcVD81.ok){
-        totLbl = '<span style="font-size:9px;color:#0f6e56;display:block">'+_rAcVD81.acres.toFixed(4)+' acres</span>'
-               + '<span style="font-size:11px">'+smartNum(tot)+' puertas</span>';
-      } else {
-        // Paridad con invoice — warning visible en lugar de silenciar acres
-        totLbl = '<span style="font-size:9px;color:#c0392b;display:block">'+(_rAcVD81?_rAcVD81.error:'⚠️ Falta FactorAcres')+'</span>'
-               + '<span style="font-size:11px">'+smartNum(tot)+' puertas</span>';
-      }
+      // V2_0_0_23: el acre (y el aviso de que falta el factor) bajaron al renglon Medida.
+      // El TOTAL dice una sola cosa: las puertas.
+      totLbl = '<span style="font-size:11px">'+smartNum(tot)+' puertas</span>';
     }
     // V20_08: si es Hora y multi-shift, emitir total por sub-columna (2h/5h).
     // V20_26: si es no-Hora (Daywork/Ficha/Caja/$) y multi-shift, también emitir total qty por sub-col.
     if(_isVD81 && _NS>1){
       // V20_131 FASE 3: VarDoor multi-shift → 1 celda colspan=N. Si falta col P, muestra warning visible.
+      // V2_0_0_23: _vdAcRow/_vdAcColor eliminadas — el acre (y el aviso de que falta el factor)
+      // ya no se imprimen aqui, bajaron al renglon Medida. Dejarlas calculandose sin usarse solo
+      // confundiria al siguiente que lea esto.
       var _vdPzRow = (tot>0 ? smartNum(tot)+' puertas' : '');
-      var _vdAcRow = '';
-      var _vdAcColor = '#0f6e56';
-      if(tot>0){
-        if(_rAcVD81 && _rAcVD81.ok){
-          _vdAcRow = _rAcVD81.acres.toFixed(4)+' acres';
-        } else {
-          _vdAcRow = (_rAcVD81?_rAcVD81.error:'⚠️ Falta FactorAcres');
-          _vdAcColor = '#c0392b';
-        }
-      }
       trTotal+='<td colspan="'+_NS+'" style="text-align:center;border:1px solid #000;border-top:3px solid #1a2b8c;color:#1a2b8c;font-weight:700;line-height:1.5">'
-        + (_vdAcRow?'<span style="font-size:9px;color:'+_vdAcColor+';display:block">'+_vdAcRow+'</span>':'')
+        + '' /* V2_0_0_23: el acre bajo al renglon Medida */
         + (_vdPzRow?'<span style="font-size:11px">'+_vdPzRow+'</span>':'')
         + '</td>';
     } else if(col4.hr && _NS>1){
@@ -13239,6 +13708,60 @@ function buildPDFWindow(vals, wks, ep, hp, cp, ausArr, grpActsArr){
     }
     trPrice+='<td'+_csp+' style="text-align:center;border:1px solid #000;color:#c0392b;font-weight:700">'+unitPr+'</td>';
     trLabor+='<td'+_csp+' style="text-align:center;border:1px solid #000;color:#3a7fd4;font-size:9px">'+laborLbl+'</td>';
+    // V2_0_0_22: Medida/Detalle por sub-columna; los turnos que comparten el dato van fusionados.
+    try {
+      var _actRefM = (col4.ai != null && ACTS[col4.ai]) ? ACTS[col4.ai] : null;
+      if(!_actRefM && col4.esName && typeof _resolveActByName==='function') _actRefM = _resolveActByName(col4.esName);
+      var _LM = (typeof _medLabels==='function') ? _medLabels(_actRefM) : {q:'',r:''};
+      var _medsCol = [];
+      if(_NS > 1){
+        for(var _ms=0; _ms<_NS; _ms++){
+          _medsCol.push(_medDeColShift(col4, wks, (col4.shifts[_ms].ini||'')+'|'+(col4.shifts[_ms].fin||'')));
+        }
+      } else {
+        _medsCol.push(_medDeColShift(col4, wks, null));
+      }
+      // V2_0_0_23: el acre calculado de una columna VarDoor es UNO para toda la columna (sale del
+      // total de puertas), asi que si nadie capturo nada se imprime en una celda que la abarca.
+      var _acCalcI = null;
+      try {
+        if(_actRefM && (_actRefM.variable||'').toLowerCase()==='vardoor' && tot>0 &&
+           typeof getAcresFromPuertas==='function'){
+          var _rI = getAcresFromPuertas(_actRefM, tot);
+          if(_rI && _rI.ok && _rI.acres>0) _acCalcI = { txt:_rI.acres.toFixed(4)+' acres', err:false };
+          else if(_rI && !_rI.ok) _acCalcI = { txt:(_rI.error||'\u26a0\ufe0f Falta FactorAcres'), err:true };
+        }
+      } catch(eAI){}
+      var _hayCapI = false;
+      for(var _ck=0; _ck<_medsCol.length; _ck++){ if(_medsCol[_ck] && _medsCol[_ck].q){ _hayCapI = true; break; } }
+      if(_hayCapI && _acCalcI && !_acCalcI.err){
+        try { console.warn('[eBerry] "' + (col4.esName||col4.label) + '" tiene DOS medidas: calculada = ' +
+             _acCalcI.txt + ' \u00b7 capturada (col Q) \u2014 se imprime la CAPTURADA. ' +
+             'Si no la quieres, vacia la col Q en el MASTER.'); } catch(e){}
+      }
+      var _fus = _medFusionar(_medsCol);
+      if(!_hayCapI && _acCalcI){
+        // nadie capturo: el acre calculado ocupa toda la columna
+        var _cspI = (_NS>1) ? (' colspan="'+_NS+'"') : '';
+        trMed += '<td'+_cspI+' style="text-align:center;border:1px solid #000;font-weight:700;color:' +
+                 (_acCalcI.err?'#c0392b':'#0f6e56') + '">' + _acCalcI.txt + '</td>';
+        _hayMed = true; if(!_acCalcI.err) _medLbls['Acres'] = 1;
+        for(var _fd=0; _fd<_fus.length; _fd++){
+          trDet += _medCelda(_fus[_fd].med, _LM.r, _fus[_fd].span, true);
+          if(_fus[_fd].med && _fus[_fd].med.r){ _hayDet = true; if(_LM.r) _detLbls[_LM.r] = 1; }
+        }
+      } else {
+        for(var _fi=0; _fi<_fus.length; _fi++){
+          trMed += _medCelda(_fus[_fi].med, _LM.q, _fus[_fi].span, false);
+          trDet += _medCelda(_fus[_fi].med, _LM.r, _fus[_fi].span, true);
+          if(_fus[_fi].med && _fus[_fi].med.q){ _hayMed = true; if(_LM.q) _medLbls[_LM.q] = 1; }
+          if(_fus[_fi].med && _fus[_fi].med.r){ _hayDet = true; if(_LM.r) _detLbls[_LM.r] = 1; }
+        }
+      }
+    } catch(eM4){
+      console.warn('[V2_0_0_22] medida columna individual:', eM4 && eM4.message);
+      for(var _mf=0; _mf<(_NS||1); _mf++){ trMed+='<td style="border:1px solid #000"></td>'; trDet+='<td style="border:1px solid #000"></td>'; }
+    }
     // Entrada/Salida: N celdas con horario de cada sub-shift
     // V20_193: Daywork con turnos reales → 1 celda con los turnos APILADOS (la columna no se subdivide,
     // _NS=1). Antes la celda salía vacía porque col.shifts[0]={ini:'',fin:''} (bypass V20_183).
@@ -13268,9 +13791,9 @@ function buildPDFWindow(vals, wks, ep, hp, cp, ausArr, grpActsArr){
     trLunchIni+='<td'+_csp+' style="text-align:center;border:1px solid #000;color:#8a6d1a">'+_lonITxt+'</td>';
     trLunchFin+='<td'+_csp+' style="text-align:center;border:1px solid #000;color:#8a6d1a">'+_lonFTxt+'</td>';
   }
-  if(cp&&cp.length&&cajasT){ trTotal+='<td style="border-top:3px solid #1a2b8c"></td>'; trPrice+='<td></td>'; trLabor+='<td></td>'; trEntry+='<td></td>'; trExit+='<td></td>'; trLunchIni+='<td></td>'; trLunchFin+='<td></td>'; }
-  if(ep&&ep.length&&estA&&estAn){ trTotal+='<td style="border-top:3px solid #1a2b8c"></td>'; trPrice+='<td></td>'; trLabor+='<td></td>'; trEntry+='<td></td>'; trExit+='<td></td>'; trLunchIni+='<td></td>'; trLunchFin+='<td></td>'; }
-  if(hp&&hp.length&&hilA&&hilAn){ trTotal+='<td style="border-top:3px solid #1a2b8c"></td>'; trPrice+='<td></td>'; trLabor+='<td></td>'; trEntry+='<td></td>'; trExit+='<td></td>'; trLunchIni+='<td></td>'; trLunchFin+='<td></td>'; }
+  if(cp&&cp.length&&cajasT){ trTotal+='<td style="border-top:3px solid #1a2b8c"></td>'; trPrice+='<td></td>'; trLabor+='<td></td>'; trEntry+='<td></td>'; trExit+='<td></td>'; trLunchIni+='<td></td>'; trLunchFin+='<td></td>'; trMed+='<td></td>'; trDet+='<td></td>'; }
+  if(ep&&ep.length&&estA&&estAn){ trTotal+='<td style="border-top:3px solid #1a2b8c"></td>'; trPrice+='<td></td>'; trLabor+='<td></td>'; trEntry+='<td></td>'; trExit+='<td></td>'; trLunchIni+='<td></td>'; trLunchFin+='<td></td>'; trMed+='<td></td>'; trDet+='<td></td>'; }
+  if(hp&&hp.length&&hilA&&hilAn){ trTotal+='<td style="border-top:3px solid #1a2b8c"></td>'; trPrice+='<td></td>'; trLabor+='<td></td>'; trEntry+='<td></td>'; trExit+='<td></td>'; trLunchIni+='<td></td>'; trLunchFin+='<td></td>'; trMed+='<td></td>'; trDet+='<td></td>'; }
   // V20_06: Meta rows de grupales con subdivisión por grpParents (label+finca).
   // V20_30: TOTAL ahora emite N celdas separadas (una por sub), igual que V20_26 hizo con individuales.
   // Pago/Labor mantienen colspan (valor compartido). Entrada/Salida ya eran N celdas.
@@ -13286,6 +13809,8 @@ function buildPDFWindow(vals, wks, ep, hp, cp, ausArr, grpActsArr){
     // T1 663.33 puertas junto a 3.50 acres, T2 56.67 puertas junto a 8.50. Aquí se saca la
     // proporción una sola vez para todo el bloque: acres_impresos = acres_totales × (lo impreso /
     // el total del bloque). La suma de acres no cambia, solo se acomoda igual que las puertas.
+    // V2_0_0_23: el acre calculado de cada sub se guarda aqui y baja al renglon Medida.
+    var _acCalcG = [];
     var _acScale = null;
     if(_gp2._v79Any && _gp2._v79Printed){
       var _sumAc = 0, _sumPu = 0;
@@ -13327,8 +13852,9 @@ function buildPDFWindow(vals, wks, ep, hp, cp, ausArr, grpActsArr){
         if(_subT.isAcresInput && _subGrAc>0){ _acTxt=smartNum(_subGrAc)+' acres'; }
         else if(_subAcRes && _subAcRes.ok && _subAcRes.acres>0) _acTxt=smartNum(_subAcRes.acres)+' acres';
         else if(_subAcRes && !_subAcRes.ok && _subTotVal>0){ _acTxt=_subAcRes.error; _acCol='#c0392b'; }
-        _subTotalCell=(_acTxt?'<span style="font-size:9px;color:'+_acCol+';display:block">'+_acTxt+'</span>':'')
-          +'<span style="font-size:11px">'+smartNum(_subTotVal)+' puertas</span>';
+        // V2_0_0_23: el acre YA NO va encimado en el TOTAL — baja al renglon Medida.
+        _acCalcG[gs2_] = _acTxt ? { txt:_acTxt, err:(_acCol !== '#0f6e56') } : null;
+        _subTotalCell='<span style="font-size:11px">'+smartNum(_subTotVal)+' puertas</span>';
       } else if(_gp2.ct==='cajas'){
         _subTotalCell='<span style="font-size:11px">'+smartNum(_subTotVal)+' boxes</span>';
       } else if(_gp2.ct==='hora'){
@@ -13344,6 +13870,46 @@ function buildPDFWindow(vals, wks, ep, hp, cp, ausArr, grpActsArr){
     // Pago Unit y Labor siguen con colspan (valor único compartido entre subs)
     trPrice+='<td'+_gcsp+' style="text-align:center;color:#c0392b;font-weight:700;border:1px solid #000">$'+_gp2.precio.toFixed(2)+'</td>';
     trLabor+='<td'+_gcsp+' style="text-align:center;border:1px solid #000;color:#3a7fd4;font-size:9px">'+(_gp2.finca||'')+'</td>';
+    // V2_0_0_22: cada sub grupal ya trae su `med` (se copió de g.vars._med al armar la columna).
+    try {
+      var _actRefG = null;
+      for(var _rg=0; _rg<(GRUPAL_ACTS||[]).length; _rg++){
+        var _ga2 = GRUPAL_ACTS[_rg];
+        if(_ga2 && (_ga2.en === _gp2.label || _ga2.es === _gp2.label)){ _actRefG = _ga2; break; }
+      }
+      var _LG = (typeof _medLabels==='function') ? _medLabels(_actRefG) : {q:'',r:''};
+      var _medsG = [];
+      for(var _mg=0; _mg<_NG2; _mg++) _medsG.push(_gp2.subs[_mg] ? _gp2.subs[_mg].med : null);
+      var _fusG = _medFusionar(_medsG);
+      var _ixG = 0;
+      for(var _fg=0; _fg<_fusG.length; _fg++){
+        var _mG = _fusG[_fg].med;
+        var _acG = _acCalcG[_ixG] || null;   // el acre que la app calculo para esta sub
+        // V2_0_0_23: manda lo que capturo el surquero; si no capturo nada, se imprime el calculado.
+        if(_mG && _mG.q){
+          if(_acG && !_acG.err){
+            try { console.warn('[eBerry] "' + _gp2.label + '" tiene DOS medidas: calculada = ' +
+                 _acG.txt + ' \u00b7 capturada (col Q) = ' + _mG.q +
+                 ' \u2014 se imprime la CAPTURADA. Si no la quieres, vacia la col Q en el MASTER.'); } catch(e){}
+          }
+          trMed += _medCelda(_mG, _LG.q, _fusG[_fg].span, false);
+          _hayMed = true; if(_LG.q) _medLbls[_LG.q] = 1;
+        } else if(_acG){
+          var _cspG = (_fusG[_fg].span>1) ? (' colspan="'+_fusG[_fg].span+'"') : '';
+          trMed += '<td'+_cspG+' style="text-align:center;border:1px solid #000;font-weight:700;color:' +
+                   (_acG.err?'#c0392b':'#0f6e56') + '">' + _acG.txt + '</td>';
+          _hayMed = true; if(!_acG.err) _medLbls['Acres'] = 1;
+        } else {
+          trMed += _medCelda(null, _LG.q, _fusG[_fg].span, false);
+        }
+        trDet += _medCelda(_mG, _LG.r, _fusG[_fg].span, true);
+        if(_mG && _mG.r){ _hayDet = true; if(_LG.r) _detLbls[_LG.r] = 1; }
+        _ixG += _fusG[_fg].span;
+      }
+    } catch(eMG){
+      console.warn('[V2_0_0_22] medida columna grupal:', eMG && eMG.message);
+      for(var _mf2=0; _mf2<_NG2; _mf2++){ trMed+='<td style="border:1px solid #000"></td>'; trDet+='<td style="border:1px solid #000"></td>'; }
+    }
     // Entrada/Salida: N celdas con horario de cada sub-shift
     for(var gs3_=0;gs3_<_NG2;gs3_++){
       var _sub=_gp2.subs[gs3_];
@@ -13357,7 +13923,15 @@ function buildPDFWindow(vals, wks, ep, hp, cp, ausArr, grpActsArr){
     }
   }
   trTotal+='</tr>'; trPrice+='</tr>'; trLabor+='</tr>'; trEntry+='</tr>'; trExit+='</tr>'; trLunchIni+='</tr>'; trLunchFin+='</tr>';
-  var metaRows=trTotal+trPrice+trLabor+trEntry+trExit+trLunchIni+trLunchFin;
+  trMed+='</tr>'; trDet+='</tr>';
+  // V2_0_0_22: el rótulo se resuelve ahora, que ya se sabe qué midió cada columna.
+  // Una sola etiqueta en toda la hoja → esa palabra ("Acres"). Varias → el genérico, y la unidad
+  // va dentro de cada celda. Serafín 2026-10-02: "¿qué pasa cuando combinamos acres y bines?".
+  var _kMed = Object.keys(_medLbls), _kDet = Object.keys(_detLbls);
+  trMed = trMed.replace('{{LBL_MED}}', esc(_kMed.length === 1 ? _kMed[0] : 'Medida'));
+  trDet = trDet.replace('{{LBL_DET}}', esc(_kDet.length === 1 ? _kDet[0] : 'Detalle'));
+  // Si nadie capturó nada, los renglones no se imprimen: la hoja queda igual que siempre.
+  var metaRows=trTotal+trPrice+trLabor+(_hayMed?trMed:'')+(_hayDet?trDet:'')+trEntry+trExit+trLunchIni+trLunchFin;
 
   // ── Upsilon2: ordenar workers por actividad principal (columna más a la izq donde tienen datos)
   // Esto agrupa visualmente: Bus Driver juntos, Equip Op juntos, Harvest juntos, etc.
@@ -14754,6 +15328,12 @@ function _sendToSheetsCore() {
   } catch(e){ console.warn('[V2_0_0_5] guard filas en blanco:', e); }
 
   _logEnvio(payload, 'enviando', 'diario'); // V2_0_0_5: grabar QUE se manda
+  // V2_0_0_24: las medidas (col Q y R del MASTER) viajan con el dia, a su pestana propia.
+  try {
+    var _meds = _medRecolectar();
+    if(_meds.length) payload.medidas = _meds;
+  } catch(eMdP){ console.warn('[V2_0_0_24] medidas al payload:', eMdP && eMdP.message); }
+
   // V2_0_0_12: el odometro del bus viaja con el dia (pestana propia en el MASTER, no en
   // FIELD_DROP: es UN dato del dia, no de cada fila — repetirlo en las 24 filas de la
   // cuadrilla ensuciaria el log). Solo se manda si al menos hay salida.
@@ -15482,7 +16062,9 @@ function renderGrpActs(){
     var resHtml = '<div class="gr2 gaR" id="gaR'+gi+'" style="display:none"></div>';
 
     card.innerHTML = headHtml
-      + '<div class="acc-act-body gaBody">' + removeBtn + varsHtml + _grpLoncheHtml(gi, g) + partHtml + resHtml + '</div>';
+      + '<div class="acc-act-body gaBody">' + removeBtn + varsHtml + _grpLoncheHtml(gi, g)
+        + _medGrpHtml(gi, g, act) // V2_0_0_21: Medida/Detalle de la grupal
+        + partHtml + resHtml + '</div>';
     list.appendChild(card);
 
     // Render participantes
