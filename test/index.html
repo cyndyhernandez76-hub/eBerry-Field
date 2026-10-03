@@ -35,7 +35,7 @@
 </script>
 <script>
 // V20_21: check versión + ackedVersion para romper loop infinito cuando version.txt≠APP_VERSION
-window.APP_VERSION = 'V2_0_0_26';
+window.APP_VERSION = 'V2_0_0_27';
 (function(){
   // V20_77: AUTO-LIMPIEZA de _ackedVersion envenenado.
   // Bug detectado: surqueros tocaban "Actualizar ahora" pero el SW interceptaba el reload con HTML viejo.
@@ -8306,6 +8306,9 @@ function mkActRow(wid_,ai,_cont){
       }
     }
   }
+  // V2_0_0_27: Medida (col Q) y Detalle (col R) — el tercer camino de captura.
+  try { _medIndRender(div, act, wid_, ai); }
+  catch(eMI){ console.warn('[V2_0_0_27] medida en tarjeta:', eMI && eMI.message); }
   var sb=document.createElement('div'); sb.className='sub'; sb.id='sb'+wid_+'_'+ai; sb.style.display='none';
   div.appendChild(sb);
   cont.appendChild(div);
@@ -11686,6 +11689,85 @@ function _medGrpElegirRef(gi, mid){
   }
   autoSave();
   renderGrpActs();
+}
+
+// ── V2_0_0_27: la misma caja, en la tarjeta del TRABAJADOR (actividad individual) ──
+// Era el tercer camino de captura y faltaba: el modal "Asignar a varios" y las grupales ya la
+// tenian, pero agregar o cambiar la actividad desde la tarjeta no mostraba nada.
+function _medIndInput(wi, ai, campo, valor){
+  var w = getW(wi); if(!w || !w.acts[ai]) return;
+  var a = w.acts[ai];
+  var v = String(valor||'').trim();
+  if(!a._med || !a._med.mid) a._med = { mid: _medNuevoId(), q:'', r:'' };
+  a._med[campo] = v;
+  _medPropagar(a._med.mid, campo, v);   // compartir es el MISMO dato
+  autoSave();
+}
+
+function _medIndElegirRef(wi, ai, mid){
+  var w = getW(wi); if(!w || !w.acts[ai]) return;
+  var a = w.acts[ai];
+  if(!mid){
+    a._med = { mid: _medNuevoId(), q:'', r:'' };
+  } else {
+    var act = (a.ai != null && ACTS[a.ai]) ? ACTS[a.ai] : null;
+    var previos = _medBloquesHoy(act || { es: a._actEs || a.esName });
+    for(var i=0; i<previos.length; i++){
+      if(previos[i].mid === mid){ a._med = { mid: mid, q: previos[i].q, r: previos[i].r }; break; }
+    }
+  }
+  autoSave();
+  try { var _c = gEl('ac'+wi); if(_c){ _c.innerHTML=''; for(var k=0;k<w.acts.length;k++) mkActRow(wi,k); } } catch(e){}
+}
+
+// Pinta la caja dentro de la tarjeta. No devuelve nada si el MASTER no definio Q ni R.
+function _medIndRender(div, act, wi, ai){
+  if(!div || !act || !_medTieneCampos(act)) return;
+  var w = getW(wi); if(!w || !w.acts[ai]) return;
+  var a = w.acts[ai];
+  var L = _medLabels(act);
+  var med = a._med || null;
+  var previos = [];
+  try {
+    var todos = _medBloquesHoy(act);
+    for(var i=0; i<todos.length; i++){
+      if(med && med.mid === todos[i].mid) continue;
+      previos.push(todos[i]);
+    }
+  } catch(e){}
+
+  var h = '<div style="font-size:10px;font-weight:700;color:#8a5a00;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">' +
+          esc(L.q || L.r) + (L.q && L.r ? (' / ' + esc(L.r)) : '') + '</div>';
+  if(previos.length){
+    h += '<div style="font-size:11px;color:#8a5a00;margin-bottom:4px">Ya hay otro turno de esta actividad hoy:</div>';
+    for(var k=0; k<previos.length; k++){
+      var p = previos[k], val = p.q || p.r || '';
+      var sel = !!(med && med.mid === p.mid);
+      h += '<button type="button" onclick="_medIndElegirRef(' + wi + ',' + ai + ',\'' + p.mid + '\')" ' +
+           'style="display:block;width:100%;padding:7px;margin-bottom:4px;border-radius:7px;font-size:11.5px;font-weight:700;cursor:pointer;' +
+           'border:1.5px solid #1a3a5c;background:' + (sel?'#1a3a5c':'#fff') + ';color:' + (sel?'#fff':'#1a3a5c') + '">' +
+           'Los mismos de T' + (k+1) + (val ? (' \u00b7 ' + esc(val)) : '') + '</button>';
+    }
+    h += '<button type="button" onclick="_medIndElegirRef(' + wi + ',' + ai + ',null)" ' +
+         'style="display:block;width:100%;padding:7px;margin-bottom:7px;border-radius:7px;font-size:11.5px;font-weight:700;cursor:pointer;' +
+         'border:1.5px solid #b3541e;background:#fff;color:#b3541e">Otros</button>';
+  }
+  if(L.q){
+    h += '<label style="display:block;font-size:10px;font-weight:700;color:#8a5a00;margin-bottom:3px">' + esc(L.q) + '</label>' +
+         '<input type="number" step="any" inputmode="decimal" value="' + esc(med && med.q || '') + '" ' +
+         'oninput="_medIndInput(' + wi + ',' + ai + ',\'q\', this.value)" placeholder="' + esc(L.q) + '" ' +
+         'style="width:100%;padding:8px;border:1.5px solid var(--bd);border-radius:7px;font-size:16px;min-height:40px;text-align:center;font-weight:700;margin-bottom:' + (L.r?'7px':'0') + '">';
+  }
+  if(L.r){
+    h += '<label style="display:block;font-size:10px;font-weight:700;color:#8a5a00;margin-bottom:3px">' + esc(L.r) + '</label>' +
+         '<input type="text" maxlength="60" value="' + esc(med && med.r || '') + '" ' +
+         'oninput="_medIndInput(' + wi + ',' + ai + ',\'r\', this.value)" placeholder="' + esc(L.r) + '" ' +
+         'style="width:100%;padding:8px;border:1.5px solid var(--bd);border-radius:7px;font-size:16px;min-height:40px">';
+  }
+  var caja = document.createElement('div');
+  caja.style.cssText = 'margin-top:8px;padding:9px;border:1.5px solid #d8a13a;border-radius:9px;background:#fffdf6';
+  caja.innerHTML = h;
+  div.appendChild(caja);
 }
 
 // HTML de la caja dentro de la tarjeta grupal ('' si el MASTER no definió Q ni R)
