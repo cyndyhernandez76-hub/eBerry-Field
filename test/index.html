@@ -35,7 +35,7 @@
 </script>
 <script>
 // V20_21: check versión + ackedVersion para romper loop infinito cuando version.txt≠APP_VERSION
-window.APP_VERSION = 'V2_0_0_27';
+window.APP_VERSION = 'V2_0_0_28';
 (function(){
   // V20_77: AUTO-LIMPIEZA de _ackedVersion envenenado.
   // Bug detectado: surqueros tocaban "Actualizar ahora" pero el SW interceptaba el reload con HTML viejo.
@@ -17135,7 +17135,14 @@ function setMotivoClose(idx, motivo){
 // ── LOCAL CACHE (instant load on return visits) ──
 // ✅ v4.2: Cambiamos la key del caché para forzar recarga fresca
 // (borra el caché viejo que no tenía el campo "modo")
-var CACHE_KEY = 'eb_appdata_v4';  // V20_86: bump para invalidar cache pre-V20_71 (sin col P FactorAcres)
+// V2_0_0_28: bump a v5 para invalidar el catalogo cacheado SIN las columnas Q y R.
+// Sin esto, el telefono seguia leyendo su copia vieja: act.Q llegaba vacio, la caja de
+// Medida/Detalle no aparecia al capturar y el PDF no tenia nada que imprimir — aunque el MASTER
+// y la version de la app estuvieran correctos. Reportado por Serafin 2026-10-02 (Atlantic,
+// "Siembra de calabaza": el PDF salio sin los renglones).
+// REGLA: cada vez que el catalogo cambie de FORMA (columnas nuevas), hay que bumpear esta llave.
+// Ya habia pasado en V20_86 con la col P. Ver [[feedback_cache_navegador_invalidar_bump_version]].
+var CACHE_KEY = 'eb_appdata_v5';
 
 function saveCache(workers, acts, lideres){
   try{
@@ -17813,7 +17820,7 @@ function runRecoveryDiagnostic(){
         else if(k==='pr9') tipo='estado-legacy';
         else if(k.indexOf('eb_semanal_v1')===0) tipo='semanal';
         else if(k==='eb_offline_queue') tipo='cola-envio';
-        else if(k.startsWith('eb_archAcked_')||k==='eb_appdata_v3'||k==='eb_fincas_cache'||k==='eb_facethumbs_v1'||k==='eb_device_id'||k==='eb_last_send_ts') tipo='cache';
+        else if(k.startsWith('eb_archAcked_')||k==='eb_appdata_v3'||k==='eb_appdata_v4'||k==='eb_fincas_cache'||k==='eb_facethumbs_v1'||k==='eb_device_id'||k==='eb_last_send_ts') tipo='cache';
         var huerfano = /pr9_u_.*%20|pr9_u_$|pr9_u__/.test(k);
         if(huerfano) tipo='huerfano';
         found.push({key:k, fecha:fecha, surquero:surquero, workers:workers, kb:kb, tipo:tipo, huerfano:huerfano});
