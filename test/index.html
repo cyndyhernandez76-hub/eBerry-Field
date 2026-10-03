@@ -35,7 +35,7 @@
 </script>
 <script>
 // V20_21: check versión + ackedVersion para romper loop infinito cuando version.txt≠APP_VERSION
-window.APP_VERSION = 'V2_0_0_28';
+window.APP_VERSION = 'V2_0_0_30';
 (function(){
   // V20_77: AUTO-LIMPIEZA de _ackedVersion envenenado.
   // Bug detectado: surqueros tocaban "Actualizar ahora" pero el SW interceptaba el reload con HTML viejo.
@@ -10983,6 +10983,16 @@ function editActivityGroup(groupKey){
     // V1_0_0_14 FIX: usar Array.isArray (no .length) para RESPETAR el lonche quitado ([] = sin lonche).
     // Antes [].length===0 caía al default → el lonche que el surquero QUITÓ reaparecía al editar.
     _assignLonches = (firstAct && Array.isArray(firstAct.lonches)) ? JSON.parse(JSON.stringify(firstAct.lonches)) : [{ini:'12:00',fin:'12:30'}];
+    // V2_0_0_29: precargar la Medida/Detalle que la actividad YA tenia. Sin esto el modal de
+    // edicion abria en blanco y, al guardar, se perdia lo que hubiera — el surquero corregia un
+    // olvido y la app se lo tiraba sin decir nada.
+    try {
+      if(firstAct && firstAct._med && firstAct._med.mid){
+        _assignMed = { mid: firstAct._med.mid, q: firstAct._med.q || '', r: firstAct._med.r || '', ref: null };
+      } else {
+        _medReset();
+      }
+    } catch(eME){ console.warn('[V2_0_0_29] precargar medida al editar:', eME && eME.message); }
     try { renderAssignLonches(); } catch(eL){}
     // Pre-poblar finca (después de onAssignActChange que la pintó)
     var fincaSel = gEl('assignFincaSel');
@@ -11057,6 +11067,15 @@ function _saveEditedActivityGroup(){
       if(!isNaN(val) && val > 0) commonVars[col] = val;
     }
   } catch(e){}
+
+  // V2_0_0_29: resolver la Medida/Detalle UNA vez para toda la edicion (es de la actividad, no
+  // de cada trabajador). `_medParaGuardar` tambien cubre el caso de que el surquero haya elegido
+  // "los mismos de T1" dentro del modal de edicion.
+  var _medEditado = null;
+  try {
+    var _actMedEd = (newAi != null && ACTS[newAi]) ? ACTS[newAi] : null;
+    _medEditado = _medParaGuardar(_actMedEd, _medBloquesHoy(_actMedEd));
+  } catch(eMEd){ console.warn('[V2_0_0_29] medida al editar:', eMEd && eMEd.message); }
 
   var orig = _editingActivityGroup;
   var origAiNum = (orig.ai != null) ? orig.ai : null; // si null → matchByName
@@ -11161,6 +11180,10 @@ function _saveEditedActivityGroup(){
       // V20_187: shifts incluye turnos extras del modal (deep copy)
       shifts: JSON.parse(JSON.stringify(_newShifts)),
       inputs: preserved && preserved.inputs ? preserved.inputs : JSON.parse(JSON.stringify(commonVars)),
+      // V2_0_0_29: la Medida/Detalle sobrevive a la edicion. Vale lo que quedo en el modal (que
+      // viene precargado con lo anterior), y si ahi no hay nada se conserva lo que la actividad
+      // ya traia. Antes este objeto no la copiaba y se perdia en cada edicion.
+      _med: _medEditado ? JSON.parse(JSON.stringify(_medEditado)) : ((preserved && preserved._med) ? JSON.parse(JSON.stringify(preserved._med)) : null),
       lonches: JSON.parse(JSON.stringify(_assignLonches)) // V1_0_0_14 FIX: guardar lonche(s) editado(s) en la act FINAL — antes solo iba al tempActs de validación y se perdía → editar reseteaba al default
     };
     var newIdx = wTarget.acts.length;
@@ -12024,6 +12047,17 @@ function confirmAssignMany(){
     }
   } catch(e){}
 
+  // V2_0_0_30 FIX: esto DEBE quedar ANTES del bucle. Estaba despues, y por hoisting `_medGuardar`
+  // valia `undefined` cuando se creaban las actividades -> `_med` quedaba siempre en null y lo que
+  // el surquero tecleaba en este modal se perdia en silencio. Si alguna vez hay que moverlo, que
+  // sea hacia ARRIBA, nunca abajo del `w.acts.push(newAct)`.
+  // Es UNA medida para toda la asignacion, no una por trabajador: "10 acres" es del trabajo.
+  // `_medBloquesHoy` se llama aqui a proposito, para que vea los turnos que ya existen y no los
+  // que esta asignacion esta por crear.
+  var _medGuardar = null;
+  try { _medGuardar = _medParaGuardar(act, _medBloquesHoy(act)); }
+  catch(eMedG){ console.warn('[V2_0_0_20] medida al asignar:', eMedG && eMedG.message); }
+
   var n = 0;
   for(var i=0; i<_assignSelectedIds.length; i++){
     var w = getW(_assignSelectedIds[i]);
@@ -12065,12 +12099,6 @@ function confirmAssignMany(){
   // de que pasaran los 800ms, localStorage estaba stale y buildPDFWindow leía workers con
   // _payType vacío → columnas no matcheaban → PDF salía con horas vacías. "Esperar un rato"
   // arreglaba porque se completaba el timeout. saveQuiet() persiste de inmediato.
-  // V2_0_0_20: resolver la medida ANTES del bucle — es una sola para toda la asignación, no una
-  // por trabajador. Se calcula aquí porque _medBloquesHoy mira los acts que ya existen.
-  var _medGuardar = null;
-  try { _medGuardar = _medParaGuardar(act, _medBloquesHoy(act)); }
-  catch(eMedG){ console.warn('[V2_0_0_20] medida al asignar:', eMedG && eMedG.message); }
-
   // V2_0_0_16: si el odometro del dia ya esta cerrado y esta actividad es la del busero, dejarle
   // las millas puestas AHORA. Antes solo se sugeria al cerrar el odometro (y ese dia la actividad
   // todavia no existia) o al pintar la tarjeta clasica — pero el surquero captura en la vista por
