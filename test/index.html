@@ -35,7 +35,7 @@
 </script>
 <script>
 // V20_21: check versión + ackedVersion para romper loop infinito cuando version.txt≠APP_VERSION
-window.APP_VERSION = 'V2_0_0_25';
+window.APP_VERSION = 'V2_0_0_26';
 (function(){
   // V20_77: AUTO-LIMPIEZA de _ackedVersion envenenado.
   // Bug detectado: surqueros tocaban "Actualizar ahora" pero el SW interceptaba el reload con HTML viejo.
@@ -3714,7 +3714,11 @@ function loadSheetsData(){
           modo: modo,  // 'Individual' | 'Grupal'
           // V20_29: columnas G-M del motor data-driven (FieldSync v5.8+)
           variable: t.variable||'', H: t.H, I: t.I, J: t.J, K: t.K, L: t.L, M: t.M,
-          N: t.N, O: t.O, P: t.P  // V20_71 Fase B: cols N, O, P=FactorAcres
+          N: t.N, O: t.O, P: t.P,  // V20_71 Fase B: cols N, O, P=FactorAcres
+          // V2_0_0_26 FIX: Q y R se perdian aqui. El backend v5.55 las manda, pero la app no las
+          // copiaba al catalogo, asi que act.Q siempre era undefined y la caja de Medida/Detalle
+          // NUNCA se dibujaba — aunque en el MASTER estuviera todo bien puesto.
+          Q: t.Q || '', R: t.R || ''
         });
       }
       // V10: Diagnóstico — cuántas actividades cargaron por rancho
@@ -17298,7 +17302,8 @@ function refreshDataBackground(){
         var modo=(t.modo||'Individual').trim();
         // V20_71 Fase B: incluir cols G-P del motor también en refresh background
         ALL_ACTS.push({farm:t.farm,es:t.es,en:t.en||t.es,tipo:tipoNorm,payType:t.tipo||'',p:(t.rate || (tipoNorm==='Hora'?16.23:0)),hr:tipoNorm==='Hora',modo:modo,
-          variable:t.variable||'', H:t.H, I:t.I, J:t.J, K:t.K, L:t.L, M:t.M, N:t.N, O:t.O, P:t.P});
+          variable:t.variable||'', H:t.H, I:t.I, J:t.J, K:t.K, L:t.L, M:t.M, N:t.N, O:t.O, P:t.P,
+          Q:t.Q||'', R:t.R||''});  // V2_0_0_26 FIX: sin esto, Medida/Detalle nunca aparecen
       }
       saveCache(ALL_WORKERS, ALL_ACTS, LIDERES);
       // Delta2: si estábamos en FALLBACK y recuperamos datos, notificar
