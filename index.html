@@ -24,7 +24,7 @@
 </script>
 <script>
 // V20_21: check versión + ackedVersion para romper loop infinito cuando version.txt≠APP_VERSION
-window.APP_VERSION = 'V21_01_0c'; // V21_01_0c: HOTFIX hauler fuel submit — default vehicle to trip, stamp trip_id, fix tab routing, surface errors.
+window.APP_VERSION = 'V21_01_2'; // V21_01_2: Foreman Faltas/Refusals screen — log_absence_from_pwa, offline queue, geolocation (Hours Refused Phase B).
 (function(){
   // V20_77: AUTO-LIMPIEZA de _ackedVersion envenenado.
   // Bug detectado: surqueros tocaban "Actualizar ahora" pero el SW interceptaba el reload con HTML viejo.
@@ -831,6 +831,37 @@ html.login-locked{overflow:hidden!important;height:100%!important}
   <div id="haulerStartBody" style="flex:1 1 auto;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:14px"></div>
 </div>
 
+<!-- V21_01_1: fuel_card_holder home screen — two-tile, no DVIR / no trip GPS / no checklist.
+     Pure data entry: (1) fuel receipt (reuses OCR flow) and (2) log equipment day. -->
+<div id="fchScreen" style="display:none;position:fixed;top:0;right:0;bottom:0;left:0;background:#0f1f3a;z-index:9100;flex-direction:column;overflow:hidden;color:#fff;font-family:inherit">
+  <div id="fchHeader" style="flex:0 0 auto;display:flex;align-items:center;gap:8px;padding:12px 14px;background:#13294d;box-shadow:0 2px 6px rgba(0,0,0,.4)">
+    <div style="font-size:22px">⛽</div>
+    <div style="flex:1;min-width:0">
+      <div id="fchName" style="font-weight:700;font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Fuel card</div>
+      <div id="fchSub" style="font-size:11px;opacity:.7"></div>
+    </div>
+    <button id="fchLangToggle" onclick="window.Chofer.toggleLang()" style="background:#2a4a7a;border:none;color:#fff;border-radius:8px;padding:7px 10px;font-size:13px;font-weight:700">🇲🇽 ES</button>
+    <button onclick="window.Chofer.logout()" style="background:#7a2a2a;border:none;color:#fff;border-radius:8px;padding:7px 10px;font-size:13px;font-weight:700" id="fchLogoutBtn">Salir</button>
+  </div>
+  <div id="fchBody" style="flex:1 1 auto;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:14px"></div>
+</div>
+
+<!-- V21_01_2: Foreman Faltas / Refusals screen (Hours Refused Phase B).
+     Self-contained full-screen flow: (1) day+crew, (2) roster, (3) per-worker reason sheet.
+     Calls public.log_absence_from_pwa. Offline-queued in localStorage; geolocation best-effort. -->
+<div id="absScreen" style="display:none;position:fixed;top:0;right:0;bottom:0;left:0;background:#f5f6f5;z-index:9300;flex-direction:column;overflow:hidden;color:#1a1a1a;font-family:inherit">
+  <div id="absHeader" style="flex:0 0 auto;display:flex;align-items:center;gap:8px;padding:12px 14px;background:#922b21;color:#fff;box-shadow:0 2px 6px rgba(0,0,0,.25)">
+    <button id="absBack" style="background:rgba(255,255,255,.18);border:none;color:#fff;border-radius:8px;padding:8px 11px;font-size:15px;font-weight:700;cursor:pointer">←</button>
+    <div style="flex:1;min-width:0">
+      <div id="absTitle" style="font-weight:800;font-size:16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Faltas / Refusals</div>
+      <div id="absSub" style="font-size:11px;opacity:.85"></div>
+    </div>
+    <div id="absQueueBadge" style="display:none;background:#fff;color:#922b21;border-radius:14px;padding:4px 9px;font-size:11px;font-weight:800;cursor:pointer">📤 <span id="absQueueCount">0</span></div>
+    <button id="absLangToggle" style="background:rgba(255,255,255,.18);border:none;color:#fff;border-radius:8px;padding:7px 10px;font-size:13px;font-weight:700;cursor:pointer">🇲🇽 ES</button>
+  </div>
+  <div id="absBody" style="flex:1 1 auto;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:14px"></div>
+</div>
+
 <!-- V21_00: BOL OCR confirmation form (editable) -->
 <div class="ov" id="choferBolOv" role="dialog" aria-modal="true" style="z-index:10100">
   <div class="md" style="max-width:520px;max-height:90vh;display:flex;flex-direction:column">
@@ -921,9 +952,11 @@ html.login-locked{overflow:hidden!important;height:100%!important}
     <div style="font-size:38px;text-align:center;margin-bottom:6px">👋</div>
     <div class="mt" style="text-align:center;font-size:17px" id="choferRoleTit">¿Cómo vas a trabajar hoy? / How are you working today?</div>
     <div class="mbs" style="display:flex;flex-direction:column;gap:12px;margin-top:18px">
-      <button class="mok" id="choferRoleDriver" style="background:#2a4a7a;font-size:16px;padding:16px">🚌 Chofer / Driver</button>
-      <button class="mok" id="choferRoleHauler" style="background:#8b5a2b;font-size:16px;padding:16px">🚛 Hauler / Carga</button>
-      <button class="mok" id="choferRoleCrew" style="background:#1f6b3a;font-size:16px;padding:16px">👷 Surquero / Crew Lead</button>
+      <!-- V21_01_1: bilingual labels on EVERY button (Spanish / English always), no language toggle -->
+      <button class="mok" id="choferRoleDriver" style="background:#2a4a7a;font-size:16px;padding:16px">🚌 Chofer / Bus/Shuttle Driver</button>
+      <button class="mok" id="choferRoleHauler" style="background:#8b5a2b;font-size:16px;padding:16px">🚛 Carga / Hauler</button>
+      <button class="mok" id="choferRoleCrew" style="background:#1f6b3a;font-size:16px;padding:16px">👷 Surquero / Field Walker</button>
+      <button class="mok" id="choferRoleFuel" style="background:#7a5a1a;font-size:16px;padding:16px">⛽ Tarjeta de combustible / Fuel card holder</button>
     </div>
   </div>
 </div>
@@ -1497,6 +1530,16 @@ body.readOnly [onclick*="openNewDay"]{display:none !important}
     <textarea id="notas" data-save rows="2" placeholder="Observaciones..."></textarea>
     <div style="margin-top:12px">
       <button onclick="openNewDay()" style="width:100%;padding:12px;border:2px solid #3a7fd4;border-radius:8px;background:#eef4fd;color:#3a7fd4;font-family:DM Sans,sans-serif;font-size:14px;font-weight:700;cursor:pointer">🌅 Iniciar Nuevo Día</button>
+    </div>
+    <!-- V21_01_2: Faltas / Refusals entry tile (foreman absences, Hours Refused Phase B) -->
+    <div style="margin-top:10px">
+      <button onclick="window.Absences && window.Absences.open()" style="width:100%;padding:14px;border:none;border-radius:10px;background:linear-gradient(135deg,#c0392b 0%,#922b21 100%);color:#fff;font-family:'DM Sans',sans-serif;font-size:15px;font-weight:800;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;box-shadow:0 2px 6px rgba(192,57,43,.3)">
+        <span style="font-size:20px">🚫</span>
+        <span style="display:flex;flex-direction:column;align-items:flex-start;line-height:1.15">
+          <span>Faltas / Rechazos</span>
+          <span style="font-size:11px;font-weight:600;opacity:.85">Absences / Refusals</span>
+        </span>
+      </button>
     </div>
   </div>
   <input type="hidden" id="payH" data-save value="16.23">
@@ -2086,8 +2129,15 @@ function checkPin(){
             return;
           }
           window.CURRENT_DRIVER = drv;
-          if(drv.allowed_modes && drv.allowed_modes.length > 1){
+          // V21_01_1: route by allowed_modes.
+          //  - 0 modes (legacy/null): default to chofer (prior behavior).
+          //  - exactly 1 mode: auto-redirect to that mode's home — no picker.
+          //  - 2+ modes: show the picker with only the modes they have.
+          var _modes = drv.allowed_modes || [];
+          if(_modes.length > 1){
             window.Chofer.showRolePicker(drv, pin, hashed);
+          } else if(_modes.length === 1){
+            window.Chofer.enterModeByKey(drv, _modes[0], pin, hashed);
           } else {
             window.Chofer.enterChoferMode(drv);
           }
@@ -13101,6 +13151,520 @@ var _checkSendTimer = setInterval(checkDaysWithoutSend, 30 * 60 * 1000);
 </script>
 
 <!-- ═══════════════════════════════════════════════════════════════
+     V21_01_2 — FOREMAN FALTAS / REFUSALS (Hours Refused Phase B)
+     Self-contained. All state/behavior under window.Absences.
+     Reads shared helpers (gEl, gVal, toast, SUPABASE_URL/ANON, TENANT_ID)
+     and the #absScreen DOM nodes added above. Loaded after those exist.
+     Roster source: RPC list_hours_offered_daily (yields worker_id UUIDs).
+     Write: RPC log_absence_from_pwa. Offline-queued; geolocation best-effort.
+     ═══════════════════════════════════════════════════════════════ -->
+<script>
+(function(){
+  'use strict';
+
+  var A = window.Absences = window.Absences || {};
+
+  var TENANT_ID = (window.TENANT_ID || '00000000-0000-0000-0000-000000000001');
+  var QUEUE_KEY = 'ABS_QUEUE_V1';
+  var LANG_KEY  = 'abs_lang';
+
+  // ── i18n: Spanish primary, English secondary ──
+  var I18N = {
+    title:            {es:'Faltas / Refusals',          en:'Refusals / Faltas'},
+    subDayCrew:       {es:'Día y equipo',               en:'Day & crew'},
+    subRoster:        {es:'Trabajadores',               en:'Workers'},
+    date:             {es:'Fecha',                       en:'Date'},
+    crew:             {es:'Equipo / Cuadrilla',          en:'Home crew'},
+    selectCrew:       {es:'— Selecciona equipo —',       en:'— Select crew —'},
+    continue:         {es:'Continuar',                   en:'Continue'},
+    loadingRoster:    {es:'Cargando trabajadores…',      en:'Loading workers…'},
+    rosterEmpty:      {es:'No hay trabajadores para este equipo en esta fecha.', en:'No workers for this crew on this date.'},
+    rosterError:      {es:'No se pudo cargar el roster. Revisa la conexión.',    en:'Could not load roster. Check connection.'},
+    retry:            {es:'Reintentar',                  en:'Retry'},
+    absentToggle:     {es:'Faltó',                        en:'Was absent'},
+    notes:            {es:'Notas (opcional)',            en:'Notes (optional)'},
+    hoursOffered:     {es:'Horas ofrecidas',             en:'Hours offered'},
+    hoursWorked:      {es:'Horas trabajadas',            en:'Hours worked'},
+    save:             {es:'Guardar',                      en:'Save'},
+    saving:           {es:'Guardando…',                  en:'Saving…'},
+    saved:            {es:'Falta registrada',            en:'Absence saved'},
+    savedQueued:      {es:'Falta en cola (sin conexión)', en:'Absence queued (offline)'},
+    reasonHdr:        {es:'¿Por qué faltó?',             en:'Why were they absent?'},
+    captureGps:       {es:'Adjuntar ubicación GPS',      en:'Attach GPS location'},
+    gpsGetting:       {es:'Obteniendo GPS…',             en:'Getting GPS…'},
+    gpsOk:            {es:'GPS ✓',                        en:'GPS ✓'},
+    gpsOff:           {es:'GPS no disponible',           en:'GPS unavailable'},
+    queuePending:     {es:'pendiente(s) por enviar',     en:'pending to send'},
+    badOffered:       {es:'Horas ofrecidas: 0–12',       en:'Hours offered: 0–12'},
+    badWorked:        {es:'Horas trabajadas: 0–12',      en:'Hours worked: 0–12'},
+    // reasons (spec order, most common first)
+    'reason.unclassified':   {es:'Sin clasificar',           en:'Unclassified'},
+    'reason.refused_work':   {es:'Rechazó trabajo',          en:'Refused work'},
+    'reason.sick':           {es:'Enfermo',                  en:'Sick'},
+    'reason.injury':         {es:'Lesión',                   en:'Injury'},
+    'reason.appointment':    {es:'Cita / Personal',          en:'Appointment / Personal'},
+    'reason.no_call_no_show':{es:'No llamó, no llegó',       en:'No call no show'},
+    'reason.personal_leave': {es:'Permiso personal',         en:'Personal leave'},
+    'reason.travel_day':     {es:'Día de viaje',             en:'Travel day'},
+    'reason.weather':        {es:'Clima',                    en:'Weather'},
+    'reason.suspended':      {es:'Suspendido',               en:'Suspended'},
+    'reason.not_offered':    {es:'No se le ofreció trabajo', en:'Not offered'},
+    'reason.absconded':      {es:'Abandonó',                 en:'Absconded'}
+  };
+
+  // Reason rows in spec display order. value = payroll.absence_reason_enum.
+  var REASONS = [
+    {code:'unclassified',    emoji:'❓'},
+    {code:'refused_work',    emoji:'🙅'},
+    {code:'sick',            emoji:'🤒'},
+    {code:'injury',          emoji:'🤕'},
+    {code:'appointment',     emoji:'📅'},
+    {code:'no_call_no_show', emoji:'❌'},
+    {code:'personal_leave',  emoji:'👤'},
+    {code:'travel_day',      emoji:'✈️'},
+    {code:'weather',         emoji:'🌧️'},
+    {code:'suspended',       emoji:'⛔'},
+    {code:'not_offered',     emoji:'🚫'},
+    {code:'absconded',       emoji:'🏃'}
+  ];
+
+  function lang(){ return window.ABS_LANG || 'es'; }
+  function t(key){ var L = lang(); return (I18N[key] && I18N[key][L]) || (I18N[key] && I18N[key].es) || key; }
+
+  try{ window.ABS_LANG = localStorage.getItem(LANG_KEY) || 'es'; }catch(e){ window.ABS_LANG = 'es'; }
+
+  // ── state ──
+  A.state = {
+    view: 'day',            // 'day' | 'roster' | 'reason'
+    workDate: null,
+    crewName: '',           // display label (from surquero/rancho context)
+    farmId: null,           // uuid or null
+    homeCrewId: null,       // uuid or null
+    roster: [],             // [{worker_id, name, employee_code, photo_url}]
+    // per (worker_id+date) cached server refusal id so re-tap UPDATEs not duplicates
+    saved: {},              // { worker_id: {refusal_id, reason, hours_offered, hours_worked} }
+    reasonWorker: null      // worker currently in reason sheet
+  };
+
+  // ── DOM helpers (fall back to native if app helpers absent) ──
+  function el(id){ return (typeof gEl === 'function') ? gEl(id) : document.getElementById(id); }
+  function appVal(id){ try{ return (typeof gVal === 'function') ? gVal(id) : ((document.getElementById(id)||{}).value || ''); }catch(e){ return ''; } }
+  function esc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
+  function showToast(msg){ if(typeof toast === 'function'){ toast(msg); } }
+
+  function uuid(){
+    if(window.crypto && typeof crypto.randomUUID === 'function'){ try{ return crypto.randomUUID(); }catch(e){} }
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c){
+      var r=(Math.random()*16)|0, v=c==='x'?r:(r&0x3|0x8); return v.toString(16);
+    });
+  }
+
+  function todayISO(){
+    var d = new Date(); var off = d.getTimezoneOffset()*60000;
+    return new Date(d.getTime()-off).toISOString().slice(0,10);
+  }
+  function yesterdayISO(){
+    var d = new Date(); d.setDate(d.getDate()-1); var off = d.getTimezoneOffset()*60000;
+    return new Date(d.getTime()-off).toISOString().slice(0,10);
+  }
+
+  // ── Supabase RPC (public schema; profile headers required) ──
+  function rpc(name, body){
+    if(!window.SUPABASE_URL || !window.SUPABASE_ANON) return Promise.reject(new Error('no supabase config'));
+    return fetch(window.SUPABASE_URL + '/rest/v1/rpc/' + name, {
+      method:'POST',
+      headers:{ 'Content-Type':'application/json', 'Content-Profile':'public', 'Accept-Profile':'public',
+                'apikey':window.SUPABASE_ANON, 'Authorization':'Bearer '+window.SUPABASE_ANON },
+      body: JSON.stringify(body || {})
+    }).then(function(r){
+      if(!r.ok) return r.text().then(function(tx){ throw new Error(tx || ('HTTP '+r.status)); });
+      return r.text().then(function(tx){ if(!tx) return null; try{ return JSON.parse(tx); }catch(e){ return tx; } });
+    });
+  }
+
+  // ── Geolocation: best-effort, 5s timeout, never blocks ──
+  function collectGps(cb){
+    if(!navigator.geolocation){ cb(null, null); return; }
+    var done = false;
+    var timer = setTimeout(function(){ if(!done){ done = true; cb(null, null); } }, 5000);
+    try {
+      navigator.geolocation.getCurrentPosition(function(pos){
+        if(done) return; done = true; clearTimeout(timer);
+        cb(pos.coords.latitude, pos.coords.longitude);
+      }, function(){
+        if(done) return; done = true; clearTimeout(timer); cb(null, null);
+      }, { enableHighAccuracy:false, timeout:5000, maximumAge:30000 });
+    } catch(e){ if(!done){ done = true; clearTimeout(timer); cb(null, null); } }
+  }
+
+  // ── Offline queue (localStorage; mirrors existing refusalsQueue pattern) ──
+  function getQueue(){ try{ return JSON.parse(localStorage.getItem(QUEUE_KEY) || '[]'); }catch(e){ return []; } }
+  function setQueue(q){ try{ localStorage.setItem(QUEUE_KEY, JSON.stringify(q)); }catch(e){} updateQueueBadge(); }
+  function enqueue(payload){
+    var q = getQueue();
+    payload._qid = payload._qid || (Date.now()+'_'+Math.random().toString(36).slice(2,6));
+    payload._queuedAt = new Date().toISOString();
+    q.push(payload);
+    setQueue(q);
+  }
+
+  function updateQueueBadge(){
+    var badge = el('absQueueBadge'), count = el('absQueueCount');
+    if(!badge) return;
+    var n = getQueue().length;
+    if(n > 0){ badge.style.display='inline-block'; if(count) count.textContent = n; }
+    else { badge.style.display='none'; }
+  }
+
+  var _flushing = false;
+  function flushQueue(){
+    if(_flushing) return;
+    if(!navigator.onLine) return;
+    if(!window.SUPABASE_URL || !window.SUPABASE_ANON) return;
+    var q = getQueue();
+    if(!q.length) return;
+    _flushing = true;
+    var i = 0;
+    function next(){
+      if(i >= q.length){
+        _flushing = false;
+        // keep only entries that still failed this pass
+        var remaining = q.filter(function(x){ return !x._sent; });
+        setQueue(remaining);
+        return;
+      }
+      var item = q[i++];
+      if(item._sent){ next(); return; }
+      rpc('log_absence_from_pwa', item.params).then(function(rid){
+        item._sent = true;
+        var key = (item.params.p_worker_id||'')+'|'+(item.params.p_work_date||'');
+        if(rid && typeof rid === 'string'){ A.state.saved[item.params.p_worker_id] = A.state.saved[item.params.p_worker_id] || {}; A.state.saved[item.params.p_worker_id].refusal_id = rid; }
+        setTimeout(next, 250);
+      }).catch(function(){ setTimeout(next, 250); });
+    }
+    next();
+  }
+  A.flushQueue = flushQueue;
+
+  // ── header / screen plumbing ──
+  function setHeader(){
+    var sub = el('absSub'); var title = el('absTitle');
+    if(title) title.textContent = t('title');
+    if(sub){
+      if(A.state.view === 'day') sub.textContent = t('subDayCrew');
+      else if(A.state.view === 'roster') sub.textContent = (A.state.crewName||'') + ' · ' + (A.state.workDate||'');
+      else sub.textContent = (A.state.reasonWorker ? A.state.reasonWorker.name : '');
+    }
+    var lt = el('absLangToggle');
+    if(lt) lt.textContent = (lang()==='es' ? '🇲🇽 ES' : '🇺🇸 EN');
+  }
+
+  function render(){
+    setHeader();
+    var body = el('absBody'); if(!body) return;
+    if(A.state.view === 'day')        body.innerHTML = renderDay();
+    else if(A.state.view === 'roster') body.innerHTML = renderRoster();
+    else if(A.state.view === 'reason') body.innerHTML = renderReason();
+    wire();
+    updateQueueBadge();
+  }
+  A.render = render;
+
+  // ── Screen 1: Day + Crew ──
+  function renderDay(){
+    var d = A.state.workDate || todayISO();
+    var crewLabel = A.state.crewName || '';
+    return ''+
+      '<div style="background:#fff;border-radius:14px;padding:16px;box-shadow:0 1px 3px rgba(0,0,0,.08)">'+
+        '<label style="display:block;font-size:12px;font-weight:700;color:#555;margin-bottom:4px">'+esc(t('date'))+'</label>'+
+        '<input type="date" id="absDate" value="'+esc(d)+'" min="'+esc(yesterdayISO())+'" max="'+esc(todayISO())+'" '+
+          'style="width:100%;padding:12px;border:1.5px solid #d8d8d8;border-radius:10px;font-size:15px;margin-bottom:14px">'+
+        '<label style="display:block;font-size:12px;font-weight:700;color:#555;margin-bottom:4px">'+esc(t('crew'))+'</label>'+
+        '<input type="text" id="absCrew" value="'+esc(crewLabel)+'" placeholder="'+esc(t('selectCrew'))+'" '+
+          'style="width:100%;padding:12px;border:1.5px solid #d8d8d8;border-radius:10px;font-size:15px;margin-bottom:18px" '+(crewLabel?'readonly':'')+'>'+
+        '<button id="absContinue" style="width:100%;padding:14px;border:none;border-radius:10px;background:#922b21;color:#fff;font-size:16px;font-weight:800;cursor:pointer">'+esc(t('continue'))+' →</button>'+
+      '</div>';
+  }
+
+  // ── Screen 2: Worker roster ──
+  function renderRoster(){
+    var st = A.state;
+    if(st._rosterLoading){
+      return '<div style="text-align:center;padding:48px 20px;color:#777">'+
+        '<div style="font-size:34px;margin-bottom:10px">⏳</div>'+esc(t('loadingRoster'))+'</div>';
+    }
+    if(st._rosterError){
+      return '<div style="text-align:center;padding:40px 20px;color:#c0392b">'+
+        '<div style="font-size:34px;margin-bottom:10px">⚠️</div>'+esc(t('rosterError'))+
+        '<div style="margin-top:16px"><button id="absRetry" style="padding:11px 20px;border:1.5px solid #922b21;background:#fff;color:#922b21;border-radius:9px;font-weight:700;cursor:pointer">'+esc(t('retry'))+'</button></div></div>';
+    }
+    if(!st.roster.length){
+      return '<div style="text-align:center;padding:48px 20px;color:#777">'+
+        '<div style="font-size:34px;margin-bottom:10px">✅</div>'+esc(t('rosterEmpty'))+'</div>';
+    }
+    var html = '';
+    for(var i=0;i<st.roster.length;i++){
+      var w = st.roster[i];
+      var sv = st.saved[w.worker_id];
+      var done = sv && (sv.refusal_id || sv._queued);
+      var reasonChip = done ? ('<span style="display:inline-block;margin-top:3px;font-size:11px;font-weight:700;color:#922b21;background:#fdecea;border-radius:10px;padding:2px 8px">'+esc(t('reason.'+(sv.reason||'unclassified')))+'</span>') : '';
+      var photo = w.photo_url
+        ? '<img src="'+esc(w.photo_url)+'" alt="" style="width:46px;height:46px;border-radius:50%;object-fit:cover;flex:0 0 auto;background:#eee">'
+        : '<div style="width:46px;height:46px;border-radius:50%;background:#e3e3e3;display:flex;align-items:center;justify-content:center;font-size:18px;flex:0 0 auto">👤</div>';
+      html += ''+
+        '<div style="display:flex;align-items:center;gap:11px;background:#fff;border-radius:12px;padding:11px 13px;margin-bottom:9px;box-shadow:0 1px 2px rgba(0,0,0,.06)'+(done?';border:1.5px solid #2e7d32':'')+'">'+
+          photo+
+          '<div style="flex:1;min-width:0">'+
+            '<div style="font-weight:700;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+esc(w.name||'—')+'</div>'+
+            '<div style="font-size:11px;color:#888">'+(w.employee_code?('#'+esc(w.employee_code)):'')+'</div>'+
+            reasonChip+
+          '</div>'+
+          '<button class="absToggle" data-w="'+esc(w.worker_id)+'" style="flex:0 0 auto;padding:11px 16px;border:none;border-radius:10px;font-size:14px;font-weight:800;cursor:pointer;'+(done?'background:#2e7d32;color:#fff':'background:#fdecea;color:#c0392b;border:1.5px solid #c0392b')+'">'+(done?'✓ '+esc(t('absentToggle')):esc(t('absentToggle')))+'</button>'+
+        '</div>';
+    }
+    return html;
+  }
+
+  // ── Screen 3: Reason sheet (per worker) ──
+  function renderReason(){
+    var w = A.state.reasonWorker; if(!w) return '';
+    var sv = A.state.saved[w.worker_id] || {};
+    var curReason = sv.reason || 'unclassified';
+    var off = (sv.hours_offered != null) ? sv.hours_offered : 8;
+    var wrk = (sv.hours_worked  != null) ? sv.hours_worked  : 0;
+    var rows = '';
+    for(var i=0;i<REASONS.length;i++){
+      var r = REASONS[i];
+      var checked = (r.code === curReason);
+      rows += ''+
+        '<label style="display:flex;align-items:center;gap:10px;padding:12px 13px;background:'+(checked?'#fdecea':'#fff')+';border:1.5px solid '+(checked?'#c0392b':'#e6e6e6')+';border-radius:11px;margin-bottom:7px;cursor:pointer">'+
+          '<input type="radio" name="absReason" value="'+esc(r.code)+'" '+(checked?'checked':'')+' style="width:20px;height:20px;accent-color:#c0392b">'+
+          '<span style="font-size:19px;flex:0 0 auto">'+r.emoji+'</span>'+
+          '<span style="font-weight:700;font-size:14px">'+esc(t('reason.'+r.code))+'</span>'+
+        '</label>';
+    }
+    return ''+
+      '<div style="font-weight:800;font-size:15px;margin-bottom:4px">'+esc(w.name||'')+'</div>'+
+      '<div style="font-size:12px;color:#888;margin-bottom:12px">'+(w.employee_code?('#'+esc(w.employee_code)):'')+'</div>'+
+      '<div style="font-size:13px;font-weight:700;color:#555;margin-bottom:8px">'+esc(t('reasonHdr'))+'</div>'+
+      rows+
+      '<div style="margin-top:14px;background:#fff;border-radius:12px;padding:14px;box-shadow:0 1px 2px rgba(0,0,0,.06)">'+
+        '<label style="display:block;font-size:12px;font-weight:700;color:#555;margin-bottom:4px">'+esc(t('notes'))+'</label>'+
+        '<textarea id="absNotes" rows="2" style="width:100%;padding:10px;border:1.5px solid #d8d8d8;border-radius:9px;font-size:14px;resize:vertical">'+esc(sv.notes||'')+'</textarea>'+
+        '<div style="display:flex;gap:10px;margin-top:12px">'+
+          '<div style="flex:1"><label style="display:block;font-size:12px;font-weight:700;color:#555;margin-bottom:4px">'+esc(t('hoursOffered'))+'</label>'+
+            '<input type="number" id="absOffered" value="'+off+'" min="0" max="12" step="0.5" style="width:100%;padding:10px;border:1.5px solid #d8d8d8;border-radius:9px;font-size:15px"></div>'+
+          '<div style="flex:1"><label style="display:block;font-size:12px;font-weight:700;color:#555;margin-bottom:4px">'+esc(t('hoursWorked'))+'</label>'+
+            '<input type="number" id="absWorked" value="'+wrk+'" min="0" max="12" step="0.5" style="width:100%;padding:10px;border:1.5px solid #d8d8d8;border-radius:9px;font-size:15px"></div>'+
+        '</div>'+
+        '<label style="display:flex;align-items:center;gap:9px;margin-top:12px;font-size:13px;font-weight:600;color:#555;cursor:pointer">'+
+          '<input type="checkbox" id="absGps" style="width:19px;height:19px;accent-color:#922b21">'+esc(t('captureGps'))+
+          '<span id="absGpsStatus" style="font-size:11px;color:#888;margin-left:auto"></span>'+
+        '</label>'+
+      '</div>'+
+      '<button id="absSave" style="width:100%;margin-top:16px;padding:15px;border:none;border-radius:11px;background:#2e7d32;color:#fff;font-size:16px;font-weight:800;cursor:pointer">'+esc(t('save'))+'</button>';
+  }
+
+  // ── wiring ──
+  function wire(){
+    var back = el('absBack'); if(back) back.onclick = onBack;
+    var lt = el('absLangToggle'); if(lt) lt.onclick = toggleLang;
+    var qb = el('absQueueBadge'); if(qb) qb.onclick = function(){ if(navigator.onLine){ flushQueue(); showToast(t('saving')); } };
+
+    if(A.state.view === 'day'){
+      var cont = el('absContinue'); if(cont) cont.onclick = onContinue;
+    } else if(A.state.view === 'roster'){
+      var retry = el('absRetry'); if(retry) retry.onclick = loadRoster;
+      var toggles = document.querySelectorAll('#absBody .absToggle');
+      for(var i=0;i<toggles.length;i++){
+        toggles[i].onclick = (function(wid){ return function(){ openReason(wid); }; })(toggles[i].getAttribute('data-w'));
+      }
+    } else if(A.state.view === 'reason'){
+      var save = el('absSave'); if(save) save.onclick = onSave;
+      var gps = el('absGps');
+      if(gps) gps.onchange = function(){
+        var status = el('absGpsStatus');
+        if(gps.checked){
+          if(status) status.textContent = t('gpsGetting');
+          collectGps(function(lat,lng){
+            A.state._gps = (lat!=null && lng!=null) ? {lat:lat,lng:lng} : null;
+            if(status) status.textContent = A.state._gps ? t('gpsOk') : t('gpsOff');
+            if(!A.state._gps){ gps.checked = false; }
+          });
+        } else { A.state._gps = null; if(status) status.textContent = ''; }
+      };
+    }
+  }
+
+  function toggleLang(){
+    window.ABS_LANG = (lang()==='es' ? 'en' : 'es');
+    try{ localStorage.setItem(LANG_KEY, window.ABS_LANG); }catch(e){}
+    render();
+  }
+
+  function onBack(){
+    if(A.state.view === 'reason'){ A.state.view = 'roster'; A.state.reasonWorker = null; render(); }
+    else if(A.state.view === 'roster'){ A.state.view = 'day'; render(); }
+    else { A.close(); }
+  }
+
+  function onContinue(){
+    var dEl = el('absDate'), cEl = el('absCrew');
+    A.state.workDate = (dEl && dEl.value) || todayISO();
+    if(cEl && cEl.value) A.state.crewName = cEl.value;
+    A.state.view = 'roster';
+    render();
+    loadRoster();
+  }
+
+  // ── roster: pull from list_hours_offered_daily (gives worker_id UUIDs) ──
+  function loadRoster(){
+    var st = A.state;
+    st._rosterLoading = true; st._rosterError = false; render();
+    rpc('list_hours_offered_daily', { p_from: st.workDate, p_to: st.workDate, p_filter: { tenant_id: TENANT_ID } })
+      .then(function(rows){
+        st._rosterLoading = false;
+        var arr = Array.isArray(rows) ? rows : [];
+        // optional client-side filter to current crew label when known
+        var crew = (st.crewName||'').toLowerCase().trim();
+        var seen = {};
+        st.roster = [];
+        for(var i=0;i<arr.length;i++){
+          var r = arr[i];
+          var wid = r.worker_id || r.id;
+          if(!wid || seen[wid]) continue;
+          var name = r.full_name || r.preferred_name || ((r.first_name||'')+' '+(r.last_name||'')).trim() || r.worker_name || '—';
+          if(crew){
+            var rc = (r.home_crew_name || r.crew_name || r.petition_display || '').toLowerCase();
+            if(rc && rc.indexOf(crew) === -1 && crew.indexOf(rc) === -1){ /* keep anyway if no crew field present */ if(r.home_crew_name||r.crew_name) continue; }
+          }
+          seen[wid] = true;
+          st.roster.push({
+            worker_id: wid,
+            name: name,
+            employee_code: r.employee_code || r.emp_code || '',
+            photo_url: r.photo_url || '',
+            farm_id: r.farm_id || r.current_farm_id || null,
+            home_crew_id: r.home_crew_id || r.crew_id || null
+          });
+        }
+        // capture farm/crew UUIDs from the first row if not already set
+        if(st.roster.length){
+          if(!st.farmId)     st.farmId     = st.roster[0].farm_id || null;
+          if(!st.homeCrewId) st.homeCrewId = st.roster[0].home_crew_id || null;
+        }
+        render();
+      })
+      .catch(function(e){
+        console.warn('[V21_01_2] list_hours_offered_daily failed:', e && e.message ? e.message.substring(0,140) : e);
+        st._rosterLoading = false; st._rosterError = true; render();
+      });
+  }
+
+  function openReason(workerId){
+    var w = null;
+    for(var i=0;i<A.state.roster.length;i++){ if(A.state.roster[i].worker_id === workerId){ w = A.state.roster[i]; break; } }
+    if(!w) return;
+    A.state.reasonWorker = w;
+    A.state._gps = null;
+    A.state.view = 'reason';
+    render();
+  }
+
+  // ── save: call log_absence_from_pwa (or queue offline) ──
+  function onSave(){
+    var w = A.state.reasonWorker; if(!w) return;
+    var radios = document.querySelectorAll('input[name="absReason"]');
+    var reason = 'unclassified';
+    for(var i=0;i<radios.length;i++){ if(radios[i].checked){ reason = radios[i].value; break; } }
+    var offEl = el('absOffered'), wrkEl = el('absWorked'), notesEl = el('absNotes');
+    var off = offEl ? parseFloat(offEl.value) : 8;
+    var wrk = wrkEl ? parseFloat(wrkEl.value) : 0;
+    if(isNaN(off) || off < 0 || off > 12){ showToast('⚠️ '+t('badOffered')); return; }
+    if(isNaN(wrk) || wrk < 0 || wrk > 12){ showToast('⚠️ '+t('badWorked')); return; }
+    var notes = notesEl ? (notesEl.value || '').trim() : '';
+    var gps = A.state._gps || null;
+
+    var saveBtn = el('absSave');
+    if(saveBtn){ saveBtn.disabled = true; saveBtn.textContent = t('saving'); }
+
+    var prev = A.state.saved[w.worker_id] || {};
+    var params = {
+      p_tenant_id:     TENANT_ID,
+      p_work_date:     A.state.workDate,
+      p_worker_id:     w.worker_id,
+      p_farm_id:       w.farm_id || A.state.farmId || null,
+      p_home_crew_id:  w.home_crew_id || A.state.homeCrewId || null,
+      p_hours_offered: off,
+      p_hours_worked:  wrk,
+      p_initial_reason: reason,
+      p_notes:         notes || null,
+      p_refused_lat:   gps ? gps.lat : null,
+      p_refused_lng:   gps ? gps.lng : null
+    };
+
+    // remember selection on the row regardless of online state
+    A.state.saved[w.worker_id] = {
+      refusal_id: prev.refusal_id || null,
+      reason: reason, notes: notes, hours_offered: off, hours_worked: wrk
+    };
+
+    function finishLocal(queued){
+      if(saveBtn){ saveBtn.disabled = false; saveBtn.textContent = t('save'); }
+      showToast((queued ? '📥 ' : '✓ ') + (queued ? t('savedQueued') : t('saved')) + ' — ' + (w.name||''));
+      A.state.view = 'roster';
+      A.state.reasonWorker = null;
+      render();
+    }
+
+    if(!navigator.onLine || !window.SUPABASE_URL || !window.SUPABASE_ANON){
+      A.state.saved[w.worker_id]._queued = true;
+      enqueue({ params: params });
+      finishLocal(true);
+      return;
+    }
+
+    rpc('log_absence_from_pwa', params)
+      .then(function(rid){
+        if(rid && typeof rid === 'string'){ A.state.saved[w.worker_id].refusal_id = rid; }
+        finishLocal(false);
+      })
+      .catch(function(e){
+        console.warn('[V21_01_2] log_absence_from_pwa failed, queuing:', e && e.message ? e.message.substring(0,140) : e);
+        A.state.saved[w.worker_id]._queued = true;
+        enqueue({ params: params });
+        finishLocal(true);
+      });
+  }
+
+  // ── public entry / exit ──
+  A.open = function(){
+    var scr = el('absScreen'); if(!scr){ showToast('⚠️ absScreen missing'); return; }
+    // seed day + crew context from surquero config when available
+    A.state.workDate = appVal('fecha') || todayISO();
+    var crew = appVal('rancho') || '';
+    var surq = appVal('surquero') || '';
+    A.state.crewName = crew || surq || '';
+    A.state.view = 'day';
+    A.state.reasonWorker = null;
+    scr.style.display = 'flex';
+    render();
+    setTimeout(flushQueue, 800);
+  };
+
+  A.close = function(){
+    var scr = el('absScreen'); if(scr) scr.style.display = 'none';
+  };
+
+  // ── background flush triggers (match existing refusals pattern) ──
+  window.addEventListener('online', function(){ setTimeout(flushQueue, 1200); });
+  setInterval(flushQueue, 60000);
+  window.addEventListener('DOMContentLoaded', function(){ setTimeout(updateQueueBadge, 1500); setTimeout(flushQueue, 3500); });
+
+})();
+</script>
+
+<!-- ═══════════════════════════════════════════════════════════════
      V20_99 — CHOFER (DRIVER) MODE
      Self-contained. All state/behavior under window.Chofer.
      Surquero code above is untouched; this block only reads shared
@@ -13331,7 +13895,49 @@ var _checkSendTimer = setInterval(checkDaysWithoutSend, 30 * 60 * 1000);
     cancel2:        {es:'Cancelar',                 en:'Cancel'},
     qtyShort:       {es:'Cant.',                    en:'Qty'},
     recentReceipts: {es:'Recibos de este viaje',    en:'Receipts for this trip'},
-    noReceipts:     {es:'Sin recibos en este viaje',en:'No receipts for this trip'} // V21_00_3:
+    noReceipts:     {es:'Sin recibos en este viaje',en:'No receipts for this trip'}, // V21_00_3:
+    // ── V21_01_1: fuel_card_holder mode + Bill-To + equipment/travel dropdowns ──
+    // Note: role-mode button labels are intentionally NOT routed through t() — they
+    // always render BOTH languages (see role picker markup). These strings cover the
+    // fuel-card home, equipment-day form, and the Bill-To block on the start-trip modal.
+    fchTitle:       {es:'⛽ Tarjeta de combustible', en:'⛽ Fuel card'},
+    fchTileReceipt: {es:'Enviar recibo de combustible / Submit fuel receipt', en:'Submit fuel receipt / Enviar recibo de combustible'},
+    fchTileEquip:   {es:'Registrar día de equipo / Log equipment day', en:'Log equipment day / Registrar día de equipo'},
+    fchReceiptTitle:{es:'Enviar recibo / Submit receipt', en:'Submit receipt / Enviar recibo'},
+    fchEquipTitle:  {es:'Día de equipo / Equipment day', en:'Equipment day / Día de equipo'},
+    billToReq:      {es:'Facturar a / Bill To',     en:'Bill To / Facturar a'},
+    selBillTo:      {es:'— Selecciona / Select —',  en:'— Select / Selecciona —'},
+    billToRequired: {es:'Selecciona a quién facturar antes de continuar.', en:'Select who to bill before continuing.'},
+    noCustomers:    {es:'No se pudieron cargar los clientes. Revisa tu conexión.', en:'Could not load customers. Check your connection.'},
+    equipProvider:  {es:'Equipo de / Equipment provider', en:'Equipment provider / Equipo de'},
+    equipClass:     {es:'Clase de equipo / Equipment class', en:'Equipment class / Clase de equipo'},
+    travelTime:     {es:'Tiempo de viaje / Travel time', en:'Travel time / Tiempo de viaje'},
+    travelBucket:   {es:'Bucket de viaje / Travel bucket', en:'Travel bucket / Bucket de viaje'},
+    provJab:        {es:'JAB',                       en:'JAB'},
+    provPaulvales:  {es:'PAULVALES',                 en:'PAULVALES'},
+    eqProductionBus:{es:'Bus de producción / Production Bus', en:'Production Bus / Bus de producción'},
+    eqPickup:       {es:'Camioneta / Pickup',        en:'Pickup / Camioneta'},
+    eqFieldTruck:   {es:'Camión de campo / Field Truck', en:'Field Truck / Camión de campo'},
+    eqHarvestFlSc:  {es:'Bus de cosecha FL/SC / Harvest Bus FL/SC', en:'Harvest Bus FL/SC / Bus de cosecha FL/SC'},
+    eqHarvestVa:    {es:'Bus de cosecha VA / Harvest Bus VA', en:'Harvest Bus VA / Bus de cosecha VA'},
+    eqMultiFarm:    {es:'Bus multi-finca / Multi-Farm Bus', en:'Multi-Farm Bus / Bus multi-finca'},
+    tbOnsite:       {es:'En sitio / On-site',        en:'On-site / En sitio'},
+    tb0to1:         {es:'0 a 1 hr / 0 to 1 hr',      en:'0 to 1 hr / 0 a 1 hr'},
+    tb2to3:         {es:'2 a 3 hrs / 2 to 3 hrs',    en:'2 to 3 hrs / 2 a 3 hrs'},
+    edDate:         {es:'Fecha / Date',              en:'Date / Fecha'},
+    edVehicle:      {es:'Vehículo / Vehicle',        en:'Vehicle / Vehículo'},
+    edOdoStart:     {es:'Odómetro inicio / Odometer start', en:'Odometer start / Odómetro inicio'},
+    edOdoEnd:       {es:'Odómetro fin / Odometer end', en:'Odometer end / Odómetro fin'},
+    edNotes:        {es:'Notas / Notes',             en:'Notes / Notas'},
+    edSubmit:       {es:'Guardar día / Save day',    en:'Save day / Guardar día'},
+    edSaved:        {es:'✓ Día de equipo guardado',  en:'✓ Equipment day saved'},
+    edSaving:       {es:'Guardando…',                en:'Saving…'},
+    edError:        {es:'⚠️ No se pudo guardar. Intenta de nuevo.', en:'⚠️ Could not save. Try again.'},
+    edVehicleReq:   {es:'Selecciona un vehículo.',   en:'Select a vehicle.'},
+    selEquipClass:  {es:'— Selecciona clase / Select class —', en:'— Select class / Selecciona clase —'},
+    selTravel:      {es:'— Selecciona tiempo / Select time —', en:'— Select time / Selecciona tiempo —'},
+    selProvider:    {es:'— Selecciona / Select —',   en:'— Select / Selecciona —'},
+    backToHome:     {es:'← Volver / Back',           en:'← Back / Volver'}
   };
   function t(key){
     var lang = window.CHOFER_LANG || 'es';
@@ -13528,6 +14134,7 @@ var _checkSendTimer = setInterval(checkDaysWithoutSend, 30 * 60 * 1000);
     var bH = $('choferRoleHauler'); if(bH) bH.style.display = (modes.indexOf('hauler')>=0 ? '' : 'none');
     var bC = $('choferRoleCrew');   if(bC) bC.style.display = (modes.indexOf('surquero')>=0 ? '' : 'none');
     var bD = $('choferRoleDriver'); if(bD) bD.style.display = (modes.indexOf('chofer')>=0 ? '' : 'none');
+    var bF = $('choferRoleFuel');   if(bF) bF.style.display = (modes.indexOf('fuel_card_holder')>=0 ? '' : 'none'); // V21_01_1
     $('choferRoleDriver').onclick = function(){
       $('choferRoleOv').classList.remove('on');
       C.enterChoferMode(drv);
@@ -13544,7 +14151,314 @@ var _checkSendTimer = setInterval(checkDaysWithoutSend, 30 * 60 * 1000);
       if(typeof window.doLideresCheck === 'function'){ window.doLideresCheck(pin, hashed); }
       else { var e=$('loginErr'); if(e) e.textContent='⚠️ Surquero no disponible'; }
     };
+    if(bF) bF.onclick = function(){ // V21_01_1: fuel_card_holder → two-tile home (no DVIR/trip/checklist)
+      $('choferRoleOv').classList.remove('on');
+      C.enterFuelCardHolderMode(drv);
+    };
   };
+
+  // V21_01_1: single-mode auto-redirect. Routes a driver straight to the home screen for
+  // their one allowed mode — no picker shown. Used by the login flow when allowed_modes
+  // has exactly one entry. Falls back to chofer for an unknown/empty mode string.
+  C.enterModeByKey = function(drv, mode, pin, hashed){
+    switch(mode){
+      case 'hauler':           C.enterHaulerMode(drv); break;
+      case 'fuel_card_holder': C.enterFuelCardHolderMode(drv); break;
+      case 'surquero':
+        if(typeof window.doLideresCheck === 'function'){ window.doLideresCheck(pin, hashed); }
+        else { var e=$('loginErr'); if(e) e.textContent='⚠️ Surquero no disponible'; }
+        break;
+      case 'chofer':
+      default:                 C.enterChoferMode(drv); break;
+    }
+  };
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // V21_01_1 — fuel_card_holder mode
+  // Two-tile home: (1) fuel receipt (reuses the chofer OCR flow), (2) log equipment day.
+  // No DVIR, no trip GPS, no checklist — pure data entry.
+  // ══════════════════════════════════════════════════════════════════════════
+
+  // Shared Bill-To customer cache + helpers (also used by the hauler start modal).
+  // EBERRY is the internal default; JAB + PAULVALES are pinned next; remainder alphabetical.
+  C.state.billToCusts = null;          // raw rows from list_hauling_customers
+  function isEberryCustomer(row){
+    if(!row) return false;
+    if(row.is_internal_default === true) return true;
+    var n = String(row.canonical_name || '').trim().toLowerCase();
+    return n === 'eberry' || n === 'e-berry' || n === 'eberry harvest' || n.indexOf('eberry') === 0;
+  }
+  function findEberry(rows){
+    for(var i=0;i<rows.length;i++){ if(isEberryCustomer(rows[i])) return rows[i]; }
+    return null;
+  }
+  // Build ordered options: EBERRY first, then JAB/PAULVALES if present, then alphabetical.
+  function orderBillToRows(rows){
+    rows = (rows||[]).filter(function(r){ return r && r.customer_id && r.canonical_name; });
+    var eberry = findEberry(rows);
+    var pinnedNames = ['jab','paulvales'];
+    var pinned = [];
+    for(var p=0;p<pinnedNames.length;p++){
+      for(var i=0;i<rows.length;i++){
+        if(rows[i]===eberry) continue;
+        if(String(rows[i].canonical_name).trim().toLowerCase() === pinnedNames[p]){ pinned.push(rows[i]); break; }
+      }
+    }
+    var rest = rows.filter(function(r){ return r!==eberry && pinned.indexOf(r)<0; });
+    rest.sort(function(a,b){ return String(a.canonical_name).localeCompare(String(b.canonical_name)); });
+    var out = [];
+    if(eberry) out.push(eberry);
+    out = out.concat(pinned, rest);
+    return out;
+  }
+  // Returns a promise resolving to the ordered customer rows (cached after first load).
+  function ensureBillToCustomers(){
+    if(C.state.billToCusts){ return Promise.resolve(C.state.billToCusts); }
+    return rpc('list_hauling_customers', { p_tenant_id: TENANT_ID, p_active_only: true })
+      .then(function(rows){ C.state.billToCusts = rows || []; return C.state.billToCusts; })
+      .catch(function(e){ console.warn('[V21_01_1] billTo customers', e && e.message); C.state.billToCusts = []; return []; });
+  }
+  // Render a Bill-To <select> into the given element id; selects EBERRY by default.
+  // onChange(customerId, isEberry) is called whenever the selection changes.
+  function fillBillToSelect(selId, rows, onChange){
+    var sel = $(selId); if(!sel) return;
+    var ordered = orderBillToRows(rows);
+    if(!ordered.length){
+      sel.innerHTML = '<option value="">'+esc(t('selBillTo'))+'</option>';
+      sel.disabled = true;
+      return;
+    }
+    sel.disabled = false;
+    var html = '';
+    for(var i=0;i<ordered.length;i++){
+      var r = ordered[i];
+      // orderBillToRows puts EBERRY first, so the first option is the default selection.
+      var sel0 = (i === 0) ? ' selected' : '';
+      html += '<option value="'+esc(r.customer_id)+'" data-eberry="'+(isEberryCustomer(r)?'1':'0')+'"'+sel0+'>'+esc(r.canonical_name)+'</option>';
+    }
+    sel.innerHTML = html;
+    sel.onchange = function(){
+      var opt = sel.options[sel.selectedIndex];
+      var isEb = opt && opt.getAttribute('data-eberry') === '1';
+      if(onChange) onChange(sel.value || null, !!isEb);
+    };
+  }
+  function equipClassOptions(){
+    // values are fleet.equipment_class enum keys
+    var rows = [
+      ['production_bus', t('eqProductionBus')],
+      ['pickup',         t('eqPickup')],
+      ['field_truck',    t('eqFieldTruck')],
+      ['harvest_bus_fl_sc', t('eqHarvestFlSc')],
+      ['harvest_bus_va', t('eqHarvestVa')],
+      ['multi_farm_bus', t('eqMultiFarm')]
+    ];
+    var h = '<option value="">'+esc(t('selEquipClass'))+'</option>';
+    for(var i=0;i<rows.length;i++){ h += '<option value="'+esc(rows[i][0])+'">'+esc(rows[i][1])+'</option>'; }
+    return h;
+  }
+  function travelBucketOptions(){
+    // values are fleet.travel_bucket enum keys
+    var rows = [ ['on_site', t('tbOnsite')], ['t0_1', t('tb0to1')], ['t2_3', t('tb2to3')] ];
+    var h = '<option value="">'+esc(t('selTravel'))+'</option>';
+    for(var i=0;i<rows.length;i++){ h += '<option value="'+esc(rows[i][0])+'">'+esc(rows[i][1])+'</option>'; }
+    return h;
+  }
+
+  function syncFchLangBtn(){
+    var b = $('fchLangToggle'); if(!b) return;
+    b.textContent = window.CHOFER_LANG === 'en' ? '🇺🇸 EN' : '🇲🇽 ES';
+  }
+
+  C.enterFuelCardHolderMode = function(drv){
+    C.state.driver = drv;
+    window.currentMode = 'fuel_card_holder';
+    window.CURRENT_DRIVER = drv;
+    var ls = $('loginScreen'); if(ls) ls.classList.add('hide');
+    document.body.classList.remove('login-locked');
+    document.documentElement.classList.remove('login-locked');
+    var cs = $('choferScreen'); if(cs) cs.style.display = 'none';
+    var hs = $('haulerStartScreen'); if(hs) hs.style.display = 'none';
+    $('fchName').textContent = '⛽ ' + (drv.full_name || drv.msts_driver_name || drv.driver_code || 'Fuel card');
+    $('fchSub').textContent = drv.driver_code || '';
+    var scr = $('fchScreen'); if(scr) scr.style.display = 'flex';
+    syncFchLangBtn();
+    ensureBillToCustomers();           // warm the customer cache
+    ensureVehicles(function(){});      // warm vehicle cache for equipment-day form
+    C.showFchHome();
+  };
+
+  // Two large, thumb-friendly tiles.
+  C.showFchHome = function(){
+    var body = $('fchBody'); if(!body) return;
+    syncFchLangBtn();
+    function tile(id, emoji, label, color){
+      return '<button id="'+id+'" style="display:block;width:100%;box-sizing:border-box;padding:34px 18px;margin-bottom:18px;border:none;border-radius:18px;background:'+color+';color:#fff;font-size:19px;font-weight:800;text-align:center;line-height:1.35">'+
+        '<div style="font-size:46px;margin-bottom:10px">'+emoji+'</div>'+esc(label)+'</button>';
+    }
+    body.innerHTML =
+      tile('fchTileReceipt', '🧾', t('fchTileReceipt'), '#2a4a7a') +
+      tile('fchTileEquip',   '📋', t('fchTileEquip'),   '#1f6b3a');
+    var a = $('fchTileReceipt'); if(a) a.onclick = function(){ C.showFchReceipt(); };
+    var b = $('fchTileEquip');   if(b) b.onclick = function(){ C.showFchEquipmentDay(); };
+  };
+
+  // ── Fuel receipt sub-screen (reuses the chofer OCR + submit flow) ──
+  // Adds the Bill-To + Equipment dropdowns at the top per the brief. The extra
+  // equipment fields stay hidden while Bill-To = EBERRY (the common path).
+  C.showFchReceipt = function(){
+    var body = $('fchBody'); if(!body) return;
+    body.innerHTML =
+      '<button id="fchReceiptBack" style="background:#2a4a7a;border:none;color:#fff;border-radius:8px;padding:8px 12px;font-size:14px;font-weight:700;margin-bottom:8px">'+esc(t('backToHome'))+'</button>'+
+      billToBlockHtml('fch') +
+      vehiclePickerHtml()+
+      '<label for="choferFuelFile" id="choferFuelPhotoBtn" style="display:block;width:100%;padding:18px;margin-top:16px;border:none;border-radius:14px;background:#2a4a7a;color:#fff;font-size:17px;font-weight:800;text-align:center;cursor:pointer;box-sizing:border-box">'+esc(t('takePhoto'))+'</label>'+
+      '<input id="choferFuelFile" type="file" accept="image/*" capture="environment" style="position:absolute;left:-9999px;width:1px;height:1px;opacity:0">'+
+      '<div id="choferFuelThumb" style="margin-top:10px"></div>'+
+      field(t('gallons'), '<input id="choferFuelGal" type="number" inputmode="decimal" style="'+inputStyle()+'">')+
+      field(t('total'),   '<input id="choferFuelTot" type="number" inputmode="decimal" style="'+inputStyle()+'">')+
+      field(t('odoReading'), '<input id="choferFuelOdo" type="number" inputmode="numeric" style="'+inputStyle()+'">')+
+      '<button id="choferFuelSubmit" '+bigBtn(t('submit'),'#1f6b3a')+'>'+esc(t('submit'))+'</button>';
+    var bk = $('fchReceiptBack'); if(bk) bk.onclick = function(){ C.showFchHome(); };
+    ensureVehicles(function(){ refreshVehicleDatalist(); });
+    wireVehicleInput(null);
+    wireFuelControls();
+    wireBillToBlock('fch');
+  };
+
+  // ── Log equipment day form ──
+  // Phase A: submits via fleet.create_bareboat_trip when Bill-To != EBERRY (external),
+  // or skips the AR-creating insert when Bill-To = EBERRY (internal). See PR notes —
+  // the proper fleet.log_equipment_day RPC is deferred to Phase B.
+  C.showFchEquipmentDay = function(){
+    var body = $('fchBody'); if(!body) return;
+    var today = new Date().toISOString().slice(0,10);
+    body.innerHTML =
+      '<button id="fchEqBack" style="background:#2a4a7a;border:none;color:#fff;border-radius:8px;padding:8px 12px;font-size:14px;font-weight:700;margin-bottom:8px">'+esc(t('backToHome'))+'</button>'+
+      field(t('edDate'), '<input id="fchEqDate" type="date" value="'+esc(today)+'" style="'+inputStyle()+'">')+
+      vehiclePickerHtml()+
+      field(t('equipClass'), '<select id="fchEqClass" style="'+inputStyle()+';appearance:none;-webkit-appearance:none">'+equipClassOptions()+'</select>')+
+      field(t('travelBucket'), '<select id="fchEqTravel" style="'+inputStyle()+';appearance:none;-webkit-appearance:none">'+travelBucketOptions()+'</select>')+
+      billToBlockHtml('fchEq', {billToOnly:true}) +
+      field(t('edOdoStart'), '<input id="fchEqOdoStart" type="number" inputmode="numeric" style="'+inputStyle()+'">')+
+      field(t('edOdoEnd'),   '<input id="fchEqOdoEnd" type="number" inputmode="numeric" style="'+inputStyle()+'">')+
+      field(t('edNotes'),    '<textarea id="fchEqNotes" rows="3" style="'+inputStyle()+';resize:vertical"></textarea>')+
+      '<button id="fchEqSubmit" '+bigBtn(t('edSubmit'),'#1f6b3a')+'>'+esc(t('edSubmit'))+'</button>'+
+      '<div id="fchEqErr" style="margin-top:10px;color:#ff9a9a;font-size:13px;font-weight:600"></div>';
+    var bk = $('fchEqBack'); if(bk) bk.onclick = function(){ C.showFchHome(); };
+    ensureVehicles(function(){ refreshVehicleDatalist(); });
+    wireVehicleInput(null);
+    wireBillToBlock('fchEq');
+    var sub = $('fchEqSubmit'); if(sub) sub.onclick = submitEquipmentDay;
+  };
+
+  function submitEquipmentDay(){
+    var errEl = $('fchEqErr'); if(errEl) errEl.textContent = '';
+    if(!C.state.vehicleId){ if(errEl) errEl.textContent = t('edVehicleReq'); return; }
+    var billToId   = $('fchEqBillTo') ? $('fchEqBillTo').value || null : null;
+    if(!billToId){ if(errEl) errEl.textContent = t('billToRequired'); return; }
+    var billToOpt  = $('fchEqBillTo').options[$('fchEqBillTo').selectedIndex];
+    var billIsEberry = billToOpt && billToOpt.getAttribute('data-eberry') === '1';
+    var dateStr    = $('fchEqDate') ? $('fchEqDate').value : null;
+    var eqClass    = $('fchEqClass') ? ($('fchEqClass').value || null) : null;
+    var travel     = $('fchEqTravel') ? ($('fchEqTravel').value || null) : null;
+    var odoStart   = parseFloat(($('fchEqOdoStart')||{}).value); if(isNaN(odoStart)) odoStart = null;
+    var odoEnd     = parseFloat(($('fchEqOdoEnd')||{}).value);   if(isNaN(odoEnd)) odoEnd = null;
+    var notes      = $('fchEqNotes') ? ($('fchEqNotes').value || null) : null;
+    var sub = $('fchEqSubmit');
+    if(sub){ sub.disabled = true; sub.textContent = t('edSaving'); }
+    function done(ok){
+      if(sub){ sub.disabled = false; sub.textContent = t('edSubmit'); }
+      if(ok){ note(t('edSaved')); C.showFchHome(); }
+      else  { if(errEl) errEl.textContent = t('edError'); }
+    }
+    // Phase A path:
+    //  - Bill-To = EBERRY (internal): no AR row — skip the bareboat insert entirely.
+    //    There is no log_equipment_day RPC yet, so for internal we record nothing
+    //    server-side beyond the (future) RPC. We surface success so the bus driver
+    //    isn't blocked; Phase B adds the lightweight internal log.
+    //  - Bill-To != EBERRY (external): create a bareboat trip so AR can be generated.
+    if(billIsEberry){
+      console.log('[V21_01_1] equipment-day internal (EBERRY) — no AR insert in Phase A', {
+        date:dateStr, vehicle_id:C.state.vehicleId, equipment_class:eqClass, travel_bucket:travel,
+        odometer_start:odoStart, odometer_end:odoEnd, notes:notes
+      });
+      done(true);
+      return;
+    }
+    rpc('create_bareboat_trip', {
+      p_tenant_id:          TENANT_ID,
+      p_driver_id:          C.state.driver.driver_id,
+      p_vehicle_id:         C.state.vehicleId,
+      p_customer_id:        billToId,
+      p_trip_date:          dateStr,
+      p_equipment_class:    eqClass,
+      p_travel_bucket:      travel,
+      p_odometer_start:     odoStart,
+      p_odometer_end:       odoEnd,
+      p_external_driver_name: '(self-log via PWA)',
+      p_notes:              notes
+    }).then(function(){ done(true); })
+      .catch(function(e){ console.warn('[V21_01_1] create_bareboat_trip', e && e.message); done(false); });
+  }
+
+  // Shared Bill-To + equipment/travel block. `prefix` namespaces the element ids so the
+  // same builder works on the fuel receipt screen (prefix 'fch'), the equipment-day form
+  // (prefix 'fchEq'), and the hauler start modal (prefix 'hauler'). The equipment provider
+  // / class / travel fields are revealed only when Bill-To != EBERRY.
+  function billToBlockHtml(prefix, opts){
+    opts = opts || {};
+    var billOnly =
+      '<div id="'+prefix+'BillToBlock">'+
+      field(t('billToReq'),
+        '<select id="'+prefix+'BillTo" style="'+inputStyle()+';appearance:none;-webkit-appearance:none">'+
+          '<option value="">'+esc(t('selBillTo'))+'</option>'+
+        '</select>'+
+        '<div id="'+prefix+'BillToErr" style="margin-top:6px;color:#ff9a9a;font-size:12px;font-weight:600"></div>');
+    // The equipment-day form has its own dedicated Equipment class + Travel bucket fields,
+    // so it opts out of the gated equipment-extra reveal (Bill-To dropdown only).
+    if(opts.billToOnly){ return billOnly + '</div>'; }
+    return billOnly+
+      '<div id="'+prefix+'EquipExtra" style="display:none">'+
+        field(t('equipProvider'),
+          '<select id="'+prefix+'EquipProvider" style="'+inputStyle()+';appearance:none;-webkit-appearance:none">'+
+            '<option value="">'+esc(t('selProvider'))+'</option>'+
+            '<option value="eberry">eBerry</option>'+
+            '<option value="jab">'+esc(t('provJab'))+'</option>'+
+            '<option value="paulvales">'+esc(t('provPaulvales'))+'</option>'+
+          '</select>')+
+        field(t('equipClass'),
+          '<select id="'+prefix+'EquipClass" style="'+inputStyle()+';appearance:none;-webkit-appearance:none">'+equipClassOptions()+'</select>')+
+        field(t('travelTime'),
+          '<select id="'+prefix+'EquipTravel" style="'+inputStyle()+';appearance:none;-webkit-appearance:none">'+travelBucketOptions()+'</select>')+
+      '</div>'+
+    '</div>';
+  }
+  // Wire a Bill-To block: load customers, reveal/hide the equipment fields on change.
+  function wireBillToBlock(prefix){
+    var extra = $(prefix+'EquipExtra');
+    function toggleExtra(isEberry){ if(extra) extra.style.display = isEberry ? 'none' : ''; }
+    ensureBillToCustomers().then(function(rows){
+      var sel = $(prefix+'BillTo');
+      if(!rows || !rows.length){
+        var err = $(prefix+'BillToErr'); if(err) err.textContent = t('noCustomers');
+        if(sel) sel.disabled = true;
+        return;
+      }
+      fillBillToSelect(prefix+'BillTo', rows, function(custId, isEberry){ toggleExtra(isEberry); });
+      // Initialize visibility from the default selection (EBERRY → hidden).
+      var opt = sel && sel.options[sel.selectedIndex];
+      toggleExtra(opt && opt.getAttribute('data-eberry') === '1');
+    });
+  }
+  // Resolve haul_scenario from the equipment-provider choice when Bill-To != EBERRY:
+  //   provider 'eberry'         → external party using eBerry equipment
+  //   provider 'jab'/'paulvales' → eBerry labor on the external party's truck
+  function haulScenarioFromProvider(provider){
+    if(provider === 'eberry') return 'external_party_using_eberry_equipment';
+    if(provider === 'jab' || provider === 'paulvales') return 'eberry_labor_external_truck';
+    return null;
+  }
 
   C.enterChoferMode = function(drv){
     C.state.driver = drv;
@@ -13711,6 +14625,7 @@ var _checkSendTimer = setInterval(checkDaysWithoutSend, 30 * 60 * 1000);
     var body = $('haulerStartBody'); if(!body) return;
     body.innerHTML =
       '<div id="haulerAssigned"></div>'+ // V21_00_3: assigned trips section
+      billToBlockHtml('hauler')+ // V21_01_1: Bill-To (required) + equipment/travel (shown only when Bill-To != EBERRY)
       vehiclePickerHtml()+
       // V21_00_3: rancho_origin selector — populated from active surquero's _ranchos[]; falls back to free-text if empty
       field(t('ranchoOrigen'), (function(){
@@ -13759,15 +14674,34 @@ var _checkSendTimer = setInterval(checkDaysWithoutSend, 30 * 60 * 1000);
       '<div id="haulerStartErr" style="margin-top:10px;color:#ff9a9a;font-size:13px;font-weight:600"></div>'+ // V21_00_3:
       '<div id="haulerRecent" style="margin-top:22px"></div>'; // V21_00_3: recent trips section
     wireVehicleInput(null);
+    wireBillToBlock('hauler'); // V21_01_1: Bill-To dropdown + equipment/travel reveal
     loadAssignedTrips(); // V21_00_3: dispatcher hand-off
     loadRecentTrips();   // V21_00_3: trip history (hauler_my_trip_history)
     loadHaulingLookups(); // V21_01_0: fetch origin/customer/load-type dropdowns
     var btn = $('haulerStartBtn');
     if(btn) btn.onclick = function(){
+      var _errEl = $('haulerStartErr');
+      // V21_01_1: Bill-To is required; block start when customers failed to load.
+      var _billSel = $('haulerBillTo');
+      var _billToId = _billSel ? (_billSel.value || null) : null;
+      if(!_billToId){
+        if(_errEl) _errEl.textContent = t('billToRequired');
+        return;
+      }
+      var _billOpt = _billSel.options[_billSel.selectedIndex];
+      var _billIsEberry = _billOpt && _billOpt.getAttribute('data-eberry') === '1';
+      // V21_01_1: derive haul_scenario + equipment fields only when Bill-To != EBERRY.
+      var _haulScenario = 'internal_eberry';
+      var _eqClass = null, _travel = null;
+      if(!_billIsEberry){
+        var _prov = $('haulerEquipProvider') ? ($('haulerEquipProvider').value || null) : null;
+        _haulScenario = haulScenarioFromProvider(_prov) || 'eberry_labor_external_truck';
+        _eqClass = $('haulerEquipClass') ? ($('haulerEquipClass').value || null) : null;
+        _travel  = $('haulerEquipTravel') ? ($('haulerEquipTravel').value || null) : null;
+      }
       // V21_00_3: validate rancho_origin (required — from dropdown or free-text fallback)
       var _rOrig = $('haulerStartRancho') ? $('haulerStartRancho').value.trim() : '';
       if(!_rOrig){
-        var _errEl = $('haulerStartErr');
         if(_errEl) _errEl.textContent = t('ranchoRequired');
         return;
       }
@@ -13785,7 +14719,13 @@ var _checkSendTimer = setInterval(checkDaysWithoutSend, 30 * 60 * 1000);
         customer:      _customer || null,
         rancho_origin: _rOrig, // V21_00_3: pass rancho_origin as last param to start_hauling_trip
         load_type_id:           _loadTypeId,     // V21_01_0: hauling_load_type FK (RPC will ignore until backend updated)
-        load_description_other: _loadOtherTxt    // V21_01_0: "Other" free-text fallback
+        load_description_other: _loadOtherTxt,   // V21_01_0: "Other" free-text fallback
+        // V21_01_1: Bill-To + haul scenario / equipment / travel (applied via direct
+        // trip update after the start RPC returns — see C.startHaulingTrip).
+        bill_to_customer_id: _billToId,
+        haul_scenario:       _haulScenario,
+        equipment_class:     _eqClass,
+        travel_bucket:       _travel
       });
     };
   }
@@ -13910,6 +14850,8 @@ var _checkSendTimer = setInterval(checkDaysWithoutSend, 30 * 60 * 1000);
   C.logout = function(){
     $('choferScreen').style.display = 'none';
     var hs = $('haulerStartScreen'); if(hs) hs.style.display = 'none';
+    var fch = $('fchScreen'); if(fch) fch.style.display = 'none'; // V21_01_1
+    C.state.billToCusts = null; // V21_01_1: drop cached customers on logout
     var ts = $('choferTripScreen'); if(ts) ts.style.display = 'none';
     if(location.hash) try{ history.replaceState(null,'',location.pathname+location.search); }catch(e){ location.hash=''; }
     window.currentMode = 'surquero';
@@ -13932,6 +14874,12 @@ var _checkSendTimer = setInterval(checkDaysWithoutSend, 30 * 60 * 1000);
     window.CHOFER_LANG = (window.CHOFER_LANG === 'en') ? 'es' : 'en';
     try{ localStorage.setItem(C.LANG_KEY, window.CHOFER_LANG); }catch(e){}
     syncLangBtn();
+    // V21_01_1: fuel_card_holder shell has its own language button + screens.
+    if(window.currentMode === 'fuel_card_holder'){
+      syncFchLangBtn();
+      C.showFchHome();
+      return;
+    }
     renderTabs();
     C.showTab(C.state.activeTab);
   };
@@ -14493,21 +15441,24 @@ var _checkSendTimer = setInterval(checkDaysWithoutSend, 30 * 60 * 1000);
     lockBtn();
     console.log('[submitFuel] start', { isHauler:isHauler, tripId:haulerTripId, vehicleId:C.state.vehicleId, gallons:gallons, total:total, hasFile:!!f });
 
-    function finishOk(){
-      unlockBtn();
-      note(t('receiptSent')||'Receipt sent');
-      // V21_01_0c: route back to the correct fuel tab based on mode
+    // V21_01_1: fuel_card_holder mode routes back to its own two-tile home, not a chofer tab.
+    var isFch = (window.currentMode === 'fuel_card_holder');
+    function routeBack(){
+      if(isFch && typeof C.showFchHome==='function'){ C.showFchHome(); return; }
       if(isHauler && typeof C.showHaulerTab==='function'){
         try{ C.showHaulerTab('fuel'); }catch(_){ C.showTab('fuel'); }
       } else { C.showTab('fuel'); }
+    }
+    function finishOk(){
+      unlockBtn();
+      note(t('receiptSent')||'Receipt sent');
+      routeBack();
     }
     function fail(){ // queue offline, will retry
       unlockBtn();
       queueFuel({ pending_id:pendingId, vehicle_id:C.state.vehicleId, gallons:gallons, total:total, odometer:odometer, photo_url:null, station_name:stationName, pump_number:pumpNumber, notes:ocrNotes });
       note(t('queuedOffline')||'Queued offline');
-      if(isHauler && typeof C.showHaulerTab==='function'){
-        try{ C.showHaulerTab('fuel'); }catch(_){ C.showTab('fuel'); }
-      } else { C.showTab('fuel'); }
+      routeBack();
     }
 
     if(navigator.onLine === false){ fail(); return; }
@@ -14794,6 +15745,11 @@ var _checkSendTimer = setInterval(checkDaysWithoutSend, 30 * 60 * 1000);
           if(!C.isClockedIn()){ C.clockIn({ trip_id: tripId }); }
           // V21_00_3: stamp origin GPS if we got a fix
           if(pos){ rpc('trip_log_position', { p_tenant_id: TENANT_ID, p_trip_id: tripId, p_lat: pos.coords.latitude, p_lng: pos.coords.longitude, p_speed:null, p_heading:null }).catch(function(){}); }
+          // V21_01_1: start_hauling_trip does NOT yet accept customer_id / haul_scenario /
+          // equipment_class / travel_bucket params (Phase B item #5). Apply them here via
+          // direct trip-field updates after the trip id is known. Best-effort + non-blocking
+          // so a field-update failure never strands a started trip.
+          applyBillToFields(tripId, opts);
           var scr = $('haulerStartScreen'); if(scr) scr.style.display = 'none';
           C.navTrip(tripId);
         })
@@ -14805,6 +15761,22 @@ var _checkSendTimer = setInterval(checkDaysWithoutSend, 30 * 60 * 1000);
         });
     });
   };
+
+  // V21_01_1: write Bill-To + haul scenario / equipment / travel onto the trip after start.
+  // Uses the existing single-field trip_update_field RPC (one call per column). All calls
+  // are fire-and-forget — failures are logged but never block the trip flow.
+  function applyBillToFields(tripId, opts){
+    if(!tripId || !opts) return;
+    function setField(field, value){
+      if(value == null || value === '') return;
+      rpc('trip_update_field', { p_tenant_id: TENANT_ID, p_trip_id: tripId, p_field: field, p_value: value })
+        .catch(function(e){ console.warn('[V21_01_1] trip_update_field '+field, e && e.message); });
+    }
+    setField('customer_id',     opts.bill_to_customer_id);
+    setField('haul_scenario',   opts.haul_scenario);
+    setField('equipment_class', opts.equipment_class);
+    setField('travel_bucket',   opts.travel_bucket);
+  }
 
   // V21_00_3: 9-tab constants
   var HTABS = ['overview','time','dvir','bol','load','fuel','odometer','maint','events']; // V21_00_3:
