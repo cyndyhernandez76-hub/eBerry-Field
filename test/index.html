@@ -35,7 +35,7 @@
 </script>
 <script>
 // V20_21: check versión + ackedVersion para romper loop infinito cuando version.txt≠APP_VERSION
-window.APP_VERSION = 'V2_0_0_30';
+window.APP_VERSION = 'V2_0_0_31';
 (function(){
   // V20_77: AUTO-LIMPIEZA de _ackedVersion envenenado.
   // Bug detectado: surqueros tocaban "Actualizar ahora" pero el SW interceptaba el reload con HTML viejo.
@@ -6386,14 +6386,46 @@ function _enterReadOnly(payload){
     // V1_0_0_55: si el grupal usa el MOTOR data-driven (VarBox/VarPsc, ej "Empaque"), el render y el
     // PAGO leen g.vars.inputs — NO g.vars.totalC. Al cargar del Sheet el total solo iba a totalC, así que
     // el motor lo veía vacío → "0 cajas" en Act. Grupales/Resumen. Reportado por Serafín 2026-07-14.
-    // Reconstruir el input del motor desde qtyTotal: si la fórmula tiene UN solo input (caso del empaque:
-    // cajas totales), ese input = qtyTotal. computeQty({col:qtyTotal}, 1) reconstruye el total exacto.
+    // V2_0_0_31 FIX — el cuadrito NO siempre vale lo mismo que el total del Sheet.
+    // V1_0_0_55 metía `_qtyT` tal cual en el cuadrito. Eso vale SOLO cuando el cuadrito ES la cantidad
+    // (VarBox: se llama "Cajas" y el Sheet manda cajas). En VarDoor el cuadrito se llama "Acres" y el
+    // Sheet manda PUERTAS, así que el motor volvía a multiplicar por el factor del MASTER.
+    //   Tacc "Recoger Platico" (H=label'Acres', I=60, L=label'personas'), 108 puertas / 20 personas:
+    //     antes → inputs.H=108 → (108×60)/20 = 324 c/u → $97.20 c/u → $1,944.00  (60x)
+    //     real  → 1.8 acres    → (1.8×60)/20 =   5.4 c/u → $1.62  c/u →    $32.40
+    // Reportado por Serafín 2026-10-07: el Resumen del día 2026-09-29 Tacc decía $4,309 cuando la hoja
+    // de payroll daba ~$2,300. Reproducido al centavo: $1,947.85 individuales + $416.80 del Empaque
+    // (ese sí estaba bien) + $1,944.00 de esta grupal inflada = $4,308.65 → "$4309".
+    // Afecta también al PDF: los surcos sintéticos no traen totalPies/totalAcres, así que
+    // buildPDFWindow cae al fallback del motor (L13355) y lee el mismo cuadrito envenenado.
+    // Son 27 grupales VarDoor en 6 ranchos (Pennrose 87.2x, Atlantic/Mecca/Thomas 83x, Tacc 60x,
+    // Bedners 144.12x). La captura del surquero NO está afectada — él teclea acres y sale bien;
+    // esto solo aparece al RECARGAR el día desde Sheets.
+    //
+    // Arreglo independiente de la fórmula: en vez de asumir qué significa el cuadrito, se DESPEJA.
+    // Se pregunta al motor cuánto da con el cuadrito en 1 (misma gente) y se escala al objetivo.
+    // Para VarBox da exactamente lo mismo que antes (no hay regresión); para VarDoor corrige el factor.
     if(_grpAct && typeof _grpUsesMotor==='function' && _grpUsesMotor(_grpAct) && typeof getRequiredInputs==='function' && _qtyT>0){
       try {
         var _reqRO = getRequiredInputs(_grpAct) || [];
         if(_reqRO.length === 1){
           _vars.inputs = _vars.inputs || {};
-          _vars.inputs[_reqRO[0].column] = _qtyT;
+          var _col31 = _reqRO[0].column;
+          var _np31  = partIds.length || 1;
+          // objetivo = cuánto le toca a CADA persona. El backend v5.56 ya lo manda calculado bien
+          // (qtyPerWorker); si no viene (payload viejo), se deriva del total entre la gente.
+          var _obj31 = parseFloat(pg.qtyPerWorker);
+          if(!(_obj31 > 0)) _obj31 = _qtyT / _np31;
+          // cuánto produce el motor con el cuadrito en 1 → la "tasa" de ese cuadrito
+          var _uno31 = {}; _uno31[_col31] = 1;
+          var _tasa31 = (typeof computeQty==='function') ? computeQty(_grpAct, _uno31, _np31) : null;
+          if(_tasa31 != null && isFinite(_tasa31) && _tasa31 > 0){
+            _vars.inputs[_col31] = _obj31 / _tasa31;
+          } else {
+            // sin tasa utilizable (fórmula rara) → comportamiento anterior, para no romper nada
+            _vars.inputs[_col31] = _qtyT;
+            console.warn('[V2_0_0_31] no pude despejar el cuadrito, uso qtyTotal:', pg.actEs);
+          }
         } else if(_reqRO.length > 1){
           console.warn('[V1_0_0_55] grupal motor multi-input no reconstruible desde qtyTotal (modo lectura):', pg.actEs, _reqRO.map(function(r){return r.column;}).join(','));
         }
