@@ -35,7 +35,7 @@
 </script>
 <script>
 // V20_21: check versión + ackedVersion para romper loop infinito cuando version.txt≠APP_VERSION
-window.APP_VERSION = 'V2_0_0_31';
+window.APP_VERSION = 'V2_0_1_2';
 (function(){
   // V20_77: AUTO-LIMPIEZA de _ackedVersion envenenado.
   // Bug detectado: surqueros tocaban "Actualizar ahora" pero el SW interceptaba el reload con HTML viejo.
@@ -281,6 +281,17 @@ select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/
 .qrOv{position:fixed;top:0;right:0;bottom:0;left:0;background:rgba(0,0,0,.85);z-index:500;display:none;flex-direction:column;align-items:center;justify-content:center;padding:20px}
 .qrOv.on{display:flex}
 .qrBox{background:#fff;border-radius:16px;width:100%;max-width:380px;overflow:hidden}
+/* V2_0_1_2: el modal no tenia tope de altura ni scroll. Si el visor crece (iPhone
+   grande, o el bloque de error de camara abierto) el boton de salida quedaba fuera
+   de pantalla y SIN forma de alcanzarlo, porque .qrOv centra verticalmente. */
+.qrBox{max-height:80vh;max-height:80dvh;overflow-y:auto;-webkit-overflow-scrolling:touch}
+/* V2_0_1_2: holgura inferior. En Chrome iOS la barra de herramientas de abajo se
+   dibuja ENCIMA del viewport de layout, asi que un position:fixed con bottom:0
+   mete su parte baja debajo de la barra y los toques ahi le llegan a la barra, no
+   al boton. Con .qrOv centrado eso se come la parte de abajo de .qrBox, donde
+   justo vive la tira naranja del PIN. dvh (no vh) mide el viewport visible de
+   verdad; el vh queda como respaldo para navegadores que no lo conozcan. */
+.qrOv{padding:20px 20px 76px}
 .qrHead{background:var(--g);color:#fff;padding:14px 16px;display:flex;align-items:center;justify-content:space-between}
 .qrHead span{font-family:'Bebas Neue',sans-serif;font-size:18px;letter-spacing:1px}
 .qrClose{background:rgba(255,255,255,.2);border:none;color:#fff;border-radius:8px;padding:10px 16px;font-size:14px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif;min-height:44px}
@@ -290,6 +301,23 @@ select{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/
 .qrStatus.ok{background:var(--bp);color:var(--b)}
 .qrStatus.err{background:var(--rp);color:var(--r)}
 .qrCount{background:var(--gp);color:var(--g);padding:8px 16px;font-size:12px;font-weight:700;text-align:center;border-top:1px solid var(--bd)}
+/* V2_0_1_2: modal propio del PIN del surquero, en reemplazo del prompt() nativo.
+   z-index 10500 para quedar sobre .qrOv (500) y sobre .ov (600).
+   NO lleva la clase .ov a proposito: .ov usa align-items:flex-end (hoja inferior) y
+   en Chrome iOS eso cae debajo de la barra de herramientas — el mismo problema que
+   dejaba la tira naranja sin responder. Aqui va centrado y con holgura abajo.
+   El input va a 16px porque abajo de eso iOS hace zoom al enfocar y descuadra todo. */
+.qrPinOv{position:fixed;top:0;right:0;bottom:0;left:0;background:rgba(0,0,0,.72);z-index:10500;display:none;align-items:center;justify-content:center;padding:20px 20px 76px}
+.qrPinCard{background:#fff;border-radius:14px;width:100%;max-width:340px;padding:18px;box-shadow:0 20px 60px rgba(0,0,0,.5);max-height:80vh;max-height:80dvh;overflow-y:auto;-webkit-overflow-scrolling:touch}
+.qrPinCard h3{font-family:'Bebas Neue',sans-serif;font-size:20px;letter-spacing:1px;color:var(--g);margin-bottom:4px}
+.qrPinCard .qrPinSub{font-size:12px;color:var(--gr);line-height:1.4;margin-bottom:14px}
+.qrPinCard input{width:100%;font-size:16px;padding:14px;min-height:50px;border:2px solid var(--bd);border-radius:10px;text-align:center;letter-spacing:6px;font-weight:700;color:var(--dk);background:#fff;-webkit-appearance:none}
+.qrPinCard input:focus{outline:none;border-color:var(--g2)}
+.qrPinErr{display:none;margin-top:10px;padding:10px 12px;background:var(--rp);color:#a02020;border-left:4px solid var(--r);border-radius:6px;font-size:13px;font-weight:600;line-height:1.45;white-space:pre-line}
+.qrPinRow{display:flex;gap:8px;margin-top:14px}
+.qrPinRow button{flex:1;min-height:50px;padding:12px;border:none;border-radius:10px;font-size:15px;font-weight:700;font-family:'DM Sans',sans-serif;cursor:pointer}
+.qrPinRow .qrPinCancel{background:#eef1ff;color:var(--g)}
+.qrPinRow .qrPinOk{background:#e67e22;color:#fff}
 .wc{background:#fff;border:1.5px solid var(--bd);border-radius:12px;margin-bottom:10px}
 .wc.hi{border-color:var(--g)}
 .wh{display:flex;align-items:flex-start;padding:12px 13px;gap:9px;cursor:pointer}
@@ -2252,6 +2280,34 @@ body.readOnly [onclick*="openNewDay"]{display:none !important}
     <div class="qrCount" id="qrCount" style="display:none"></div>
     <!-- V20_103: bypass QR con PIN — admin O surquero loggeado (cuando perdió credencial QR) -->
     <button id="adminPinBypassBtn" onclick="surqueroBypassQR()" style="display:none;width:100%;margin-top:10px;padding:12px;background:#e67e22;color:#fff;border:none;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer">🔢 Usar mi PIN (sin QR)</button>
+    <!-- V2_0_1_2: estado de error ACCIONABLE de la camara. Antes, cuando la camara no
+         arrancaba, lo unico que pasaba era una linea de texto en #qrStatus y el surquero
+         quedaba atorado frente a un rectangulo negro. Peor: cuando start() se colgaba sin
+         resolver ni rechazar, NI ESE texto aparecia. Aqui va el motivo en claro, el boton
+         de reintentar, y el camino por PIN cuando el modo lo permite. -->
+    <div id="qrCamErr" style="display:none;padding:14px 16px;background:#ffeaea;border-top:3px solid #d94040">
+      <div id="qrCamErrMsg" style="font-size:13px;font-weight:600;color:#a02020;line-height:1.5;white-space:pre-line;margin-bottom:12px"></div>
+      <button onclick="_qrRetryCamera()" style="width:100%;min-height:48px;padding:12px;background:#1a2b8c;color:#fff;border:none;border-radius:8px;font-size:15px;font-weight:700;cursor:pointer">🔄 Reintentar cámara</button>
+      <button id="qrCamErrPin" onclick="surqueroBypassQR()" style="display:none;width:100%;min-height:48px;margin-top:8px;padding:12px;background:#e67e22;color:#fff;border:none;border-radius:8px;font-size:15px;font-weight:700;cursor:pointer">🔢 Continuar con mi PIN (sin cámara)</button>
+      <div style="font-size:11px;color:#6b7db3;margin-top:10px;line-height:1.4">Si nada funciona, cierra con ✕ y avisa a Serafín. No pierdes nada de lo capturado.</div>
+    </div>
+  </div>
+</div>
+
+<!-- V2_0_1_2: modal del PIN del surquero. Reemplaza al prompt() nativo de
+     surqueroBypassQR, que en Chrome iOS devolvia null sin mostrar nada cuando el
+     navegador tenia suprimidos los dialogos de la pagina — y como el unico camino
+     mudo de esa funcion era `if(!pin) return;`, la tira naranja "no respondia". -->
+<div class="qrPinOv" id="qrPinOv">
+  <div class="qrPinCard">
+    <h3>🔢 Tu PIN de surquero</h3>
+    <div class="qrPinSub">Sirve para confirmar sin escanear el QR. Es el mismo PIN con el que entras a la app.</div>
+    <input type="password" id="qrPinInput" inputmode="numeric" pattern="[0-9]*" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" maxlength="12" placeholder="&#8226;&#8226;&#8226;&#8226;" onkeydown="onQrPinKey(event)">
+    <div class="qrPinErr" id="qrPinErr"></div>
+    <div class="qrPinRow">
+      <button type="button" class="qrPinCancel" onclick="closeQrPinModal(true)">Cancelar</button>
+      <button type="button" class="qrPinOk" id="qrPinOkBtn" onclick="qrPinSubmit()">Confirmar</button>
+    </div>
   </div>
 </div>
 
@@ -7152,6 +7208,298 @@ var _qrTransitioning = false;
 // en cascada -> spam consola y CPU. Con este flag solo hay UN setTimeout pendiente.
 var _resumeQRPending = false;
 
+/* ───────────────────────────────────────────────────────────────────────────
+   V2_0_1_2 — ARRANQUE DE CÁMARA ROBUSTO (reporte iPhone 13 Pro Max que "se
+   congela" al registrar surquero, mientras los otros iPhones sí funcionan).
+
+   Cuatro causas reales, verificadas leyendo el fuente de html5-qrcode 2.3.8:
+
+   1) `aspectRatio: 1.0` NO viaja como constraint de getUserMedia. La librería
+      lo aplica DESPUÉS, con track.applyConstraints({aspectRatio}), y SOLO
+      llama a setupSurface() — que es donde hace video.srcObject = stream y
+      play() — cuando esa promesa resuelve (RenderedCameraImpl.create: case 0
+      espera el applyConstraints, case 2 recién monta el stream). El <video> ya
+      está insertado en #qrReader por el constructor, así que si ese
+      applyConstraints tarda o rechaza queda un rectángulo NEGRO CONGELADO sin
+      un solo mensaje de error. En un iPhone de triple cámara ese
+      applyConstraints obliga a renegociar el formato de captura del dispositivo
+      virtual ("Back Dual Wide Camera" / "Back Triple Camera"); en iPhones de
+      1-2 lentes la renegociación es trivial y no se nota. Eso es lo único
+      dependiente del hardware en toda la secuencia de arranque, y explica el
+      "solo ese teléfono".
+      → Se quita aspectRatio: sin él la librería ni llama a applyConstraints.
+
+   2) Con el start colgado, getState() sigue devolviendo 1 (NOT_STARTED) porque
+      la transición a SCANNING nunca llega a execute(). El watchdog V20_96
+      exigía getState()===2, así que NUNCA reciclaba.
+      → watchdog nuevo, por avance de frames.
+
+   3) pauseQR ponía _qrTransitioning=true y llamaba qrScanner.stop(), que LANZA
+      DE FORMA SÍNCRONA ("Cannot stop, scanner is not running or paused")
+      cuando el estado es NOT_STARTED — exactamente cuando el arranque falló.
+      El throw sale sin pasar por el .catch y deja _qrTransitioning=true PARA
+      SIEMPRE; con ese flag, resumeQR y _recycleQRCamera salen siempre por su
+      early-return. Ese es, al pie de la letra, el "ya no permite seguir".
+      → guard por estado + try/catch que SIEMPRE libera el flag.
+
+   4) ENTORNO (dato de campo): el teléfono es un iPhone 14 Pro Max abierto con
+      CHROME iOS — no Safari, no PWA instalada. Chrome iOS es WKWebView: otra
+      app, con su propio permiso de cámara a nivel de iOS (Ajustes → Chrome →
+      Cámara) separado del de Safari, y su propia capa de diálogos. Es la única
+      diferencia de entorno en toda la flota. Dos consecuencias:
+        · Si el permiso de cámara está NEGADO a nivel de iOS para Chrome, la
+          petición del WKWebView puede quedar sin respuesta y getUserMedia NO
+          resuelve ni rechaza → visor negro, hilo principal VIVO, ✕ funciona.
+          Es el calco exacto del síntoma reportado. El guard de 12 s de
+          _qrLaunch convierte eso en un mensaje legible.
+        · El getUserMedia dentro de setTimeout(300) se mueve al tick del toque.
+          HONESTIDAD: eso es endurecimiento, NO causa confirmada — la
+          activación transitoria de WebKit dura ~1-5 s y 300 ms caía dentro.
+   ─────────────────────────────────────────────────────────────────────────── */
+
+// V2_0_1_2: config de escaneo SIN aspectRatio (causa 1).
+function _qrScanCfg(){ return { fps: 10, qrbox: { width: 250, height: 250 } }; }
+
+var _qrCamSpec    = null;   // {deviceId:{exact:id}} o {facingMode:'environment'}
+var _qrCamLabel   = '';     // label de la cámara elegida (diagnóstico en consola)
+var _qrCamTried   = false;  // ya enumeramos en esta sesión
+var _qrStartGuard = null;   // timeout de arranque (12s)
+var _qrStartDone  = false;  // start() ya resolvió o rechazó
+var _qrPinOk      = false;  // ¿este modo admite salir por PIN?
+var _qrFrameT     = -1;     // currentTime previo del <video>
+var _qrFrameStuck = 0;      // chequeos consecutivos sin avance de frames
+
+// V2_0_1_2: elige la cámara trasera adecuada. En iOS los labels llegan como
+// "Back Camera", "Back Dual Wide Camera", "Back Ultra Wide Camera",
+// "Back Telephoto Camera", "Back Triple Camera", "Front Camera".
+// Se EXCLUYE la ultra wide (campo de visión enorme: el QR cae en pocos píxeles
+// dentro del qrbox de 250x250 y nunca decodifica) y la telefoto (distancia
+// mínima de enfoque demasiado larga para leer un QR a 20-30 cm).
+// Prioridad: "Back Camera" pelón > dual/triple virtual > cualquier trasera.
+// Si NO hay labels útiles devuelve null y el llamador cae a facingMode — jamás
+// se elige una cámara a ciegas por índice, porque podría ser la frontal.
+function _qrPickBackCamera(devs){
+  if(!devs || !devs.length) return null;
+  var i, d, lb, best = null, dual = null, anyBack = null;
+  for(i = 0; i < devs.length; i++){
+    d = devs[i]; if(!d) continue;
+    lb = String(d.label || '').toLowerCase();
+    if(!lb) continue;
+    if(lb.indexOf('front') >= 0 || lb.indexOf('frontal') >= 0 || lb.indexOf('user') >= 0) continue;
+    if(!(lb.indexOf('back') >= 0 || lb.indexOf('rear') >= 0 || lb.indexOf('tras') >= 0 || lb.indexOf('environment') >= 0)) continue;
+    if(!anyBack) anyBack = d;
+    if(lb.indexOf('ultra') >= 0 || lb.indexOf('tele') >= 0) continue;
+    if(lb.indexOf('dual') >= 0 || lb.indexOf('triple') >= 0){ if(!dual) dual = d; continue; }
+    if(!best) best = d;
+  }
+  return best || dual || anyBack || null;
+}
+
+// V2_0_1_2: resuelve UNA sola vez por sesión qué cámara usar.
+// Html5Qrcode.getCameras() internamente hace getUserMedia({video:true}) para
+// destrabar los labels (iOS no los entrega hasta que se concede permiso) y
+// después detiene esos tracks. Por eso se llama en el mismo tick del toque: así
+// el primer getUserMedia de la sesión queda DENTRO del gesto del usuario.
+function _qrResolveCamera(done){
+  if(_qrCamTried){ done(_qrCamSpec || { facingMode: 'environment' }); return; }
+  _qrCamTried = true;
+  var finished = false;
+  function finish(spec, label){
+    if(finished) return;
+    finished = true;
+    _qrCamSpec = spec;
+    _qrCamLabel = label || '';
+    console.log('[V2_0_1_2] cámara QR elegida:', label || '(facingMode environment)');
+    done(spec);
+  }
+  // Red de seguridad: en iOS getCameras() se puede colgar cuando otra app dejó
+  // la cámara tomada. A los 4s seguimos con facingMode y que el start decida.
+  var killer = setTimeout(function(){
+    console.warn('[V2_0_1_2] getCameras() no respondió en 4s — uso facingMode');
+    finish({ facingMode: 'environment' }, '');
+  }, 4000);
+  try{
+    Html5Qrcode.getCameras().then(function(devs){
+      clearTimeout(killer);
+      try{
+        for(var i = 0; devs && i < devs.length; i++){
+          console.log('[V2_0_1_2] videoinput:', (devs[i] && devs[i].label) || '(sin label)');
+        }
+      }catch(_e){}
+      var pick = _qrPickBackCamera(devs);
+      if(pick && pick.id) finish({ deviceId: { exact: pick.id } }, pick.label);
+      else finish({ facingMode: 'environment' }, '');
+    }).catch(function(err){
+      clearTimeout(killer);
+      // No se reporta aquí a propósito: si el permiso está denegado, el start()
+      // siguiente rechaza con NotAllowedError y ESE sí muestra el estado real.
+      console.warn('[V2_0_1_2] getCameras() falló:', err);
+      finish({ facingMode: 'environment' }, '');
+    });
+  }catch(e){
+    clearTimeout(killer);
+    console.warn('[V2_0_1_2] getCameras() lanzó:', e);
+    finish({ facingMode: 'environment' }, '');
+  }
+}
+
+// V2_0_1_2: traduce el error de getUserMedia a algo que el surquero pueda
+// ACCIONAR solo en el campo, sin esperar a que alguien se lo explique.
+function _qrCamErrText(err){
+  var n = '';
+  try{
+    if(err){ n = (typeof err === 'string') ? err : String(err.name || err.message || err || ''); }
+  }catch(_e){ n = ''; }
+  var s = n.toLowerCase();
+  if(s.indexOf('notallowed') >= 0 || s.indexOf('permission') >= 0 || s.indexOf('denied') >= 0){
+    return '🚫 El navegador tiene la cámara BLOQUEADA para esta página.\n\nEn Safari: toca "aA" arriba en la barra → Ajustes del sitio web → Cámara → Permitir. Después cierra la pestaña y vuelve a entrar.';
+  }
+  if(s.indexOf('notreadable') >= 0 || s.indexOf('trackstart') >= 0 || s.indexOf('abort') >= 0){
+    return '📵 Otra app tiene tomada la cámara.\n\nDesliza hacia arriba y cierra Cámara, WhatsApp, Instagram o FaceTime. Luego toca "Reintentar cámara".';
+  }
+  if(s.indexOf('overconstrained') >= 0 || s.indexOf('constraint') >= 0){
+    return '⚙️ Esta cámara no acepta la configuración pedida.\n\nToca "Reintentar cámara": el segundo intento usa la cámara por defecto del teléfono.';
+  }
+  if(s.indexOf('notfound') >= 0 || s.indexOf('devicesnotfound') >= 0){
+    return '❓ El teléfono no reportó ninguna cámara trasera.\n\nToca "Reintentar cámara". Si sigue igual, reinicia el teléfono.';
+  }
+  if(s.indexOf('_timeout_') >= 0){
+    return '⏱️ La cámara no arrancó en 12 segundos.\n\nPasa cuando iOS tiene la cámara ocupada o con el Modo de Bajo Consumo activo. Apaga Bajo Consumo (Ajustes → Batería), cierra las otras apps y toca "Reintentar cámara".';
+  }
+  return '⚠️ No se pudo abrir la cámara.\n(' + (n || 'error desconocido') + ')\n\nToca "Reintentar cámara".';
+}
+
+// V2_0_1_2: estado de error ACCIONABLE. Antes el .catch solo escribía una línea
+// de texto chica en #qrStatus y el surquero quedaba atorado viendo un
+// rectángulo negro, sin saber que abajo había una salida. Ahora: motivo
+// concreto + botón Reintentar + (cuando el modo lo permite) el camino por PIN,
+// y se encoge el visor para que todo quede a la vista sin tener que adivinar.
+function _qrShowCamError(err){
+  try{
+    console.error('[V2_0_1_2] QR camera error:', err);
+    var msg = gEl('qrCamErrMsg');
+    if(msg) msg.textContent = _qrCamErrText(err);
+    var box = gEl('qrCamErr');
+    if(box) box.style.display = 'block';
+    var pin = gEl('qrCamErrPin');
+    if(pin) pin.style.display = _qrPinOk ? 'block' : 'none';
+    var rd = gEl('qrReader');
+    if(rd) rd.style.minHeight = '0px';
+    setQRStatus('⚠️ Cámara no disponible — mira las opciones de abajo','err');
+  }catch(e){ console.warn('[V2_0_1_2] _qrShowCamError', e); }
+}
+
+function _qrHideCamError(){
+  try{
+    var box = gEl('qrCamErr');
+    if(box) box.style.display = 'none';
+    var rd = gEl('qrReader');
+    if(rd) rd.style.minHeight = '280px';
+  }catch(e){}
+}
+
+// V2_0_1_2: en iOS, cuando render() falla DESPUÉS de que getUserMedia ya
+// entregó el stream, html5-qrcode deja el <video> dentro de #qrReader con su
+// MediaStream VIVO (nunca llega a llamar close()). Ese track sigue tomando la
+// cámara y el intento siguiente rebota con NotReadableError — por eso el
+// congelamiento se volvía permanente. Aquí lo matamos a mano antes de
+// reintentar.
+function _qrKillOrphanTracks(){
+  try{
+    var vids = document.querySelectorAll('#qrReader video');
+    for(var i = 0; i < vids.length; i++){
+      var so = vids[i].srcObject;
+      if(so && so.getTracks){
+        var tr = so.getTracks();
+        for(var j = 0; j < tr.length; j++){ try{ tr[j].stop(); }catch(_e){} }
+      }
+      try{ vids[i].srcObject = null; }catch(_e){}
+      try{ vids[i].pause(); }catch(_e){}
+    }
+  }catch(e){ console.warn('[V2_0_1_2] _qrKillOrphanTracks', e); }
+}
+
+// V2_0_1_2: arranque con GUARD DE 12s. Si start() no resuelve NI rechaza (lo
+// que pasa cuando el applyConstraints de aspectRatio o el capture session de
+// iOS se queda colgado) el modal quedaba muerto sin un solo mensaje. Ahora a
+// los 12s sale el estado accionable en vez de dejar al surquero esperando.
+function _qrLaunch(){
+  if(!qrActive) return;
+  _qrHideCamError();
+  _qrFrameT = -1;
+  _qrFrameStuck = 0;
+  if(qrScanner){ try{ qrScanner.clear(); }catch(e){} }
+  var spec = _qrCamSpec || { facingMode: 'environment' };
+  _qrStartDone = false;
+  if(_qrStartGuard){ clearTimeout(_qrStartGuard); }
+  _qrStartGuard = setTimeout(function(){
+    _qrStartGuard = null;
+    if(!qrActive || _qrStartDone) return;
+    _qrTransitioning = false; // nunca dejar el flag envenenado (causa 3)
+    _qrKillOrphanTracks();
+    _qrShowCamError('_TIMEOUT_');
+  }, 12000);
+  try{
+    qrScanner = new Html5Qrcode("qrReader");
+    qrScanner.start(spec, _qrScanCfg(), onQRSuccess, function(){}).then(function(){
+      _qrStartDone = true;
+      if(_qrStartGuard){ clearTimeout(_qrStartGuard); _qrStartGuard = null; }
+      _qrTransitioning = false;
+      _qrFrameT = -1;
+      _qrFrameStuck = 0;
+      setQRStatus('Apunta la cámara al código QR','');
+    }).catch(function(err){
+      _qrStartDone = true;
+      if(_qrStartGuard){ clearTimeout(_qrStartGuard); _qrStartGuard = null; }
+      _qrTransitioning = false;
+      _qrKillOrphanTracks();
+      _qrShowCamError(err);
+    });
+  }catch(e){
+    _qrStartDone = true;
+    if(_qrStartGuard){ clearTimeout(_qrStartGuard); _qrStartGuard = null; }
+    _qrTransitioning = false;
+    _qrShowCamError(e);
+  }
+}
+
+// V2_0_1_2: reintento manual desde el botón del estado de error. Tira TODO
+// (incluido el MediaStream huérfano) y, si la enumeración había elegido un
+// deviceId, lo descarta y prueba con facingMode — eso cubre el deviceId rotado
+// por Safari y el OverconstrainedError de esa lente en particular.
+function _qrRetryCamera(){
+  try{
+    _qrHideCamError();
+    setQRStatus('Reiniciando cámara…','');
+    if(_qrStartGuard){ clearTimeout(_qrStartGuard); _qrStartGuard = null; }
+    if(_qrStartTimer){ clearTimeout(_qrStartTimer); _qrStartTimer = null; }
+    _qrTransitioning = false;
+    _resumeQRPending = false;
+    _qrResuming = false;
+    _qrFrameT = -1;
+    _qrFrameStuck = 0;
+    var old = qrScanner;
+    qrScanner = null;
+    if(old){
+      try{
+        var st = old.getState();
+        if(st === 2 || st === 3){ old.stop().catch(function(){}); }
+      }catch(_e){}
+      try{ old.clear(); }catch(_e){}
+    }
+    _qrKillOrphanTracks();
+    if(_qrCamSpec && _qrCamSpec.deviceId){
+      console.warn('[V2_0_1_2] reintento: descarto el deviceId y uso facingMode');
+      _qrCamSpec = { facingMode: 'environment' };
+    }
+    setTimeout(function(){ if(qrActive) _qrLaunch(); }, 600);
+  }catch(e){
+    console.warn('[V2_0_1_2] _qrRetryCamera', e);
+    _qrShowCamError(e);
+  }
+}
+
+
 // V20_98: helper que devuelve Promise — espera a que el scanner deje de estar en transición
 function _qrWaitStable(maxWaitMs){
   return new Promise(function(resolve){
@@ -7201,6 +7549,11 @@ function startQR(){
   // Surquero normal: solo en modos donde él es quien autoriza (NO en chofer/trabajador
   // donde el QR esperado NO es el suyo... pero SÍ en chofer-a-lápiz donde el surquero
   // confirma a nombre del chofer porque el chofer nunca toca la app).
+  // V2_0_1_2: el bloque de error de camara reusa EXACTAMENTE esta misma regla para
+  // decidir si ofrece el camino por PIN. Se resetea aqui porque _qrMode cambia en
+  // cada apertura y un valor viejo ofreceria el PIN en un modo donde NO aplica
+  // (p.ej. 'trabajador': ahi surqueroBypassQR firmaria con el nombre del surquero).
+  _qrPinOk = false;
   var _byp = gEl('adminPinBypassBtn');
   if(_byp){
     var _showPinBypass = false;
@@ -7215,57 +7568,126 @@ function startQR(){
       }
     }
     _byp.style.display = _showPinBypass ? 'block' : 'none';
+    _qrPinOk = _showPinBypass; // V2_0_1_2
   }
 
-  // Pequeño delay para que el DOM se renderice antes de iniciar la cámara
-  // V20_85: guardar handle para que stopQR pueda cancelarlo si el usuario cierra antes
-  _qrStartTimer = setTimeout(function(){
-    _qrStartTimer = null;
-    if(!qrActive) return; // V20_85: si ya cerró el modal, abortar
-    if(qrScanner) { try{qrScanner.clear();}catch(e){} }
-    qrScanner = new Html5Qrcode("qrReader");
-    qrScanner.start(
-      { facingMode: "environment" }, // cámara trasera
-      { fps: 10, qrbox: { width: 250, height: 250 }, aspectRatio: 1.0 },
-      onQRSuccess,
-      function(){} // silenciar errores de frames sin QR
-    ).catch(function(err){
-      setQRStatus('⚠️ No se pudo acceder a la cámara. Verifica los permisos.','err');
-      console.error('QR Camera error:', err);
-    });
-  }, 300);
+  // V2_0_1_2: el telefono del reporte es un iPhone 14 Pro Max con CHROME iOS, que
+  // es WKWebView: otra app, otro estado de permiso de camara (Ajustes -> Chrome ->
+  // Camara, independiente del de Safari) y otra capa de dialogos. Es la UNICA
+  // diferencia de entorno en toda la flota, y la captura de video en WKWebView es
+  // una capa mas delgada sobre AVFoundation que la de Safari.
+  //
+  // Dos cosas se arreglan aqui:
+  // (1) ELEGIR LA LENTE. En un iPhone de triple camara, facingMode:'environment'
+  //     entrega el dispositivo virtual multi-camara y puede resolverse a la ultra
+  //     wide, cuyo campo de vision enorme deja el QR en pocos pixeles dentro del
+  //     qrbox de 250x250 y nunca decodifica. Enumerando por label lo evitamos.
+  // (2) Mover el primer getUserMedia al MISMO tick del toque. OJO, honestidad:
+  //     esto es ENDURECIMIENTO, no la causa confirmada. La activacion transitoria
+  //     en WebKit dura ~1-5 s, asi que el setTimeout(300) viejo todavia caia dentro
+  //     de la ventana. Se mueve porque en WKWebView el requisito de gesto es mas
+  //     estricto que en Safari y no cuesta nada, no porque este probado.
+  _qrHideCamError();
+  _qrStartDone = false;
+  setQRStatus('Preparando cámara…','');
+  _qrResolveCamera(function(){
+    // Respiro de 600 ms: getCameras() abre y cierra una camara para leer los labels,
+    // y iOS necesita ese hueco antes de abrir la trasera (sin el: NotReadableError).
+    // 600 y no 350 porque en WKWebView (Chrome iOS) soltar la sesion de captura
+    // tarda mas que en Safari. Tambien cubre el layout de #qrReader, que es para
+    // lo que existia el delay viejo.
+    if(_qrStartTimer){ clearTimeout(_qrStartTimer); }
+    _qrStartTimer = setTimeout(function(){
+      _qrStartTimer = null;
+      if(!qrActive) return; // V20_85: si ya cerró el modal, abortar
+      _qrLaunch();
+    }, 600);
+  });
 
-  // V20_96: watchdog cada 10s — si el video del scanner está sin frames (readyState<2),
-  // recicla la cámara automáticamente. Cubre el caso en que la cámara muere entre escaneos
-  // sin haber alcanzado el límite de _qrRecycleEvery.
+  // V2_0_1_2: watchdog por AVANCE DE FRAMES. El de V20_96 exigia
+  // getState()===2 && readyState<2 y por eso NO detectaba los dos casos que de
+  // verdad congelan en iOS:
+  //   (a) start() colgado  -> getState() se queda en 1 (NOT_STARTED) porque la
+  //       transicion a SCANNING nunca llega a execute(). Nunca entraba (causa 2).
+  //   (b) surface.play() rechazado -> la libreria NO captura esa promesa, asi que
+  //       el estado queda en 2 y readyState en 2, pero el <video> esta PAUSADO:
+  //       imagen fija y cero decodificaciones. Tampoco entraba.
+  // currentTime de un <video> con MediaStream avanza mientras llegan frames; si no
+  // avanza en 2 chequeos seguidos (~12 s) la camara esta muerta de verdad.
   if(_qrWatchdogTimer) clearInterval(_qrWatchdogTimer);
   _qrWatchdogTimer = setInterval(function(){
     if(!qrActive){ clearInterval(_qrWatchdogTimer); _qrWatchdogTimer = null; return; }
     try{
+      var errBox = gEl('qrCamErr');
+      if(errBox && errBox.style.display === 'block') return; // ya avisamos, no insistir
+      if(!_qrStartDone) return;      // el guard de arranque de _qrLaunch se encarga
+      if(_qrTransitioning) return;   // stop/start en curso
+      var st = 0;
+      try{ st = qrScanner ? qrScanner.getState() : 0; }catch(_e){ st = 0; }
+      if(st === 3){ _qrFrameT = -1; _qrFrameStuck = 0; return; } // pausado a proposito
       var vid = document.querySelector('#qrReader video');
       if(!vid) return;
-      if(qrScanner && qrScanner.getState() === 2 && vid.readyState < 2){
-        console.warn('[V20_96] Watchdog detectó cámara sin frames — reciclando');
+      if(vid.paused){
+        // Caso (b): intentar reanudar antes de tirar la camara entera.
+        console.warn('[V2_0_1_2] watchdog: <video> pausado — reintentando play()');
+        try{ var pp = vid.play(); if(pp && pp.catch) pp.catch(function(){}); }catch(_e){}
+      }
+      var t = vid.currentTime || 0;
+      var moved = (_qrFrameT < 0) || (t > _qrFrameT + 0.05);
+      _qrFrameT = t;
+      if(moved){ _qrFrameStuck = 0; return; }
+      _qrFrameStuck++;
+      console.warn('[V2_0_1_2] watchdog: sin frames nuevos (' + _qrFrameStuck + ') t=' + t + ' state=' + st + ' readyState=' + vid.readyState);
+      if(_qrFrameStuck >= 2){
+        _qrFrameStuck = 0;
         _qrScanCount = 0;
-        _recycleQRCamera();
+        if(st === 2){ _recycleQRCamera(); }
+        else { _qrShowCamError('_TIMEOUT_'); } // nunca llego a SCANNING
       }
     }catch(e){
-      console.warn('[V20_96] watchdog error:', e);
+      console.warn('[V2_0_1_2] watchdog error:', e);
     }
-  }, 10000);
+  }, 6000);
 }
 
 function pauseQR(){
   // Pausa la cámara sin cerrar el overlay (para mostrar modales encima)
   if(!qrActive) return; // V20_85: simetría con resumeQR — no pausar si ya se cerró
-  if(qrScanner){
-    // V20_98: marcar transición durante stop para que resumeQR/recycle no choquen
+  if(!qrScanner) return;
+  // V2_0_1_2 (a) RENDIMIENTO: pause(true) de html5-qrcode 2.3.8 congela el <video>
+  // y detiene el loop de decodificacion pero MANTIENE VIVO el MediaStream
+  // (RenderedCameraImpl.pause -> surface.pause()). Antes se hacia stop() + start()
+  // completos: en un dia de 30 trabajadores eso son ~30 getUserMedia nuevos, y en
+  // iOS cada reapertura puede rebotar con NotReadableError. Ahora: CERO getUserMedia
+  // por escaneo.
+  //
+  // V2_0_1_2 (b) BUG CONFIRMADO EN EL FUENTE DE LA LIBRERIA: qrScanner.stop() hace
+  // `if(!isScanning()) throw "Cannot stop, scanner is not running or paused."` de
+  // forma SINCRONA, antes de devolver cualquier promesa. Eso pasa cuando el estado
+  // es NOT_STARTED, o sea JUSTO cuando el arranque de la camara fallo o se colgo.
+  // El throw salia sin pasar por el .catch de abajo y dejaba _qrTransitioning=true
+  // PARA SIEMPRE; con ese flag, resumeQR y _recycleQRCamera salen siempre por su
+  // early-return y la camara queda muerta hasta recargar la app. Ese es, al pie de
+  // la letra, el "se congela y ya no permite seguir". Ahora: guard por estado y
+  // try/catch que SIEMPRE libera el flag.
+  var st = 0;
+  try{ st = qrScanner.getState(); }catch(_e){ st = 0; }
+  if(st !== 2) return; // 1=NOT_STARTED (nada que pausar), 3=ya pausado
+  try{
+    qrScanner.pause(true);
+  }catch(e){
+    console.warn('[V2_0_1_2] pause(true) falló — fallback a stop():', e);
     _qrTransitioning = true;
-    qrScanner.stop().then(function(){
-      _qrTransitioning = false;
-    }).catch(function(){
-      _qrTransitioning = false;
-    });
+    try{
+      qrScanner.stop().then(function(){
+        _qrTransitioning = false;
+      }).catch(function(){
+        _qrTransitioning = false;
+      });
+    }catch(e2){
+      console.warn('[V2_0_1_2] stop() lanzó síncrono:', e2);
+      _qrTransitioning = false; // el flag YA NO se queda envenenado
+    }
   }
 }
 // V20_02-FIX: guard anti-concurrencia en resumeQR
@@ -7305,19 +7727,38 @@ function resumeQR(){
   }
   setTimeout(function(){
     _qrResuming = false;
-    if(qrScanner && qrActive){
-      _qrTransitioning = true; // V20_98: marcar transición durante start
-      qrScanner.start(
-        { facingMode: "environment" },
-        { fps: 10, qrbox: { width: 250, height: 250 }, aspectRatio: 1.0 },
-        onQRSuccess, function(){}
-      ).then(function(){
-        _qrTransitioning = false; // V20_98: liberar tras start exitoso
-      }).catch(function(err){
-        _qrTransitioning = false; // V20_98: liberar también en error
-        setQRStatus('⚠️ Error al reanudar cámara','err');
-      });
+    if(!qrScanner || !qrActive) return;
+    // V2_0_1_2: si la camara ya aviso que no arranca, NO reintentar en automatico.
+    // El MutationObserver dispara resumeQR en cada apertura/cierre de modal y
+    // borraria el estado accionable antes de que el surquero lo lea. Aqui decide el.
+    var _eb = gEl('qrCamErr');
+    if(_eb && _eb.style.display === 'block') return;
+    var _st = 0;
+    try{ _st = qrScanner.getState(); }catch(_e){ _st = 0; }
+    if(_st === 2) return; // ya esta escaneando
+    if(_st === 3){
+      // V2_0_1_2: 3=PAUSED -> resume() reanuda el <video> SIN pedir getUserMedia.
+      try{
+        qrScanner.resume();
+        _qrFrameT = -1;
+        _qrFrameStuck = 0;
+        return;
+      }catch(e){
+        console.warn('[V2_0_1_2] resume() falló — recreo el scanner:', e);
+        _qrTransitioning = false;
+        _qrLaunch();
+        return;
+      }
     }
+    // 1=NOT_STARTED -> arranque completo. V2_0_1_2: antes aqui se llamaba
+    // qrScanner.start() sobre la MISMA instancia con _qrTransitioning=true puesto
+    // una linea antes; si esa instancia tenia una transicion interna pendiente
+    // (arranque colgado), start() lanza SINCRONO desde startTransition()
+    // ("Cannot transition to a new state, already under transition") y el flag
+    // quedaba envenenado igual que en pauseQR. _qrLaunch crea instancia NUEVA,
+    // tiene guard de timeout y nunca deja el flag puesto.
+    _qrTransitioning = false;
+    _qrLaunch();
   }, 500);
 }
 function stopQR(){
@@ -7332,6 +7773,13 @@ function stopQR(){
   // V20_96: cleanup del watchdog y reset del contador de escaneos
   if(_qrWatchdogTimer){ clearInterval(_qrWatchdogTimer); _qrWatchdogTimer = null; }
   _qrScanCount = 0;
+  // V2_0_1_2: limpiar el guard de arranque y el estado de error, si no el modal se
+  // reabre con el aviso rojo de la vez pasada y el surquero cree que sigue roto.
+  if(_qrStartGuard){ clearTimeout(_qrStartGuard); _qrStartGuard = null; }
+  _qrStartDone = false;
+  _qrFrameT = -1;
+  _qrFrameStuck = 0;
+  _qrHideCamError();
   // 2) Cerrar overlay PRIMERO (UX inmediata, no esperar a la cámara)
   gEl('qrOv').classList.remove('on');
   // 3) V20_98: usar _qrStopSafe que maneja el flag _qrTransitioning correctamente.
@@ -7388,13 +7836,24 @@ function _recycleQRCamera(){
   }).catch(function(err){
     console.warn('[V20_98] start error en recycle:', err);
     _qrTransitioning = false;
-    setQRStatus('⚠️ Error al reciclar cámara — cierre y reabra el QR','err');
+    // V2_0_1_2: mismo callejon sin salida que el arranque — el surquero veia una
+    // linea de texto y nada mas. Se enruta al estado accionable con Reintentar.
+    _qrKillOrphanTracks();
+    _qrShowCamError(err);
   });
 }
 
 // V10: Pausa QR automática — observa TODOS los overlays, incluyendo dinámicos
 if(typeof MutationObserver!=='undefined')(function(){
   function anyOverlayOpen(){
+    // V2_0_1_2: el modal del PIN (#qrPinOv) NO lleva la clase .ov a proposito (.ov es
+    // hoja inferior y en Chrome iOS cae debajo de la barra de herramientas), asi que
+    // este chequeo no lo veia. Sin esto: al escribir en el modal, _qrPinErr() cambia
+    // textContent -> el MutationObserver (childList, subtree) se dispara -> no ve
+    // ningun .ov.on -> llama resumeQR() -> la camara revive DETRAS del modal y puede
+    // escanear un QR al azar mientras el surquero teclea su PIN.
+    var pinOv = document.getElementById('qrPinOv');
+    if(pinOv && pinOv.style.display === 'flex') return true;
     var all=document.querySelectorAll('.ov.on');
     for(var i=0;i<all.length;i++){ if(all[i].id!=='qrOv') return true; }
     return false;
@@ -12882,6 +13341,143 @@ function _workersSinActividad(){
   }
   return out;
 }
+// ── V2_0_1_0: ACTIVIDAD ASIGNADA SIN CANTIDAD CAPTURADA ──
+// Reportado por Serafin 2026-10-28 con el PDF de Dewitt 2026-10-25 (generado con V2_0_0_31):
+// 7 trabajadores salian con "1 h" en la columna "Harvest Ball Peper / Pieces" y en FIELD_DROP
+// llegaban con Qty y Pay Est. VACIAS. No fue perdida de datos — el surquero nunca teclo la
+// cantidad. El problema era que el hueco se DISFRAZABA de dato: la celda de una columna de
+// PIEZAS imprimia las HORAS del turno (el fallback de la fila del trabajador y del TOTAL), asi
+// que parecia capturado y nadie lo notaba. Y el backend hace `qty || 1`, asi que esa fila vacia
+// se volvia 1 pieza cobrada en la hoja de Cindy.
+//
+// Decision de Serafin: avisar por nombre antes de generar la hoja y antes de enviar; si el
+// surquero continua, la actividad NO sale en el PDF ni se envia — "manana le digo tu no lo
+// agregaste y no aparece". Si revisa, le pone la cantidad o le quita la actividad.
+// Mismo esquema que _confirmSinActividad (V1_0_0_15): se avisa y la hoja se genera sin eso.
+//
+// GRUPALES: ya se omitian solas del PDF (los 4 `continue` de las ramas puertas/cajas/hora/piezas
+// al construir grpPuertasCols) y del envio (`if(!qtyPerPerson) continue`), pero en SILENCIO.
+// Aqui por fin avisan — su comportamiento no cambia, solo deja de ser invisible.
+
+// El criterio, UNO SOLO para los tres lados (aviso, PDF y envio), igual que el lonche en
+// V2_0_0_17: si lo impreso, lo sumado y lo enviado no usan el mismo criterio, vuelven a
+// discrepar. Conservador a proposito: si la actividad no se puede identificar, NO se filtra —
+// es preferible imprimir algo de mas que borrarle a alguien su pago.
+function _actTieneCantidad(act, a){
+  if(!a) return true;
+  var _t = ((a.tipo || a._payType) || (act && act.tipo) || "").toLowerCase();
+  if(!act && !_t) return true;                    // sin forma de identificarla: no tocar
+  if(act && isHourAct(act)) return true;          // Hora se paga por horas, no lleva cantidad
+  if(_t === "hora" || _t === "hours") return true;
+  return !!parseFloat(a.qty);                     // "", 0, null, NaN -> no tiene
+}
+
+// Una grupal "sin capturar" es la que no tiene NINGUN dato de captura. A proposito NO replica
+// las formulas del calculo (4 ramas + motor + Pennrose): duplicarlas aqui seria otro lugar que
+// se desincroniza. Solo mira los campos que el surquero llena. Si capturo algo y el calculo da
+// 0 por otra causa (FactorAcres faltante en el MASTER), eso ya tiene su propio bloqueo al enviar.
+function _grpSinCaptura(g, act){
+  try{
+    var v = g && g.vars; if(!v) return false;
+    var ct = (typeof grpCalcType === "function") ? grpCalcType(act) : "";
+    if(ct === "hora") return !(v.ini && v.fin);
+    if(parseFloat(v.totalC) || parseFloat(v.totalP) || parseFloat(v.pennAcres)) return false;
+    var sc = v.surcos || [];
+    for(var i = 0; i < sc.length; i++){
+      if(parseFloat(sc[i].largo) && parseFloat(sc[i].num)) return false;
+    }
+    var inp = v.inputs || {};
+    for(var k in inp){ if(inp.hasOwnProperty(k) && parseFloat(inp[k])) return false; }
+    return true;
+  }catch(e){ return false; }   // ante la duda, no avisar de un falso positivo
+}
+
+// Devuelve [{name, act, finca, grupal}] de todo lo asignado sin cantidad. Individuales primero.
+function _actsSinCantidad(){
+  var out = [];
+  var _fincaGlob = "";
+  try{ _fincaGlob = gVal("finca") || ""; }catch(e){}
+  for(var i = 0; i < workers.length; i++){
+    var w = workers[i]; if(!w || !w.acts) continue;
+    for(var j = 0; j < w.acts.length; j++){
+      var a = w.acts[j];
+      var act = null;
+      try{ act = (typeof _resolveActStable === "function") ? _resolveActStable(a) : (ACTS[a.ai] || null); }catch(e1){}
+      if(_actTieneCantidad(act, a)) continue;
+      out.push({
+        name:   w.name,
+        act:    a._actEs || a.esName || (act && act.es) || "?",
+        finca:  a.finca || _fincaGlob,
+        grupal: false
+      });
+    }
+  }
+  // Grupales: una sola entrada por grupal (la cantidad es del grupo, no de cada persona).
+  try{
+    for(var gi = 0; gi < grpActs.length; gi++){
+      var g = grpActs[gi]; if(!g) continue;
+      if(!g.participantes || !g.participantes.length) continue;
+      var gact = null;
+      try{ gact = (g.gai >= 0 && GRUPAL_ACTS[g.gai]) ? GRUPAL_ACTS[g.gai] : null; }catch(e2){}
+      if(!_grpSinCaptura(g, gact)) continue;
+      out.push({
+        name:   g.participantes.length + (g.participantes.length > 1 ? " personas" : " persona"),
+        act:    (gact && gact.es) || g.esName || g._actEs || "?",
+        finca:  (g.vars && g.vars.finca) || _fincaGlob,
+        grupal: true
+      });
+    }
+  }catch(e3){}
+  return out;
+}
+
+// El aviso. Agrupa por actividad + finca para que el surquero sepa a que pantalla regresar.
+// En modo lectura (admin revisando un dia cerrado) NO aplica — solo el surquero en vivo captura.
+function _confirmSinCantidad(){
+  if(typeof _readOnlyMode !== "undefined" && _readOnlyMode) return true;
+  var sc = _actsSinCantidad();
+  if(!sc.length) return true;
+
+  var msg;
+  if(sc.length === 1 && !sc[0].grupal){
+    msg = "⚠️ Falta capturar la cantidad\n\n"
+        + "A " + sc[0].name + " lo agregaste a \"" + sc[0].act + "\""
+        + (sc[0].finca ? " (" + sc[0].finca + ")" : "")
+        + " pero no le asignaste piezas.\n\n";
+  } else {
+    // Agrupar por actividad + finca, preservando el orden de aparicion.
+    var orden = [], mapa = {};
+    for(var i2 = 0; i2 < sc.length; i2++){
+      var k2 = sc[i2].act + "|" + sc[i2].finca;
+      if(!mapa[k2]){ mapa[k2] = { act: sc[i2].act, finca: sc[i2].finca, grupal: sc[i2].grupal, nombres: [] }; orden.push(k2); }
+      mapa[k2].nombres.push(sc[i2].name);
+    }
+    var bloques = [];
+    for(var o = 0; o < orden.length; o++){
+      var gr = mapa[orden[o]];
+      var tit = gr.act + (gr.finca ? " — " + gr.finca : "") + (gr.grupal ? "  (grupal)" : "");
+      var li = [];
+      for(var nn = 0; nn < gr.nombres.length; nn++) li.push("   • " + gr.nombres[nn]);
+      bloques.push(tit + "\n" + li.join("\n"));
+    }
+    msg = "⚠️ Falta capturar la cantidad\n\n"
+        + "Los agregaste a estas actividades pero no les asignaste piezas:\n\n"
+        + bloques.join("\n\n") + "\n\n";
+  }
+
+  var _uno = (sc.length === 1 && !sc[0].grupal);
+  msg += _uno
+       ? ("Si SÍ la trabajó, cancela y captúrale la cantidad — sin ella no se le paga.\n"
+        + "Si NO la trabajó, cancela y quítale la actividad.\n\n"
+        + "Aceptar = continuar (NO aparece en la hoja ni en el envío)\n"
+        + "Cancelar = revisar")
+       : ("Si SÍ trabajaron, cancela y captúrales la cantidad — sin ella no se les paga.\n"
+        + "Si NO la trabajaron, cancela y quítales la actividad.\n\n"
+        + "Aceptar = continuar (NO aparecen en la hoja ni en el envío)\n"
+        + "Cancelar = revisar");
+  return confirm(msg);
+}
+
 // V1_0_0_15: advertencia previa a enviar/generar PDF. Retorna true si se puede proceder.
 // En modo lectura (admin revisando día cerrado) NO aplica — solo el surquero en vivo captura.
 function _confirmSinActividad(){
@@ -12919,6 +13515,8 @@ function genPDF(){
   if(!_confirmFechaAlineada('Generar la hoja')) return;
   // V1_0_0_15: advertir si alguien con check-in no tiene actividad
   if(!_confirmSinActividad()) return;
+  // V2_0_1_0: advertir de actividades asignadas sin cantidad. Si acepta, no se imprimen.
+  if(!_confirmSinCantidad()) return;
   // Theta: usa collectSaveFields para recoger todos los campos automáticamente
   var vals=collectSaveFields();
   buildPDFWindow(vals, workers, estP, hilP, cajasP, ausencias, grpActs);
@@ -12958,6 +13556,32 @@ function buildPDFWindow(vals, wks, ep, hp, cp, ausArr, grpActsArr){
       }
     }
   }
+  // V2_0_1_0: la hoja no imprime actividades asignadas sin cantidad (ya se aviso en
+  // _confirmSinCantidad). Se corta ANTES de construir las columnas para que la columna
+  // tampoco se cree cuando nadie de ella tiene cantidad. Se trabaja sobre COPIA del worker:
+  // `wks` ES el array `workers` real y quitarle acts aqui le borraria el dia al surquero.
+  // Las acts que sobreviven son las mismas referencias (el PDF solo lee).
+  // Si un worker queda sin ninguna, el filtro V20_191 de mas abajo lo saca de la hoja.
+  var _wksCant = [];
+  for(var _vi = 0; _vi < wks.length; _vi++){
+    var _vw = wks[_vi];
+    if(!_vw) continue;
+    var _vorig = _vw.acts || [];
+    var _vacts = [];
+    for(var _vj = 0; _vj < _vorig.length; _vj++){
+      var _va = _vorig[_vj];
+      var _vact = null;
+      try{ _vact = (typeof _resolveActStable === 'function') ? _resolveActStable(_va) : (ACTS[_va.ai] || null); }catch(_ve){}
+      if(_actTieneCantidad(_vact, _va)) _vacts.push(_va);
+    }
+    if(_vacts.length === _vorig.length){ _wksCant.push(_vw); continue; }
+    var _vcopy = {};
+    for(var _vk in _vw){ if(_vw.hasOwnProperty(_vk)) _vcopy[_vk] = _vw[_vk]; }
+    _vcopy.acts = _vacts;
+    _wksCant.push(_vcopy);
+  }
+  wks = _wksCant;
+
   // Construir columnas: Hora agrupa por actividad+horario, otros por actividad
   // V20_38 FIX: si ai=-1 (actividad no está en ACTS del rancho actual, ej: admin revisa otro día),
   // usar datos preservados del worker (esName, tipo, _unitPrice) como fallback robusto
@@ -13684,7 +14308,10 @@ function _colMatchesWAct(col, wa){
         }
         if(anyQty) break;
       }
-      if(!anyQty) totLbl=smartNum(tot)+' h';
+      // V2_0_1_0: era `totLbl=smartNum(tot)+' h'` — una columna de PIEZAS mostraba HORAS en su
+      // TOTAL y el hueco parecia dato. En blanco: `tot` aqui trae horas referenciales (acumuladas
+      // en el 'Sin qty: sumar horas ref' de colTotals), imprimirlas sin la 'h' seria peor todavia.
+      if(!anyQty) totLbl='';
     }
     // Buscar unitPr y laborLbl (valor único para toda la columna)
     // V20_152: matcher unificado con payType.
@@ -13848,7 +14475,9 @@ function _colMatchesWAct(col, wa){
           if(_anyQtySub) _subTotQ=col4._v79Printed[sst2_]||0;
           else _subTotH=col4._v79Printed[sst2_]||0;
         }
-        var _subLbl=_anyQtySub?smartNum(_subTotQ):(_subTotH>0?smartNum(_subTotH)+' h':'');
+        // V2_0_1_0: la rama de horas solo aplica si la columna ES de horas. Antes una columna de
+        // piezas sin cantidad ponia las horas del turno en su TOTAL por sub-columna.
+        var _subLbl=_anyQtySub?smartNum(_subTotQ):((col4.hr && _subTotH>0)?smartNum(_subTotH)+' h':'');
         if(col4._v79Any && !(col4._v79Printed[sst2_]||0)) _subLbl=''; // V1_0_0_79: sub-columna sin nadie -> en blanco
         trTotal+='<td style="text-align:center;border:1px solid #000;border-top:3px solid #1a2b8c;color:#1a2b8c;font-weight:700">'+_subLbl+'</td>';
       }
@@ -14252,7 +14881,11 @@ function _colMatchesWAct(col, wa){
             for(var kk2=sci_;kk2<sci_+_fr.span;kk2++){
               _sumH2+=nh(col2.shifts[kk2].ini||'',col2.shifts[kk2].fin||'',_cellLon)||0;
             }
-            if(_sumH2>0) cv=smartNum(_sumH2)+' h';
+            // V2_0_1_0: AQUI nacia el "1 h" del PDF Dewitt 2026-10-25. Esta rama es la de columna
+            // que NO es de horas, y cuando la cantidad venia vacia rellenaba la celda con la
+            // duracion del turno (12:00-14:00 menos el lonche = "1 h"). La celda queda en blanco;
+            // con el corte de arriba la actividad ni llega aqui, esto es la red por si acaso.
+            if(false && _sumH2>0) cv=smartNum(_sumH2)+' h';
           }
           // V1_0_0_79 (Opcion B): sin colspan — la suma del bloque va en su sub-columna
           var _cspW=(!col2._v79Any && _fr.span>1)?' colspan="'+_fr.span+'"':'';
@@ -14531,12 +15164,37 @@ function _colMatchesWAct(col, wa){
     +'<div class="ft">'+esc(vals.rancho||'')+' &nbsp;|&nbsp; '+esc(vals.fecha||'')+' &nbsp;|&nbsp; '+wks.length+' trabajadores &nbsp;|&nbsp; Bus: #'+esc(String(vals.numBus||''))+' &nbsp;|&nbsp; Surquero: '+(currentUser&&currentUser.isAdmin?esc(ADMIN_USER_NAME):esc(vals.surquero||''))+' &nbsp;|&nbsp; Generado: '+new Date().toLocaleString()+' &nbsp;|&nbsp; App: '+(window.APP_VERSION||'?')+(_readOnlyMode?' &nbsp;|&nbsp; 📖 REGENERADO DESDE SHEETS':'')+'</div>'
     +'<div class="nopr" style="text-align:center;margin-top:16px">'
     +'<button onclick="window.print()" style="background:#1a7a4a;color:#fff;border:none;padding:12px 24px;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;margin:4px">🖨️ Imprimir / Guardar PDF</button>'
-    +'<button onclick="_saveImg(\'imgPage1\',\''+('Nomina '+(vals.rancho||'')+(_fnSurq?' '+_fnSurq:'')+' '+(vals.fecha||'')+' '+_fnTs).replace(/[^a-zA-Z0-9 _-]/g,'')+'\')" style="background:#1a5a9a;color:#fff;border:none;padding:12px 24px;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;margin:4px">📷 Imagen Nómina</button>'
-    +'<button id="btnImgAnalisis" onclick="_saveImg(\'imgPage2\',\''+('Analisis '+(vals.rancho||'')+(_fnSurq?' '+_fnSurq:'')+' '+(vals.fecha||'')+' '+_fnTs).replace(/[^a-zA-Z0-9 _-]/g,'')+'\')" style="background:#7a3a9a;color:#fff;border:none;padding:12px 24px;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;margin:4px">📷 Imagen Análisis</button>'
+    +'<button id="btnImg_imgPage1" onclick="_saveImg(\'imgPage1\',\''+('Nomina '+(vals.rancho||'')+(_fnSurq?' '+_fnSurq:'')+' '+(vals.fecha||'')+' '+_fnTs).replace(/[^a-zA-Z0-9 _-]/g,'')+'\')" style="background:#1a5a9a;color:#fff;border:none;padding:12px 24px;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;margin:4px;min-height:44px">📷 Imagen Nómina</button>'
+    +'<button id="btnImg_imgPage2" onclick="_saveImg(\'imgPage2\',\''+('Analisis '+(vals.rancho||'')+(_fnSurq?' '+_fnSurq:'')+' '+(vals.fecha||'')+' '+_fnTs).replace(/[^a-zA-Z0-9 _-]/g,'')+'\')" style="background:#7a3a9a;color:#fff;border:none;padding:12px 24px;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;margin:4px;min-height:44px">📷 Imagen Análisis</button>'
     +'<button onclick="window.close()" style="background:#eee;color:#555;border:none;padding:12px 20px;border-radius:8px;font-size:14px;cursor:pointer;margin:4px">Cerrar</button>'
     +'</div>'
     // V1_0_0_29: script de exportacion a imagen (PNG escala 2 = nitido, NO captura de pantalla). El tag de cierre va dividido en dos para no romper el parser del HTML padre.
-    +'<scr'+'ipt>function _saveImg(id,fn){var el=document.getElementById(id);if(!el){alert("No se encontró el contenido de esa hoja");return;}if(typeof html2canvas==="undefined"){alert("La imagen aún se está preparando — espera 2-3 segundos y vuelve a intentar (necesita internet la primera vez).");return;}var t=document.querySelectorAll(".nopr");for(var i=0;i<t.length;i++)t[i].style.display="none";html2canvas(el,{scale:2,backgroundColor:"#ffffff",useCORS:true,scrollX:0,scrollY:0,windowWidth:el.scrollWidth,width:el.scrollWidth}).then(function(c){for(var i=0;i<t.length;i++)t[i].style.display="";var a=document.createElement("a");a.download=fn+".png";a.href=c.toDataURL("image/png");document.body.appendChild(a);a.click();document.body.removeChild(a);}).catch(function(e){for(var i=0;i<t.length;i++)t[i].style.display="";alert("Error al generar imagen: "+((e&&e.message)||e));});}if(!document.getElementById("imgPage2")){var _ba=document.getElementById("btnImgAnalisis");if(_ba)_ba.style.display="none";}</scr'+'ipt>'
+    // V2_0_1_2: motor de imagen de DOS TOQUES. Chrome iOS NO implementa <a download>
+    // (navega a la URL, y la navegacion top-level a data:/blob: esta bloqueada -> no
+    // pasaba NADA). Ademas iOS descartaba el a.click() disparado dentro del .then() de
+    // html2canvas, 3-15s despues del toque, con la activacion por gesto ya cerrada (~5s).
+    // Toque 1 genera y deja el boton naranja + uno verde; toque 2 es un gesto FRESCO que
+    // entrega por Web Share con File, o por visor a pantalla completa (manten presionada
+    // -> Guardar en Fotos, que es donde WhatsApp la encuentra).
+    +'<scr'+'ipt>var _imgR={};function _imgIsIOS(){var ua=navigator.userAgent||"";if(/iPad|iPhone|iPod/.test(ua))return true;return ua.indexOf("Macintosh")>=0&&navigator.maxTouchPoints>1;}function _imgIsCriOS(){return /CriOS|FxiOS|EdgiOS|OPiOS/.test(navigator.userAgent||"");}function _imgBtn(id){return document.getElementById("btnImg_"+id);}function _imgViewBtn(id,on){var b=_imgBtn(id);if(!b)return;var v=document.getElementById("btnImgVer_"+id);'
+    +'if(!on){if(v&&v.parentNode)v.parentNode.removeChild(v);return;}if(v)return;v=document.createElement("button");v.id="btnImgVer_"+id;v.type="button";v.innerHTML="\\uD83D\\uDC41\\uFE0F Ver para guardar en Fotos";v.style.cssText="background:#1a7a4a;color:#fff;border:none;padding:12px 20px;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;margin:4px;min-height:44px";v.onclick=function(){_imgViewer(id);};if(b.nextSibling)b.parentNode.insertBefore(v,b.nextSibling);'
+    +'else b.parentNode.appendChild(v);}function _imgSetBtn(id,stage){var b=_imgBtn(id);if(!b)return;if(!b.getAttribute("data-lbl")){b.setAttribute("data-lbl",b.innerHTML);b.setAttribute("data-bg",b.style.background||"#1a5a9a");}if(stage==="ready"){b.innerHTML="\\uD83D\\uDCBE Guardar / Compartir imagen";b.style.background="#e07b00";_imgViewBtn(id,_imgIsIOS());}else{b.innerHTML=b.getAttribute("data-lbl");b.style.background=b.getAttribute("data-bg");'
+    +'_imgViewBtn(id,false);}}function _imgNote(msg,bg){var n=document.getElementById("_imgNote");if(n&&n.parentNode)n.parentNode.removeChild(n);if(!msg)return;n=document.createElement("div");n.id="_imgNote";n.className="nopr";n.style.cssText="position:fixed;left:8px;right:8px;bottom:8px;z-index:99998;background:"+(bg||"#333")+";color:#fff;padding:12px 14px;border-radius:10px;font:700 14px/1.45 Arial,sans-serif;text-align:center;'
+    +'box-shadow:0 3px 14px rgba(0,0,0,.4)";n.innerHTML=msg;document.body.appendChild(n);}function _imgDrop(except){for(var k in _imgR){if(k!==except&&_imgR[k]){_imgR[k]=null;_imgSetBtn(k,"idle");}}}function _imgFail(id,msg){_imgNote("");_imgSetBtn(id,"idle");_imgR[id]=null;alert("\\u26A0\\uFE0F "+msg+"\\n\\nQue puedes hacer:\\n\\u2022 Usa \\"Imprimir / Guardar PDF\\" (ese siempre funciona).\\n\\u2022 O genera la hoja por finca / por turno para que salga menos ancha.");'
+    +'}function _imgToBlob(c,cb){var du=null;if(c.toBlob){try{c.toBlob(function(b){if(b&&b.size>=1000){cb(b,null);return;}try{du=c.toDataURL("image/png");}catch(e1){du=null;}cb(b||null,du);},"image/png");return;}catch(e2){}}try{du=c.toDataURL("image/png");}catch(e3){du=null;}if(!du||du.length<1000||du.indexOf("base64,")<0){cb(null,du);return;}var b2=null;try{var bin=atob(du.split("base64,")[1]),len=bin.length,arr=new Uint8Array(len),i2=0;'
+    +'for(;i2<len;i2++)arr[i2]=bin.charCodeAt(i2);b2=new Blob([arr],{type:"image/png"});}catch(e4){b2=null;}cb(b2,du);}function _imgViewer(id){var r=_imgR[id];if(!r)return;var src=null;try{if(r.blob&&window.URL&&URL.createObjectURL)src=URL.createObjectURL(r.blob);}catch(e){src=null;}if(!src){try{src=r.du||(r.c?r.c.toDataURL("image/png"):null);}catch(e5){src=null;}}if(!src){_imgFail(id,"No se pudo mostrar la imagen en pantalla.");'
+    +'return;}_imgNote("");var ov=document.createElement("div");ov.id="_imgOv";ov.className="nopr";ov.style.cssText="position:fixed;left:0;top:0;right:0;bottom:0;background:#000;z-index:999999;overflow:auto;-webkit-overflow-scrolling:touch;text-align:center";var bar=document.createElement("div");bar.style.cssText="position:sticky;top:0;background:#e07b00;color:#fff;padding:13px 10px;font:700 15px/1.4 Arial,sans-serif";bar.innerHTML="\\uD83D\\uDC47 MANT\\u00C9N PRESIONADA la imagen y elige \\u201CGuardar en Fotos\\u201D"+(_imgIsCriOS()?" o \\u201CGuardar imagen\\u201D":"")+"<div style=\\"font-weight:400;'
+    +'font-size:12px;margin-top:5px\\">As\\u00ED queda en Fotos y la puedes mandar por WhatsApp.</div>";var im=document.createElement("img");im.src=src;im.alt=r.fn;im.style.cssText="display:block;width:100%;height:auto;margin:0 auto;background:#fff;-webkit-touch-callout:default;-webkit-user-select:auto;user-select:auto";im.onerror=function(){var alt=null;try{alt=r.du||(r.c?r.c.toDataURL("image/png"):null);}catch(e6){alt=null;'
+    +'}if(alt&&im.src!==alt){im.src=alt;}else{bar.innerHTML="\\u26A0\\uFE0F El tel\\u00E9fono no pudo mostrar la imagen. Usa \\"Imprimir / Guardar PDF\\".";}};var cl=document.createElement("button");cl.textContent="Cerrar";cl.style.cssText="margin:14px auto 34px;display:block;background:#fff;color:#333;border:none;padding:14px 28px;border-radius:8px;font-size:15px;font-weight:700;min-height:44px;cursor:pointer";cl.onclick=function(){try{if(String(src).indexOf("blob:")===0)URL.revokeObjectURL(src);'
+    +'}catch(e7){}try{ov.parentNode.removeChild(ov);}catch(e8){}};ov.appendChild(bar);ov.appendChild(im);ov.appendChild(cl);document.body.appendChild(ov);}function _imgDownload(id){var r=_imgR[id];if(!r)return false;var href=null,isBlob=false;try{if(r.blob&&window.URL&&URL.createObjectURL){href=URL.createObjectURL(r.blob);isBlob=true;}}catch(e){href=null;}if(!href){try{href=r.du||(r.c?r.c.toDataURL("image/png"):null);}catch(e9){href=null;'
+    +'}}if(!href)return false;try{var a=document.createElement("a");a.download=r.fn+".png";a.href=href;a.style.display="none";document.body.appendChild(a);a.click();setTimeout(function(){try{document.body.removeChild(a);}catch(e10){}if(isBlob){try{URL.revokeObjectURL(href);}catch(e11){}}},4000);return true;}catch(e12){return false;}}function _imgDeliver(id){var r=_imgR[id];if(!r)return;var name=r.fn+".png",f=null;try{if(typeof File==="function"&&r.blob)f=new File([r.blob],name,{type:"image/png"});'
+    +'}catch(e){f=null;}if(f&&navigator.share&&(!navigator.canShare||navigator.canShare({files:[f]}))){try{navigator.share({files:[f]}).then(function(){_imgNote("\\u2705 Listo. Si no la ves en Fotos, usa el bot\\u00F3n VERDE y mant\\u00E9n presionada la imagen.","#1a7a4a");}).catch(function(err){if(err&&err.name==="AbortError")return;_imgViewer(id);});return;}catch(e13){}}if(_imgIsIOS()){_imgViewer(id);return;}if(_imgDownload(id)){_imgNote("\\u2705 Imagen descargada: "+name,"#1a7a4a");'
+    +'_imgSetBtn(id,"idle");_imgR[id]=null;return;}_imgViewer(id);}function _saveImg(id,fn){var el=document.getElementById(id);if(!el){alert("No se encontr\\u00F3 el contenido de esa hoja");return;}if(_imgR[id]&&_imgR[id].fn===fn){_imgDeliver(id);return;}if(typeof html2canvas==="undefined"){alert("\\u26A0\\uFE0F No se pudo cargar el generador de im\\u00E1genes (html2canvas).\\n\\nSe baja de internet la PRIMERA vez que abres esta hoja. Con\\u00E9ctate a datos o WiFi, cierra esta hoja y vu\\u00E9lvela a generar.\\n\\nMientras tanto usa \\"Imprimir / Guardar PDF\\": ese NO necesita internet.");'
+    +'return;}_imgDrop(id);_imgR[id]=null;_imgSetBtn(id,"idle");var t=document.querySelectorAll(".nopr");for(var i=0;i<t.length;i++)t[i].style.display="none";_imgNote("\\u23F3 Generando imagen\\u2026 no cierres esta hoja.","#1a5a9a");var _W=el.scrollWidth||el.offsetWidth||1,_H=el.scrollHeight||el.offsetHeight||1;var _sc=Math.min(2,4000/_W,4000/_H);if(!(_sc>0))_sc=1;if(_sc>2)_sc=2;if(_sc<0.75)_sc=0.75;html2canvas(el,{scale:_sc,backgroundColor:"#ffffff",useCORS:true,scrollX:0,scrollY:0,windowWidth:_W,width:_W}).then(function(c){for(var j=0;'
+    +'j<t.length;j++)t[j].style.display="";if(!c||!c.width||!c.height){_imgFail(id,"El navegador no pudo dibujar la hoja: el lienzo qued\\u00F3 vac\\u00EDo.");return;}_imgToBlob(c,function(blob,du){if((!blob||blob.size<1000)&&(!du||du.length<1000)){_imgFail(id,"La imagen sali\\u00F3 vac\\u00EDa: la hoja es demasiado ancha para este tel\\u00E9fono ("+c.width+"\\u00D7"+c.height+" px).");return;}_imgR[id]={fn:fn,blob:blob,du:du,c:c,w:c.width,h:c.height};'
+    +'_imgSetBtn(id,"ready");_imgNote("\\u2705 Imagen lista ("+c.width+"\\u00D7"+c.height+" px)."+(_imgIsIOS()?"<br>Toca el bot\\u00F3n <b>NARANJA</b> para compartirla, o el <b>VERDE</b> para verla y guardarla en Fotos.":"<br>Ahora toca el bot\\u00F3n <b>NARANJA</b> \\u201CGuardar / Compartir imagen\\u201D.")+"<div style=\\"font-weight:400;font-size:11px;margin-top:5px\\">Son dos toques a prop\\u00F3sito: el iPhone solo deja guardar o compartir en el instante en que tocas.</div>","#e07b00");'
+    +'});}).catch(function(e){for(var k2=0;k2<t.length;k2++)t[k2].style.display="";_imgFail(id,"Error al generar la imagen: "+((e&&e.message)||e));});}if(!document.getElementById("imgPage2")){var _ba=document.getElementById("btnImg_imgPage2");if(_ba)_ba.style.display="none";}'
+    +'</scr'+'ipt>'
     +'</body></html>';
   // V20_24: window.open sin features restrictivas (Android/iOS moderno bloquea `width=1000,height=700`) + fallback Blob robusto (timeout 60s para que el browser procese)
   var win=null;
@@ -15095,6 +15753,8 @@ function sendToSheets() {
   if(!_confirmFechaAlineada('Enviar')) return;
   // V1_0_0_15: advertir si alguien con check-in no tiene actividad (antes de cualquier envío)
   if(!_confirmSinActividad()) return;
+  // V2_0_1_0: advertir de actividades asignadas sin cantidad. Si acepta, no se envían.
+  if(!_confirmSinCantidad()) return;
   if(!navigator.onLine || window._exceptionsClearedFor === gVal('fecha')){ return _sendToSheetsCore(); }
   if(typeof checkExceptionsBeforeSend === 'function'){
     checkExceptionsBeforeSend(function(ok){
@@ -15225,6 +15885,10 @@ function _sendToSheetsCore() {
       var a   = w.acts[j];
       var act = ACTS[a.ai];
       if (!act) continue;
+      // V2_0_1_0: sin cantidad no se manda (ya se aviso). El guard `if(wOut.acts.length)` de
+      // abajo (V12-BUG3) hace el resto: si era su unica actividad, el worker no viaja.
+      // Asi el backend tampoco puede convertir la celda vacia en 1 con su `qty || 1`.
+      if(!_actTieneCantidad(act, a)) continue;
       // V20_95 FIX: usar isHourAct (cubre tipo='Hora' aun si act.hr false). Antes act.hr directo causaba caer a act.p $14 cuando MASTER mapeo de hr falló.
       var totalH = isHourAct(act) ? totalShiftHours(a) : 0;
       // Tau: solo Hours usa contractRate; todo lo demás usa act.p
@@ -20533,11 +21197,36 @@ function generateSemPDF(){
   // V1_0_0_76: el nombre (_semFnBase) se arma arriba, compartido con el <title> del PDF
   html += '<div class="nopr" style="text-align:center;margin-top:16px">'
     +'<button onclick="window.print()" style="background:#1a7a4a;color:#fff;border:none;padding:12px 24px;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;margin:4px">🖨️ Imprimir / Guardar PDF</button>'
-    +'<button onclick="_saveImg(\'imgPageW\',\''+_semFnBase+'\')" style="background:#1a5a9a;color:#fff;border:none;padding:12px 24px;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;margin:4px">📷 Imagen Semanal</button>'
+    +'<button id="btnImg_imgPageW" onclick="_saveImg(\'imgPageW\',\''+_semFnBase+'\')" style="background:#1a5a9a;color:#fff;border:none;padding:12px 24px;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;margin:4px;min-height:44px">📷 Imagen Semanal</button>'
     +'<button onclick="window.close()" style="background:#eee;color:#555;border:none;padding:12px 20px;border-radius:8px;font-size:14px;cursor:pointer;margin:4px">Cerrar</button>'
     +'</div>';
   // V1_0_0_35: script de exportación a imagen (PNG escala 2, nítido). El tag de cierre va dividido en dos para no romper el parser del HTML padre.
-  html += '<scr'+'ipt>function _saveImg(id,fn){var el=document.getElementById(id);if(!el){alert("No se encontró el contenido");return;}if(typeof html2canvas==="undefined"){alert("La imagen aún se está preparando — espera 2-3 segundos y vuelve a intentar (necesita internet la primera vez).");return;}var t=document.querySelectorAll(".nopr");for(var i=0;i<t.length;i++)t[i].style.display="none";html2canvas(el,{scale:2,backgroundColor:"#ffffff",useCORS:true,scrollX:0,scrollY:0,windowWidth:el.scrollWidth,width:el.scrollWidth}).then(function(c){for(var i=0;i<t.length;i++)t[i].style.display="";var a=document.createElement("a");a.download=fn+".png";a.href=c.toDataURL("image/png");document.body.appendChild(a);a.click();document.body.removeChild(a);}).catch(function(e){for(var i=0;i<t.length;i++)t[i].style.display="";alert("Error al generar imagen: "+((e&&e.message)||e));});}</scr'+'ipt>';
+  // V2_0_1_2: motor de imagen de DOS TOQUES. Chrome iOS NO implementa <a download>
+  // (navega a la URL, y la navegacion top-level a data:/blob: esta bloqueada -> no
+  // pasaba NADA). Ademas iOS descartaba el a.click() disparado dentro del .then() de
+  // html2canvas, 3-15s despues del toque, con la activacion por gesto ya cerrada (~5s).
+  // Toque 1 genera y deja el boton naranja + uno verde; toque 2 es un gesto FRESCO que
+  // entrega por Web Share con File, o por visor a pantalla completa (manten presionada
+  // -> Guardar en Fotos, que es donde WhatsApp la encuentra).
+  html += '<scr'+'ipt>var _imgR={};function _imgIsIOS(){var ua=navigator.userAgent||"";if(/iPad|iPhone|iPod/.test(ua))return true;return ua.indexOf("Macintosh")>=0&&navigator.maxTouchPoints>1;}function _imgIsCriOS(){return /CriOS|FxiOS|EdgiOS|OPiOS/.test(navigator.userAgent||"");}function _imgBtn(id){return document.getElementById("btnImg_"+id);}function _imgViewBtn(id,on){var b=_imgBtn(id);if(!b)return;var v=document.getElementById("btnImgVer_"+id);'
+    +'if(!on){if(v&&v.parentNode)v.parentNode.removeChild(v);return;}if(v)return;v=document.createElement("button");v.id="btnImgVer_"+id;v.type="button";v.innerHTML="\\uD83D\\uDC41\\uFE0F Ver para guardar en Fotos";v.style.cssText="background:#1a7a4a;color:#fff;border:none;padding:12px 20px;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;margin:4px;min-height:44px";v.onclick=function(){_imgViewer(id);};if(b.nextSibling)b.parentNode.insertBefore(v,b.nextSibling);'
+    +'else b.parentNode.appendChild(v);}function _imgSetBtn(id,stage){var b=_imgBtn(id);if(!b)return;if(!b.getAttribute("data-lbl")){b.setAttribute("data-lbl",b.innerHTML);b.setAttribute("data-bg",b.style.background||"#1a5a9a");}if(stage==="ready"){b.innerHTML="\\uD83D\\uDCBE Guardar / Compartir imagen";b.style.background="#e07b00";_imgViewBtn(id,_imgIsIOS());}else{b.innerHTML=b.getAttribute("data-lbl");b.style.background=b.getAttribute("data-bg");'
+    +'_imgViewBtn(id,false);}}function _imgNote(msg,bg){var n=document.getElementById("_imgNote");if(n&&n.parentNode)n.parentNode.removeChild(n);if(!msg)return;n=document.createElement("div");n.id="_imgNote";n.className="nopr";n.style.cssText="position:fixed;left:8px;right:8px;bottom:8px;z-index:99998;background:"+(bg||"#333")+";color:#fff;padding:12px 14px;border-radius:10px;font:700 14px/1.45 Arial,sans-serif;text-align:center;'
+    +'box-shadow:0 3px 14px rgba(0,0,0,.4)";n.innerHTML=msg;document.body.appendChild(n);}function _imgDrop(except){for(var k in _imgR){if(k!==except&&_imgR[k]){_imgR[k]=null;_imgSetBtn(k,"idle");}}}function _imgFail(id,msg){_imgNote("");_imgSetBtn(id,"idle");_imgR[id]=null;alert("\\u26A0\\uFE0F "+msg+"\\n\\nQue puedes hacer:\\n\\u2022 Usa \\"Imprimir / Guardar PDF\\" (ese siempre funciona).\\n\\u2022 O genera la hoja por finca / por turno para que salga menos ancha.");'
+    +'}function _imgToBlob(c,cb){var du=null;if(c.toBlob){try{c.toBlob(function(b){if(b&&b.size>=1000){cb(b,null);return;}try{du=c.toDataURL("image/png");}catch(e1){du=null;}cb(b||null,du);},"image/png");return;}catch(e2){}}try{du=c.toDataURL("image/png");}catch(e3){du=null;}if(!du||du.length<1000||du.indexOf("base64,")<0){cb(null,du);return;}var b2=null;try{var bin=atob(du.split("base64,")[1]),len=bin.length,arr=new Uint8Array(len),i2=0;'
+    +'for(;i2<len;i2++)arr[i2]=bin.charCodeAt(i2);b2=new Blob([arr],{type:"image/png"});}catch(e4){b2=null;}cb(b2,du);}function _imgViewer(id){var r=_imgR[id];if(!r)return;var src=null;try{if(r.blob&&window.URL&&URL.createObjectURL)src=URL.createObjectURL(r.blob);}catch(e){src=null;}if(!src){try{src=r.du||(r.c?r.c.toDataURL("image/png"):null);}catch(e5){src=null;}}if(!src){_imgFail(id,"No se pudo mostrar la imagen en pantalla.");'
+    +'return;}_imgNote("");var ov=document.createElement("div");ov.id="_imgOv";ov.className="nopr";ov.style.cssText="position:fixed;left:0;top:0;right:0;bottom:0;background:#000;z-index:999999;overflow:auto;-webkit-overflow-scrolling:touch;text-align:center";var bar=document.createElement("div");bar.style.cssText="position:sticky;top:0;background:#e07b00;color:#fff;padding:13px 10px;font:700 15px/1.4 Arial,sans-serif";bar.innerHTML="\\uD83D\\uDC47 MANT\\u00C9N PRESIONADA la imagen y elige \\u201CGuardar en Fotos\\u201D"+(_imgIsCriOS()?" o \\u201CGuardar imagen\\u201D":"")+"<div style=\\"font-weight:400;'
+    +'font-size:12px;margin-top:5px\\">As\\u00ED queda en Fotos y la puedes mandar por WhatsApp.</div>";var im=document.createElement("img");im.src=src;im.alt=r.fn;im.style.cssText="display:block;width:100%;height:auto;margin:0 auto;background:#fff;-webkit-touch-callout:default;-webkit-user-select:auto;user-select:auto";im.onerror=function(){var alt=null;try{alt=r.du||(r.c?r.c.toDataURL("image/png"):null);}catch(e6){alt=null;'
+    +'}if(alt&&im.src!==alt){im.src=alt;}else{bar.innerHTML="\\u26A0\\uFE0F El tel\\u00E9fono no pudo mostrar la imagen. Usa \\"Imprimir / Guardar PDF\\".";}};var cl=document.createElement("button");cl.textContent="Cerrar";cl.style.cssText="margin:14px auto 34px;display:block;background:#fff;color:#333;border:none;padding:14px 28px;border-radius:8px;font-size:15px;font-weight:700;min-height:44px;cursor:pointer";cl.onclick=function(){try{if(String(src).indexOf("blob:")===0)URL.revokeObjectURL(src);'
+    +'}catch(e7){}try{ov.parentNode.removeChild(ov);}catch(e8){}};ov.appendChild(bar);ov.appendChild(im);ov.appendChild(cl);document.body.appendChild(ov);}function _imgDownload(id){var r=_imgR[id];if(!r)return false;var href=null,isBlob=false;try{if(r.blob&&window.URL&&URL.createObjectURL){href=URL.createObjectURL(r.blob);isBlob=true;}}catch(e){href=null;}if(!href){try{href=r.du||(r.c?r.c.toDataURL("image/png"):null);}catch(e9){href=null;'
+    +'}}if(!href)return false;try{var a=document.createElement("a");a.download=r.fn+".png";a.href=href;a.style.display="none";document.body.appendChild(a);a.click();setTimeout(function(){try{document.body.removeChild(a);}catch(e10){}if(isBlob){try{URL.revokeObjectURL(href);}catch(e11){}}},4000);return true;}catch(e12){return false;}}function _imgDeliver(id){var r=_imgR[id];if(!r)return;var name=r.fn+".png",f=null;try{if(typeof File==="function"&&r.blob)f=new File([r.blob],name,{type:"image/png"});'
+    +'}catch(e){f=null;}if(f&&navigator.share&&(!navigator.canShare||navigator.canShare({files:[f]}))){try{navigator.share({files:[f]}).then(function(){_imgNote("\\u2705 Listo. Si no la ves en Fotos, usa el bot\\u00F3n VERDE y mant\\u00E9n presionada la imagen.","#1a7a4a");}).catch(function(err){if(err&&err.name==="AbortError")return;_imgViewer(id);});return;}catch(e13){}}if(_imgIsIOS()){_imgViewer(id);return;}if(_imgDownload(id)){_imgNote("\\u2705 Imagen descargada: "+name,"#1a7a4a");'
+    +'_imgSetBtn(id,"idle");_imgR[id]=null;return;}_imgViewer(id);}function _saveImg(id,fn){var el=document.getElementById(id);if(!el){alert("No se encontr\\u00F3 el contenido de esa hoja");return;}if(_imgR[id]&&_imgR[id].fn===fn){_imgDeliver(id);return;}if(typeof html2canvas==="undefined"){alert("\\u26A0\\uFE0F No se pudo cargar el generador de im\\u00E1genes (html2canvas).\\n\\nSe baja de internet la PRIMERA vez que abres esta hoja. Con\\u00E9ctate a datos o WiFi, cierra esta hoja y vu\\u00E9lvela a generar.\\n\\nMientras tanto usa \\"Imprimir / Guardar PDF\\": ese NO necesita internet.");'
+    +'return;}_imgDrop(id);_imgR[id]=null;_imgSetBtn(id,"idle");var t=document.querySelectorAll(".nopr");for(var i=0;i<t.length;i++)t[i].style.display="none";_imgNote("\\u23F3 Generando imagen\\u2026 no cierres esta hoja.","#1a5a9a");var _W=el.scrollWidth||el.offsetWidth||1,_H=el.scrollHeight||el.offsetHeight||1;var _sc=Math.min(2,4000/_W,4000/_H);if(!(_sc>0))_sc=1;if(_sc>2)_sc=2;if(_sc<0.75)_sc=0.75;html2canvas(el,{scale:_sc,backgroundColor:"#ffffff",useCORS:true,scrollX:0,scrollY:0,windowWidth:_W,width:_W}).then(function(c){for(var j=0;'
+    +'j<t.length;j++)t[j].style.display="";if(!c||!c.width||!c.height){_imgFail(id,"El navegador no pudo dibujar la hoja: el lienzo qued\\u00F3 vac\\u00EDo.");return;}_imgToBlob(c,function(blob,du){if((!blob||blob.size<1000)&&(!du||du.length<1000)){_imgFail(id,"La imagen sali\\u00F3 vac\\u00EDa: la hoja es demasiado ancha para este tel\\u00E9fono ("+c.width+"\\u00D7"+c.height+" px).");return;}_imgR[id]={fn:fn,blob:blob,du:du,c:c,w:c.width,h:c.height};'
+    +'_imgSetBtn(id,"ready");_imgNote("\\u2705 Imagen lista ("+c.width+"\\u00D7"+c.height+" px)."+(_imgIsIOS()?"<br>Toca el bot\\u00F3n <b>NARANJA</b> para compartirla, o el <b>VERDE</b> para verla y guardarla en Fotos.":"<br>Ahora toca el bot\\u00F3n <b>NARANJA</b> \\u201CGuardar / Compartir imagen\\u201D.")+"<div style=\\"font-weight:400;font-size:11px;margin-top:5px\\">Son dos toques a prop\\u00F3sito: el iPhone solo deja guardar o compartir en el instante en que tocas.</div>","#e07b00");'
+    +'});}).catch(function(e){for(var k2=0;k2<t.length;k2++)t[k2].style.display="";_imgFail(id,"Error al generar la imagen: "+((e&&e.message)||e));});}'
+    +'</scr'+'ipt>';
   html += '</body></html>';
 
   // Abrir PDF (misma lógica que buildPDFWindow con fallback iOS)
@@ -20573,6 +21262,16 @@ function sendSemToSheets(){
           '\n\nNo puedes enviar a Sheets hasta completar todos los horarios.');
     return;
   }
+
+  // V2_0_1_1: el aviso de 'no tiene nada capturado' faltaba en el ENVIO.
+  // V2_0_0_2 lo puso solo en generateSemPDF y el comentario decia 'paridad con la diaria', pero
+  // la diaria lo tiene en los DOS lados (genPDF y sendToSheets). Resultado: el trabajador que el
+  // surquero agrego y no capturo SI se quedaba fuera del envio (su `anyData` nunca se pone en
+  // true, asi que la fila no viaja) pero desaparecia EN SILENCIO. Y el boton de Enviar esta antes
+  // que el del PDF en la pantalla: si enviaba sin imprimir, nunca se enteraba del olvido.
+  // Va DESPUES del validador de horarios a proposito: ese bloquea sin opcion, y no tiene sentido
+  // preguntarle 'continuas sin estas personas?' para despues cerrarle el envio por otra causa.
+  if(!_confirmSemSinDatos('el envio a Payroll')) return;
 
   var selAct = ALL_ACTS[parseInt(gVal('semActivity'))];
   var isHour = selAct && isHourAct(selAct); // V8
@@ -21737,28 +22436,117 @@ function surqueroBypassQR(){
   if(_readOnlyMode){ toast('🔒 Modo lectura — no aplica'); return; }
   // Si es admin, usar el flujo admin existente (que admite trabajador/chofer fake QR)
   if(currentUser.isAdmin){ adminBypassQR(); return; }
-  var pin = prompt('🔢 Tu PIN de surquero para confirmar (sin escanear QR):');
-  if(!pin) return;
-  pin = String(pin).trim();
+  // V2_0_1_2: AQUI ESTABA EL BUG DE "LA TIRA NARANJA NO RESPONDE".
+  // Antes esta linea era:  var pin = prompt('🔢 Tu PIN de surquero...');
+  //                        if(!pin) return;
+  // Ese `if(!pin) return;` era el UNICO camino de toda la funcion que salia sin
+  // decir NADA — todos los demas hacen toast(). Y prompt() devuelve null al
+  // instante, sin mostrar nada, cuando el navegador tiene suprimidos los dialogos
+  // de la pagina (Chrome iOS pone la casilla "Evitar que esta pagina cree
+  // dialogos adicionales" despues de varios dialogos seguidos, y esta app dispara
+  // 75 entre alert/confirm/prompt). Resultado: el surquero tocaba la tira naranja,
+  // no pasaba absolutamente nada, y se quedaba sin su unica salida sin camara
+  // (en modo 'surquero' el boton "Escribir nombre" esta oculto a proposito desde
+  // V20_108). El boton ✕ Cerrar si respondia porque no usa dialogos nativos.
+  //
+  // Ahora: modal propio de la app. Cero dialogos nativos en este camino, y NINGUNA
+  // salida muda — cada rechazo se ve dentro del modal.
+  // Se valida LIDERES ANTES de pedir el PIN: si la lista no cargo, hacerlo teclear
+  // para despues decirle "PIN incorrecto" es mentirle (bug conocido del proyecto).
   if(typeof LIDERES === 'undefined' || !LIDERES || !LIDERES.length){
-    toast('⚠️ Lista de líderes no cargada');
+    toast('⚠️ Lista de líderes no cargada — espera unos segundos y vuelve a intentar');
+    return;
+  }
+  _openQrPinModal();
+}
+
+// V2_0_1_2: modal propio para el PIN del surquero (reemplazo del prompt() nativo).
+function _openQrPinModal(){
+  try{
+    var ov = gEl('qrPinOv');
+    if(!ov){ toast('⚠️ No se pudo abrir el teclado del PIN'); return; }
+    var inp = gEl('qrPinInput');
+    if(inp) inp.value = '';
+    _qrPinErr('');
+    // Si la camara esta viva, pausarla: este modal NO lleva la clase .ov, asi que el
+    // MutationObserver no lo ve y la camara seguiria escaneando por detras.
+    try{ pauseQR(); }catch(_e){}
+    ov.style.display = 'flex';
+    // iOS: el focus programatico solo abre el teclado si sigue vivo el gesto del
+    // toque, por eso el timeout es corto. Si no abre, el surquero toca el campo.
+    setTimeout(function(){ try{ if(inp) inp.focus(); }catch(_e){} }, 60);
+  }catch(e){
+    console.warn('[V2_0_1_2] _openQrPinModal', e);
+    toast('⚠️ Error al abrir el PIN');
+  }
+}
+
+function closeQrPinModal(reanudar){
+  try{
+    var ov = gEl('qrPinOv');
+    if(ov) ov.style.display = 'none';
+    var inp = gEl('qrPinInput');
+    if(inp) inp.value = '';
+    _qrPinErr('');
+    if(reanudar && qrActive){ try{ resumeQR(); }catch(_e){} }
+  }catch(e){ console.warn('[V2_0_1_2] closeQrPinModal', e); }
+}
+
+// V2_0_1_2: error VISIBLE dentro del modal. Cadena vacia = limpiar.
+function _qrPinErr(msg){
+  try{
+    var el = gEl('qrPinErr');
+    if(!el) return;
+    el.textContent = msg || '';
+    el.style.display = msg ? 'block' : 'none';
+  }catch(e){}
+}
+
+function _qrPinBusy(on){
+  try{
+    var b = gEl('qrPinOkBtn');
+    if(!b) return;
+    b.disabled = !!on;
+    b.style.opacity = on ? '0.6' : '1';
+    b.textContent = on ? 'Validando…' : 'Confirmar';
+  }catch(e){}
+}
+
+// V2_0_1_2: submit del modal. Mismo contenido que el cuerpo viejo de
+// surqueroBypassQR (V20_103) pero sin un solo return mudo.
+function qrPinSubmit(){
+  var inp = gEl('qrPinInput');
+  var pin = inp ? String(inp.value || '').trim() : '';
+  if(!pin){ _qrPinErr('⚠️ Escribe tu PIN.'); if(inp){ try{ inp.focus(); }catch(_e){} } return; }
+  if(typeof LIDERES === 'undefined' || !LIDERES || !LIDERES.length){
+    _qrPinErr('⚠️ La lista de líderes no cargó. Cierra, espera unos segundos con señal y vuelve a intentar.');
     return;
   }
   var liderTarget = null;
   for(var i=0; i<LIDERES.length; i++){
-    if(LIDERES[i] && LIDERES[i].name && currentUser.name &&
+    if(LIDERES[i] && LIDERES[i].name && currentUser && currentUser.name &&
        LIDERES[i].name.toLowerCase().trim() === currentUser.name.toLowerCase().trim()){
       liderTarget = LIDERES[i];
       break;
     }
   }
-  if(!liderTarget){ toast('⚠️ Surquero no encontrado en LIDERES'); return; }
+  if(!liderTarget){
+    _qrPinErr('⚠️ Tu nombre no aparece en la lista de líderes (' + esc(currentUser && currentUser.name ? currentUser.name : '?') + '). Avisa a Serafín.');
+    return;
+  }
+  _qrPinBusy(true);
   hashPin(pin).then(function(h){
+    _qrPinBusy(false);
     var pinOk = false;
     if(liderTarget.pinHash && h === liderTarget.pinHash) pinOk = true;
     // fallback: PIN sin hashear (LIDERES recién cargado, antes de hashPin async)
     if(!pinOk && liderTarget.pin && pin === String(liderTarget.pin).trim()) pinOk = true;
-    if(!pinOk){ toast('⚠️ PIN incorrecto'); return; }
+    if(!pinOk){
+      // V2_0_1_2: NO se cierra el modal — que pueda corregir sin volver a empezar.
+      _qrPinErr('⚠️ PIN incorrecto. Vuelve a intentar.');
+      if(inp){ inp.value = ''; try{ inp.focus(); }catch(_e){} }
+      return;
+    }
     try{
       var mode = _qrMode || 'trabajador';
       var fakeName = currentUser.name;
@@ -21788,18 +22576,31 @@ function surqueroBypassQR(){
         fakeEmpNum = (_pendingW && _pendingW.empNum) ? _pendingW.empNum : '';
       }
       var fakeDecoded = 'EBERRY|' + fakeName + '|' + fakeEmpNum;
-      console.log('[V20_103] surqueroBypassQR simulando escaneo:', mode, fakeDecoded);
+      console.log('[V2_0_1_2] qrPinSubmit simulando escaneo:', mode, fakeDecoded);
+      // Cerrar SIN reanudar: onQRSuccess decide que sigue (y la camara puede estar muerta).
+      closeQrPinModal(false);
       onQRSuccess(fakeDecoded);
     }catch(e){
-      console.warn('[V20_103] surqueroBypassQR error', e);
-      toast('⚠️ Error al simular escaneo');
+      console.warn('[V2_0_1_2] qrPinSubmit error', e);
+      _qrPinErr('⚠️ Error al registrar. Cierra y vuelve a intentar.');
     }
   }).catch(function(e){
-    console.warn('[V20_103] surqueroBypassQR hash error', e);
-    toast('⚠️ Error validando PIN');
+    _qrPinBusy(false);
+    console.warn('[V2_0_1_2] qrPinSubmit hash error', e);
+    _qrPinErr('⚠️ No se pudo validar el PIN en este teléfono. Cierra y usa tu QR, o avisa a Serafín.');
   });
 }
 
+// V2_0_1_2: Enter del teclado numerico tambien confirma.
+function onQrPinKey(ev){
+  try{
+    var k = ev && (ev.key || ev.keyCode);
+    if(k === 'Enter' || k === 13){
+      if(ev.preventDefault) ev.preventDefault();
+      qrPinSubmit();
+    }
+  }catch(e){}
+}
 /* ============================================================
    V20_91_24 — Edición admin de horarios congelados (Opción C)
    ============================================================
