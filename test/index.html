@@ -35,7 +35,7 @@
 </script>
 <script>
 // V20_21: check versión + ackedVersion para romper loop infinito cuando version.txt≠APP_VERSION
-window.APP_VERSION = 'V2_0_1_5';
+window.APP_VERSION = 'V2_0_1_6';
 (function(){
   // V20_77: AUTO-LIMPIEZA de _ackedVersion envenenado.
   // Bug detectado: surqueros tocaban "Actualizar ahora" pero el SW interceptaba el reload con HTML viejo.
@@ -10440,16 +10440,7 @@ function load(){
       }
     }
     // V20_91_01: restaurar _dayFlow (con defaults defensivos para días viejos sin estos campos)
-    if(d.df){
-      _dayFlow = d.df;
-      // Defaults defensivos por si vienen incompletos
-      if(typeof _dayFlow.choferScanned==='undefined') _dayFlow.choferScanned = false;
-      if(typeof _dayFlow.surqueroScanned==='undefined') _dayFlow.surqueroScanned = false;
-      if(typeof _dayFlow.diaIniciado==='undefined') _dayFlow.diaIniciado = false;
-      if(typeof _dayFlow.checkOutDone==='undefined') _dayFlow.checkOutDone = false;
-    } else {
-      _dayFlow = _initDayFlow();
-    }
+    _reponerDayFlow(d.df); // V2_0_1_6: ver _reponerDayFlow
     // Tau: recuperar empNum y contractRate de ALL_WORKERS si faltan (datos legacy)
     for(var ei=0;ei<workers.length;ei++){
       // V20_91_01: defaults defensivos para campos check-in/out (datos viejos)
@@ -13170,8 +13161,47 @@ function showHistory(){
   gEl('histOv').classList.add('on');
 }
 
+// V2_0_1_6: un dia guardado CON trabajadores adentro ya se inicio. Reportado por Serafin
+// 2026-11-02: al cargar un dia del historial salia la gente ponchada pero NINGUNA actividad.
+// No se perdia nada: el candado de go(n) ("Primero escanea al chofer y al surquero en
+// Parametros") rebotaba la pestana Trabajadores porque _dayFlow.diaIniciado quedaba en false.
+// La defensa correcta ya existia en _enterReadOnly (V20_124) pero SOLO en ese camino: loadDay
+// (historial del telefono) y load() (arranque / JSON importado) no la tenian, y son justo los
+// dos que usa el surquero. Aqui esta en un solo lugar para los dos.
+// NO se deriva checkOutDone a proposito: el surquero carga el dia para CORREGIRLO, y marcarlo
+// como cerrado le bloquearia agregar gente. Si el dia traia ese dato, se respeta.
+function _reponerDayFlow(df){
+  if(df){
+    _dayFlow = df;
+    if(typeof _dayFlow.choferScanned==="undefined") _dayFlow.choferScanned = false;
+    if(typeof _dayFlow.surqueroScanned==="undefined") _dayFlow.surqueroScanned = false;
+    if(typeof _dayFlow.diaIniciado==="undefined") _dayFlow.diaIniciado = false;
+    if(typeof _dayFlow.checkOutDone==="undefined") _dayFlow.checkOutDone = false;
+  } else {
+    _dayFlow = _initDayFlow();
+  }
+  try{
+    if(typeof workers !== "undefined" && workers && workers.length){
+      for(var _rk=0; _rk<workers.length; _rk++){
+        var _rr = (workers[_rk] && workers[_rk].role) || "";
+        if((_rr==="chofer" || _rr==="choferSurquero") && !_dayFlow.choferScanned){
+          _dayFlow.choferScanned = true; _dayFlow.choferWorkerId = workers[_rk].id;
+        }
+        if((_rr==="surquero" || _rr==="choferSurquero") && !_dayFlow.surqueroScanned){
+          _dayFlow.surqueroScanned = true; _dayFlow.surqueroWorkerId = workers[_rk].id;
+        }
+      }
+      if(_dayFlow.choferScanned && _dayFlow.surqueroScanned) _dayFlow.diaIniciado = true;
+      // la regla de oro: si el dia tiene trabajadores guardados, ese dia YA se inicio
+      if(!_dayFlow.diaIniciado) _dayFlow.diaIniciado = true;
+    }
+  }catch(e){ console.warn("[V2_0_1_6] _reponerDayFlow:", e.message); }
+  return _dayFlow;
+}
 function loadDay(key){
-  var raw=localStorage.getItem(key); if(!raw)return;
+  var raw=localStorage.getItem(key);
+  // V2_0_1_6: antes salia MUDO — el surquero tocaba el dia y no pasaba absolutamente nada.
+  if(!raw){ toast("⚠️ No encontre ese dia en la memoria del telefono"); return; }
   try{
     var d=JSON.parse(raw);
     restoreSaveFields(d.v);
@@ -13180,14 +13210,7 @@ function loadDay(key){
     // V20_111 FIX 1: cargar también grupales, ausencias y dayFlow (antes solo workers)
     if(d.ga) grpActs = d.ga;
     if(d.aus) ausencias = d.aus;
-    if(d.df){
-      _dayFlow = d.df;
-      // defaults defensivos
-      if(typeof _dayFlow.choferScanned === 'undefined') _dayFlow.choferScanned = false;
-      if(typeof _dayFlow.surqueroScanned === 'undefined') _dayFlow.surqueroScanned = false;
-      if(typeof _dayFlow.diaIniciado === 'undefined') _dayFlow.diaIniciado = false;
-      if(typeof _dayFlow.checkOutDone === 'undefined') _dayFlow.checkOutDone = false;
-    }
+    _reponerDayFlow(d.df); // V2_0_1_6: ver _reponerDayFlow
     // V20_111 FIX 1: resolver gai por nombre (paralelo a load() V20_110 FASE A)
     if(grpActs && grpActs.length && typeof GRUPAL_ACTS !== 'undefined' && GRUPAL_ACTS){
       for(var _gki=0; _gki<grpActs.length; _gki++){
@@ -13258,11 +13281,17 @@ function loadDay(key){
     if(!workers.length){ var ph=document.createElement('div'); ph.id='wph'; ph.style.cssText='text-align:center;padding:40px 18px;color:var(--gr);font-size:14px'; ph.textContent='Escribe un nombre en la barra de abajo'; list.appendChild(ph); }
     gEl('histOv').classList.remove('on');
     toast('✓ Día '+d.v.fecha+' cargado');
-    go(0);
+    // V2_0_1_6: a Trabajadores, que es donde se ven las actividades del dia cargado.
+    go(workers && workers.length ? 2 : 0);
     // V20_111 FIX 1: re-render grupales/ausencias después de cargar
     setTimeout(function(){
       try{ if(typeof renderGrpActs === 'function') renderGrpActs(); }catch(e){}
       try{ if(typeof renderAusencias === 'function') renderAusencias(); }catch(e){}
+      // V2_0_1_6: refrescar el bloque de check-in, los candados de horario y los chips
+      try{ if(typeof _renderIniciarDia === "function") _renderIniciarDia(); }catch(e){}
+      try{ if(typeof _renderHorarioLocks === "function") _renderHorarioLocks(); }catch(e){}
+      try{ if(typeof _renderCheckOutBtn === "function") _renderCheckOutBtn(); }catch(e){}
+      try{ if(typeof updCheckInOutDisplay === "function"){ for(var _ci6=0;_ci6<workers.length;_ci6++) updCheckInOutDisplay(workers[_ci6].id); } }catch(e){}
     }, 100);
   }catch(e){ toast('⚠️ Error al cargar: '+e.message); }
 }
