@@ -35,7 +35,7 @@
 </script>
 <script>
 // V20_21: check versión + ackedVersion para romper loop infinito cuando version.txt≠APP_VERSION
-window.APP_VERSION = 'V2_0_1_6';
+window.APP_VERSION = 'V2_0_1_7';
 (function(){
   // V20_77: AUTO-LIMPIEZA de _ackedVersion envenenado.
   // Bug detectado: surqueros tocaban "Actualizar ahora" pero el SW interceptaba el reload con HTML viejo.
@@ -3098,7 +3098,7 @@ function _cargarCtxRancho(rancho){
   var fecha = gVal('fecha') || new Date().toISOString().split('T')[0];
   var key = _histKeyExistente(fecha, rancho);
   if(key){
-    loadDay(key); // repinta trabajadores, grupales y ausencias
+    loadDay(key, {interno:true}); // V2_0_1_7: repinta sin navegar ni avisar de mas
     try { var _rEl2 = gEl('rancho'); if(_rEl2 && _rEl2.value !== rancho) _rEl2.value = rancho; } catch(e){}
     toast('Rancho ' + rancho + ' — captura de este dia cargada');
     return;
@@ -10065,6 +10065,15 @@ function collectSaveFields(){
   for(var i=0;i<els.length;i++){
     if(els[i].id) vals[els[i].id]=els[i].value;
   }
+  // V2_0_1_7: esto lee la PANTALLA. Cuando onRanchoChange archiva el rancho que se DEJA, el
+  // dropdown ya trae el NUEVO, asi que el dia del primer rancho quedaba guardado con el nombre
+  // del segundo adentro. La clave si era correcta (_ctxRanchoForce), el contenido no, y la lista
+  // del historial decide por el contenido -> los dos ranchos del dia parecian el mismo y uno
+  // desaparecia. Reportado por Serafin 2026-11-02 con el 10/30 (trabajo en 2 ranchos, salia 1).
+  if(typeof _ctxRanchoForce !== "undefined" && _ctxRanchoForce !== null && _ctxRanchoForce !== ""
+     && typeof vals.rancho !== "undefined"){
+    vals.rancho = _ctxRanchoForce;
+  }
   return vals;
 }
 function restoreSaveFields(vals, skip){
@@ -12965,8 +12974,28 @@ function _histRanchoNombre(key){
 // Un dia capturado ANTES del cambio de claves no lleva rancho en el nombre, asi que contra
 // el mismo dia ya guardado con rancho parecian dos dias distintos y la lista lo mostraba
 // DOS VECES (lo que se vio con 'Animal Edventures').
+// V2_0_1_7: manda el rancho del NOMBRE del archivo cuando lo trae, porque es explicito: lo
+// puso getCtxKey con el rancho correcto. El de adentro solo decide cuando la clave no lo
+// trae (dias viejos pre-V1_0_0_82), que es el caso de "Animal Edventures" que resolvio la
+// V2_0_0_9 — ese sigue cubierto. Asi reaparece la captura del primer rancho SIN tocar datos.
+// V2_0_1_7: del slug al nombre tal cual lo conoce el MASTER. Si no hay match no se inventa.
+function _ranchoNombreDesdeSlug(slug){
+  if(!slug) return "";
+  try {
+    var el = gEl("rancho");
+    if(el && el.options){
+      for(var i=0;i<el.options.length;i++){
+        var v = el.options[i].value;
+        if(v && _ranchoSlug(v) === slug) return v;
+      }
+    }
+  } catch(e){}
+  return "";
+}
 function _histIdRancho(key){
-  return _ranchoSlug(_histRanchoDelDia(key)) || _histRanchoSlug(key);
+  var _kr = _histRanchoSlug(key);
+  if(_kr) return _kr;
+  return _ranchoSlug(_histRanchoDelDia(key)) || "";
 }
 function _histDiasDesde(fechaStr){
   try {
@@ -13198,13 +13227,29 @@ function _reponerDayFlow(df){
   }catch(e){ console.warn("[V2_0_1_6] _reponerDayFlow:", e.message); }
   return _dayFlow;
 }
-function loadDay(key){
+function loadDay(key, _opts){
+  var _interno = !!(_opts && _opts.interno); // V2_0_1_7: lo llama _cargarCtxRancho
   var raw=localStorage.getItem(key);
   // V2_0_1_6: antes salia MUDO — el surquero tocaba el dia y no pasaba absolutamente nada.
   if(!raw){ toast("⚠️ No encontre ese dia en la memoria del telefono"); return; }
   try{
     var d=JSON.parse(raw);
     restoreSaveFields(d.v);
+    // V2_0_1_7: si el archivo quedo guardado con el rancho equivocado adentro (ver
+    // collectSaveFields), manda el del NOMBRE del archivo. Sin esto el PDF y el envio a
+    // Sheets de ese dia saldrian con el rancho de al lado.
+    try {
+      var _kSlug = _histRanchoSlug(key);
+      if(_kSlug && _ranchoSlug((d.v && d.v.rancho) || "") !== _kSlug){
+        var _nomOK = _ranchoNombreDesdeSlug(_kSlug);
+        if(_nomOK){
+          var _rElFix = gEl("rancho");
+          if(_rElFix) _rElFix.value = _nomOK;
+          if(d.v) d.v.rancho = _nomOK;
+          console.warn("[V2_0_1_7] el dia traia el rancho equivocado adentro; manda la clave:", _nomOK);
+        }
+      }
+    } catch(e){ console.warn("[V2_0_1_7] no se pudo corregir el rancho del dia:", e.message); }
     if(d.w)workers=d.w; if(d.id)wid=d.id;
     if(d.ep)estP=d.ep; if(d.hp)hilP=d.hp; if(d.cp)cajasP=d.cp;
     // V20_111 FIX 1: cargar también grupales, ausencias y dayFlow (antes solo workers)
@@ -13280,9 +13325,13 @@ function loadDay(key){
     for(var i=0;i<workers.length;i++) list.appendChild(mkCard(workers[i],i));
     if(!workers.length){ var ph=document.createElement('div'); ph.id='wph'; ph.style.cssText='text-align:center;padding:40px 18px;color:var(--gr);font-size:14px'; ph.textContent='Escribe un nombre en la barra de abajo'; list.appendChild(ph); }
     gEl('histOv').classList.remove('on');
-    toast('✓ Día '+d.v.fecha+' cargado');
-    // V2_0_1_6: a Trabajadores, que es donde se ven las actividades del dia cargado.
-    go(workers && workers.length ? 2 : 0);
+    // V2_0_1_7: callado y sin navegar cuando lo llama el cambio de rancho — si no, cambiar de
+    // rancho en Parametros te avienta a Trabajadores (efecto colateral de la V2_0_1_6).
+    if(!_interno){
+      toast('✓ Día '+d.v.fecha+' cargado');
+      // V2_0_1_6: a Trabajadores, que es donde se ven las actividades del dia cargado.
+      go(workers && workers.length ? 2 : 0);
+    }
     // V20_111 FIX 1: re-render grupales/ausencias después de cargar
     setTimeout(function(){
       try{ if(typeof renderGrpActs === 'function') renderGrpActs(); }catch(e){}
