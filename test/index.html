@@ -35,7 +35,7 @@
 </script>
 <script>
 // V20_21: check versión + ackedVersion para romper loop infinito cuando version.txt≠APP_VERSION
-window.APP_VERSION = 'V2_0_1_7';
+window.APP_VERSION = 'V2_0_1_8';
 (function(){
   // V20_77: AUTO-LIMPIEZA de _ackedVersion envenenado.
   // Bug detectado: surqueros tocaban "Actualizar ahora" pero el SW interceptaba el reload con HTML viejo.
@@ -13471,6 +13471,171 @@ function _grpSinCaptura(g, act){
 }
 
 // Devuelve [{name, act, finca, grupal}] de todo lo asignado sin cantidad. Individuales primero.
+// ───── V2_0_1_8: un día con DOS ranchos adentro ─────────────────────────────
+// Reportado por Serafín 2026-11-02 con el 10/30 de Luis: el día se capturó entero bajo
+// Bedners pero la mitad era de Marquez Farms. Salió así en el PDF y viajó así a Sheets:
+// 126 h y 260 piezas de Marquez cargadas a Bedners. La huella estaba a la vista — la finca
+// 'Titi' es de Marquez y la actividad 'Busero' ni siquiera existe en Bedners.
+// Esto es la RED DE SEGURIDAD al final: avisa antes de que el día salga de la app. No
+// sustituye entender cómo se coló (para eso falta el JSON del día), pero corta la pérdida.
+// Decide por la FINCA primero (es lo que el surquero elige a mano) y, si la finca no basta,
+// por la ACTIVIDAD. Las dos solo deciden cuando el catálogo las deja en UN solo rancho:
+// ante la duda NO se acusa a nadie.
+function _mzSlug(s){ try{ return _ranchoSlug(s); }catch(e){ return String(s||'').toLowerCase(); } }
+function _ranchoDeFinca(finca){
+  var n = _mzSlug(finca); if(!n) return '';
+  if(typeof FINCAS_POR_RANCHO === 'undefined' || !FINCAS_POR_RANCHO) return '';
+  var hit = '', veces = 0;
+  for(var r in FINCAS_POR_RANCHO){
+    var fs = FINCAS_POR_RANCHO[r] || [];
+    for(var i = 0; i < fs.length; i++){
+      if(_mzSlug(fs[i]) === n){ if(hit !== r){ hit = r; veces++; } break; }
+    }
+  }
+  return veces === 1 ? hit : '';
+}
+function _ranchoDeActividad(esName){
+  var n = _mzSlug(esName); if(!n) return '';
+  if(typeof ALL_ACTS === 'undefined' || !ALL_ACTS) return '';
+  var vistos = {}, hit = '', veces = 0;
+  for(var i = 0; i < ALL_ACTS.length; i++){
+    if(!ALL_ACTS[i] || _mzSlug(ALL_ACTS[i].es) !== n) continue;
+    var f = ALL_ACTS[i].farm || '';
+    if(f && !vistos[f]){ vistos[f] = 1; hit = f; veces++; }
+  }
+  return veces === 1 ? hit : '';
+}
+// Reparte lo capturado del día entre los ranchos que se pueden identificar.
+// ¿La actividad pertenece al rancho seleccionado? Señal independiente de la finca — y la
+// unica que sirve en los 18 ranchos que NO tienen catalogo de fincas. Es la que delato el
+// 10/30: 'Busero' esta en 15 ranchos pero en Bedners NO, asi que no era de ese dia.
+// Ante la duda NO se acusa: si la actividad no esta en el MASTER, se deja pasar.
+function _actividadEsDelRancho(esName, rancho){
+  var n = _mzSlug(esName), r = _mzSlug(rancho);
+  if(!n || !r) return true;
+  if(typeof ALL_ACTS === 'undefined' || !ALL_ACTS) return true;
+  var existe = false;
+  for(var i = 0; i < ALL_ACTS.length; i++){
+    if(!ALL_ACTS[i] || _mzSlug(ALL_ACTS[i].es) !== n) continue;
+    existe = true;
+    if(_mzSlug(ALL_ACTS[i].farm) === r) return true;
+  }
+  return existe ? false : true;
+}
+function _revisarMezclaRanchos(){
+  var fincaGlob = ''; try{ fincaGlob = gVal('finca') || ''; }catch(e){}
+  var _mzActivo = ''; try{ _mzActivo = gVal('rancho') || ''; }catch(e){}
+  var mapa = {}, orden = [];
+  function _add(r, det){
+    if(!r) return;
+    if(!mapa[r]){ mapa[r] = []; orden.push(r); }
+    mapa[r].push(det);
+  }
+  try{
+    for(var i = 0; i < workers.length; i++){
+      var w = workers[i]; if(!w || !w.acts) continue;
+      for(var j = 0; j < w.acts.length; j++){
+        var a = w.acts[j]; if(!a) continue;
+        var nom = a._actEs || a.esName || '';
+        var fin = a.finca || fincaGlob;
+        var _rA = _ranchoDeFinca(fin) || _ranchoDeActividad(nom);
+        if(!_rA && !_actividadEsDelRancho(nom, _mzActivo)) _rA = '(otro rancho)';
+        _add(_rA, { act: nom, finca: fin });
+      }
+    }
+  }catch(e1){}
+  try{
+    for(var gi = 0; gi < grpActs.length; gi++){
+      var g = grpActs[gi]; if(!g) continue;
+      var gn = g.esName || g._actEs || '';
+      var gf = (g.vars && g.vars.finca) || fincaGlob;
+      var _rG = _ranchoDeFinca(gf) || _ranchoDeActividad(gn);
+      if(!_rG && !_actividadEsDelRancho(gn, _mzActivo)) _rG = '(otro rancho)';
+      _add(_rG, { act: gn, finca: gf, grupal: true });
+    }
+  }catch(e2){}
+  return { mapa: mapa, ranchos: orden, activo: (gVal('rancho') || '') };
+}
+// Resumen legible de un rancho: 'Trabajo general de campo — Titi (5)'
+function _mzResumen(lista){
+  var orden = [], mapa = {};
+  for(var i = 0; i < lista.length; i++){
+    var k = lista[i].act + '|' + (lista[i].finca || '');
+    if(!mapa[k]){ mapa[k] = { act: lista[i].act, finca: lista[i].finca, grupal: lista[i].grupal, n: 0 }; orden.push(k); }
+    mapa[k].n++;
+  }
+  var out = [];
+  for(var o = 0; o < orden.length; o++){
+    var g = mapa[orden[o]];
+    out.push(esc(g.act || '?') + (g.finca ? ' — ' + esc(g.finca) : '') +
+             (g.grupal ? ' (grupal)' : (g.n > 1 ? ' (' + g.n + ')' : '')));
+  }
+  return out;
+}
+var _mzOK = false;     // el surquero ya dijo 'así está bien' para este envío
+var _mzSeguir = null;  // qué hacer si decide continuar
+// V2_0_1_8: cerrar el modal NO borra la continuacion. _mostrarMezclaRanchos llama a esta
+// al abrir (para no apilar dos modales), y si aqui se limpiara _mzSeguir el boton 'de todos
+// modos' cerraria la ventana sin enviar nada. Quien cancela de verdad es _mezclaRevisar.
+function _cerrarMezcla(){
+  var o = document.getElementById('mzOv');
+  if(o && o.parentNode) o.parentNode.removeChild(o);
+}
+function _mezclaRevisar(){ _cerrarMezcla(); _mzSeguir = null; }
+function _mezclaContinuar(){
+  var f = _mzSeguir; _cerrarMezcla(); _mzOK = true;
+  if(typeof f === 'function') f();
+}
+// Modal PROPIO, no confirm(): con los diálogos del navegador suprimidos, un confirm se
+// contesta 'no' solo y el surquero no vería nada. Mismo criterio que el PIN en V2_0_1_2.
+function _mostrarMezclaRanchos(res, accion){
+  _cerrarMezcla();
+  var ov = document.createElement('div');
+  ov.id = 'mzOv'; ov.className = 'nopr';
+  ov.style.cssText = 'position:fixed;left:0;top:0;right:0;bottom:0;background:rgba(0,0,0,.6);z-index:999997;display:flex;align-items:center;justify-content:center;padding:14px;overflow:auto';
+  var bloques = [];
+  for(var i = 0; i < res.ranchos.length; i++){
+    var r = res.ranchos[i];
+    var esActivo = (_mzSlug(r) === _mzSlug(res.activo));
+    bloques.push(
+      '<div style="border-left:4px solid ' + (esActivo ? '#1a7a4a' : '#c0392b') + ';background:#fafafa;padding:9px 11px;border-radius:6px;margin-bottom:9px">' +
+        '<div style="font-weight:800;font-size:14px;color:' + (esActivo ? '#1a7a4a' : '#c0392b') + '">' +
+          esc(r) + (esActivo ? ' (el rancho seleccionado)' : ' ← NO es el rancho seleccionado') + '</div>' +
+        '<div style="font-size:12px;color:#444;margin-top:4px;line-height:1.6">• ' +
+          _mzResumen(res.mapa[r]).join('<br>• ') + '</div>' +
+      '</div>');
+  }
+  var card = document.createElement('div');
+  card.style.cssText = 'background:#fff;border-radius:12px;max-width:560px;width:100%;box-shadow:0 8px 34px rgba(0,0,0,.45);overflow:hidden';
+  card.innerHTML =
+    '<div style="background:#c0392b;color:#fff;padding:13px 15px;font:800 16px/1.3 Arial,sans-serif">' +
+      '⚠️ Este día tiene DOS ranchos adentro</div>' +
+    '<div style="padding:14px 15px;font:14px/1.55 Arial,sans-serif;color:#222">' +
+      '<div style="margin-bottom:10px">Lo capturado hoy no es todo del mismo rancho. Si sigues, <b>todo se va a cargar a ' + esc(res.activo || '(sin rancho)') + '</b> y las horas del otro quedan en la finca equivocada.</div>' +
+      bloques.join('') +
+      '<div style="font-size:12px;color:#666;margin-top:4px">Para separarlo: cambia el Rancho en Parámetros antes de capturar lo del otro rancho — así cada uno se guarda en su propio día.</div>' +
+    '</div>' +
+    '<div style="padding:0 15px 15px;display:flex;flex-direction:column;gap:8px">' +
+      '<button type="button" id="mzRevisar" style="background:#1a7a4a;color:#fff;border:none;padding:14px;border-radius:8px;font-size:15px;font-weight:800;min-height:48px;cursor:pointer">Revisar antes de ' + esc(accion || 'continuar') + '</button>' +
+      '<button type="button" id="mzSeguir" style="background:#fff;color:#777;border:1px solid #ccc;padding:10px;border-radius:8px;font-size:12px;min-height:40px;cursor:pointer">' + esc(accion || 'Continuar') + ' así de todos modos</button>' +
+    '</div>';
+  ov.appendChild(card);
+  document.body.appendChild(ov);
+  var b1 = document.getElementById('mzRevisar'); if(b1) b1.onclick = _mezclaRevisar;
+  var b2 = document.getElementById('mzSeguir');  if(b2) b2.onclick = _mezclaContinuar;
+}
+// Devuelve true si se puede seguir. Si hay mezcla, abre el modal y corta: el botón
+// 'de todos modos' vuelve a llamar a la misma función con _mzOK puesto.
+function _chequeoMezcla(continuar, accion){
+  if(_mzOK){ _mzOK = false; return true; }
+  if(typeof _readOnlyMode !== 'undefined' && _readOnlyMode) return true;
+  var res;
+  try{ res = _revisarMezclaRanchos(); }catch(e){ console.warn('[V2_0_1_8] no se pudo revisar la mezcla:', e.message); return true; }
+  if(!res || !res.ranchos || res.ranchos.length < 2) return true;
+  _mzSeguir = continuar;
+  _mostrarMezclaRanchos(res, accion);
+  return false;
+}
 function _actsSinCantidad(){
   var out = [];
   var _fincaGlob = "";
@@ -13593,6 +13758,8 @@ function genPDF(){
   if(!_confirmFechaAlineada('Generar la hoja')) return;
   // V1_0_0_15: advertir si alguien con check-in no tiene actividad
   if(!_confirmSinActividad()) return;
+  // V2_0_1_8: ¿el día trae actividades de más de un rancho? Se avisa ANTES de imprimir.
+  if(!_chequeoMezcla(genPDF, 'Generar la hoja')) return;
   // V2_0_1_0: advertir de actividades asignadas sin cantidad. Si acepta, no se imprimen.
   if(!_confirmSinCantidad()) return;
   // Theta: usa collectSaveFields para recoger todos los campos automáticamente
@@ -15842,6 +16009,9 @@ function sendToSheets() {
   if(!_confirmFechaAlineada('Enviar')) return;
   // V1_0_0_15: advertir si alguien con check-in no tiene actividad (antes de cualquier envío)
   if(!_confirmSinActividad()) return;
+  // V2_0_1_8: ¿el día trae actividades de más de un rancho? Se avisa ANTES de enviar — es
+  // el último punto donde se puede evitar que las horas se carguen a la finca equivocada.
+  if(!_chequeoMezcla(sendToSheets, 'Enviar')) return;
   // V2_0_1_0: advertir de actividades asignadas sin cantidad. Si acepta, no se envían.
   if(!_confirmSinCantidad()) return;
   if(!navigator.onLine || window._exceptionsClearedFor === gVal('fecha')){ return _sendToSheetsCore(); }
