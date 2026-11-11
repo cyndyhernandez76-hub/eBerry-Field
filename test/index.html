@@ -35,7 +35,7 @@
 </script>
 <script>
 // V20_21: check versión + ackedVersion para romper loop infinito cuando version.txt≠APP_VERSION
-window.APP_VERSION = 'V3_0_0_0';
+window.APP_VERSION = 'V3_0_0_1';
 (function(){
   // V20_77: AUTO-LIMPIEZA de _ackedVersion envenenado.
   // Bug detectado: surqueros tocaban "Actualizar ahora" pero el SW interceptaba el reload con HTML viejo.
@@ -6431,7 +6431,7 @@ function _enterReadOnly(payload){
     }).filter(function(x){ return x!=null; });
     // V20_57: detectar tipo y mapear qty al campo correcto
     var _qtyT = parseFloat(pg.qtyTotal || pg.qty || 0) || 0;  // backend v5.16+ manda qtyTotal sumado; fallback a qty (v5.15)
-    var _vars = { ini: pg.hEnt||'', fin: pg.hSal||'', finca: pg.finca||'', qtyTotal: _qtyT,
+    var _vars = { paga: pg.paga||'', ini: pg.hEnt||'', fin: pg.hSal||'', finca: pg.finca||'', qtyTotal: _qtyT,
       lonches: (pg.hLIni && pg.hLFin) ? [{ini: pg.hLIni, fin: pg.hLFin}] : [] }; // V1_0_0_57: hidratar lonche grupal (Hora)
     var _grpAct = (gaiIdx>=0) ? GRUPAL_ACTS[gaiIdx] : null;
     var _ct = _grpAct ? grpCalcType(_grpAct) : '';
@@ -13854,6 +13854,7 @@ function genPDF(){
   if(!_confirmSinActividad()) return;
   // V2_0_1_8: ¿el día trae actividades de más de un rancho? Se avisa ANTES de imprimir.
   if(!_chequeoMezcla(genPDF, 'Generar la hoja')) return;
+  if(!_chequeoPagaGrp(genPDF, 'Generar la hoja')) return; // V3_0_0_1
   // V2_0_1_0: advertir de actividades asignadas sin cantidad. Si acepta, no se imprimen.
   if(!_confirmSinCantidad()) return;
   // Theta: usa collectSaveFields para recoger todos los campos automáticamente
@@ -14399,7 +14400,7 @@ function _colMatchesWAct(col, wa){
       // para mostrar suma de acres en header del PDF junto a "Doors p/p".
       var _hColAcr_ = (typeof parseFormulaCell === 'function' && gact_ && gact_.H) ? parseFormulaCell(gact_.H) : null;
       var _isAcresInputCol_ = !!(_hColAcr_ && _hColAcr_.type==='input' && _hColAcr_.label && String(_hColAcr_.label).toLowerCase()==='acres');
-      col_={med:(g_.vars&&g_.vars._med)||null, label:(gact_.en||gact_.es), ct:'puertas', perPersona:{}, totalVal:puertas_, np:np_, precio:gact_.p, unitLabel:'Doors p/p', finca:g_.vars.finca||'', ini:g_.vars.ini||'', fin:g_.vars.fin||'', lIni:(g_.vars.lonches&&g_.vars.lonches[0]?g_.vars.lonches[0].ini:''), lFin:(g_.vars.lonches&&g_.vars.lonches[0]?g_.vars.lonches[0].fin:''), anchoCama:anchoCama_, gact:gact_, grandAcres:grandAcres_, isAcresInput:_isAcresInputCol_};
+      col_={med:(g_.vars&&g_.vars._med)||null, paga:(g_.vars&&g_.vars.paga)||'', label:(gact_.en||gact_.es), ct:'puertas', perPersona:{}, totalVal:puertas_, np:np_, precio:gact_.p, unitLabel:'Doors p/p', finca:g_.vars.finca||'', ini:g_.vars.ini||'', fin:g_.vars.fin||'', lIni:(g_.vars.lonches&&g_.vars.lonches[0]?g_.vars.lonches[0].ini:''), lFin:(g_.vars.lonches&&g_.vars.lonches[0]?g_.vars.lonches[0].fin:''), anchoCama:anchoCama_, gact:gact_, grandAcres:grandAcres_, isAcresInput:_isAcresInputCol_};
       for(var pi_=0;pi_<g_.participantes.length;pi_++) col_.perPersona[g_.participantes[pi_]]=ppx_;
     } else if(ct_==='cajas'){
       var totalC_=parseFloat(g_.vars.totalC)||0;
@@ -14414,13 +14415,13 @@ function _colMatchesWAct(col, wa){
       if(!totalC_) continue;
       var cpx_=totalC_/np_;
       // V20_71 Fase B: usar nombre en inglés en label (PDF es para Cindy en EN)
-      col_={med:(g_.vars&&g_.vars._med)||null, label:(gact_.en||gact_.es), ct:'cajas', perPersona:{}, totalVal:totalC_, np:np_, precio:precioC_, unitLabel:'Boxes p/p', finca:g_.vars.finca||'', ini:g_.vars.ini||'', fin:g_.vars.fin||'', lIni:(g_.vars.lonches&&g_.vars.lonches[0]?g_.vars.lonches[0].ini:''), lFin:(g_.vars.lonches&&g_.vars.lonches[0]?g_.vars.lonches[0].fin:'')};
+      col_={med:(g_.vars&&g_.vars._med)||null, paga:(g_.vars&&g_.vars.paga)||'', label:(gact_.en||gact_.es), ct:'cajas', perPersona:{}, totalVal:totalC_, np:np_, precio:precioC_, unitLabel:'Boxes p/p', finca:g_.vars.finca||'', ini:g_.vars.ini||'', fin:g_.vars.fin||'', lIni:(g_.vars.lonches&&g_.vars.lonches[0]?g_.vars.lonches[0].ini:''), lFin:(g_.vars.lonches&&g_.vars.lonches[0]?g_.vars.lonches[0].fin:'')};
       for(var pi2_=0;pi2_<g_.participantes.length;pi2_++) col_.perPersona[g_.participantes[pi2_]]=cpx_;
     } else if(ct_==='hora'){
       var hGrp_=nh(g_.vars.ini||'',g_.vars.fin||'',g_.vars.lonches);
       if(!hGrp_) continue;
       // V20_71 Fase B: usar nombre en inglés en label (PDF es para Cindy en EN)
-      col_={med:(g_.vars&&g_.vars._med)||null, label:(gact_.en||gact_.es), ct:'hora', perPersona:{}, totalVal:hGrp_, np:np_, precio:gact_.p, unitLabel:'Hours', finca:'', ini:g_.vars.ini||'', fin:g_.vars.fin||'', lIni:(g_.vars.lonches&&g_.vars.lonches[0]?g_.vars.lonches[0].ini:''), lFin:(g_.vars.lonches&&g_.vars.lonches[0]?g_.vars.lonches[0].fin:'')};
+      col_={med:(g_.vars&&g_.vars._med)||null, paga:(g_.vars&&g_.vars.paga)||'', label:(gact_.en||gact_.es), ct:'hora', perPersona:{}, totalVal:hGrp_, np:np_, precio:gact_.p, unitLabel:'Hours', finca:'', ini:g_.vars.ini||'', fin:g_.vars.fin||'', lIni:(g_.vars.lonches&&g_.vars.lonches[0]?g_.vars.lonches[0].ini:''), lFin:(g_.vars.lonches&&g_.vars.lonches[0]?g_.vars.lonches[0].fin:'')};
       for(var pi3_=0;pi3_<g_.participantes.length;pi3_++) col_.perPersona[g_.participantes[pi3_]]=hGrp_;
     } else {
       var totalP_=parseFloat(g_.vars.totalP)||0;
@@ -14438,7 +14439,7 @@ function _colMatchesWAct(col, wa){
       var qpx_=totalP_/np_;
       var _prcG_=parseFloat(g_.vars.precioC)||parseFloat(gact_.p)||0; // V1_0_0_10: precio del grupal (precioC) si existe
       // V20_71 Fase B: usar nombre en inglés en label (PDF es para Cindy en EN)
-      col_={med:(g_.vars&&g_.vars._med)||null, label:(gact_.en||gact_.es), ct:'generic', perPersona:{}, totalVal:totalP_, np:np_, precio:_prcG_, unitLabel:(gact_.payType||'Pieces')+' p/p', finca:g_.vars.finca||'', ini:g_.vars.ini||'', fin:g_.vars.fin||'', lIni:(g_.vars.lonches&&g_.vars.lonches[0]?g_.vars.lonches[0].ini:''), lFin:(g_.vars.lonches&&g_.vars.lonches[0]?g_.vars.lonches[0].fin:'')};
+      col_={med:(g_.vars&&g_.vars._med)||null, paga:(g_.vars&&g_.vars.paga)||'', label:(gact_.en||gact_.es), ct:'generic', perPersona:{}, totalVal:totalP_, np:np_, precio:_prcG_, unitLabel:(gact_.payType||'Pieces')+' p/p', finca:g_.vars.finca||'', ini:g_.vars.ini||'', fin:g_.vars.fin||'', lIni:(g_.vars.lonches&&g_.vars.lonches[0]?g_.vars.lonches[0].ini:''), lFin:(g_.vars.lonches&&g_.vars.lonches[0]?g_.vars.lonches[0].fin:'')};
       for(var pi4_=0;pi4_<g_.participantes.length;pi4_++) col_.perPersona[g_.participantes[pi4_]]=qpx_;
     }
     if(col_) grpPuertasCols.push(col_);
@@ -14455,12 +14456,14 @@ function _colMatchesWAct(col, wa){
   var grpParents=[];
   for(var gpi_=0;gpi_<grpPuertasCols.length;gpi_++){
     var gcx_=grpPuertasCols[gpi_];
-    var _pKey=gcx_.label+'|'+(gcx_.finca||'');
+    // V3_0_0_1: + quien paga. Dos grupales iguales pagadas por distinto bolsillo no son la
+    // misma columna, igual que ya pasaba con la finca.
+    var _pKey=gcx_.label+'|'+(gcx_.finca||'')+'|'+(gcx_.paga||'');
     var _parent=null;
     for(var gpj_=0;gpj_<grpParents.length;gpj_++){ if(grpParents[gpj_].key===_pKey){ _parent=grpParents[gpj_]; break; } }
     if(!_parent){
       // V20_144 FIX A: parent acumula grandAcres y flag isAcresInput (col H = label'Acres')
-      _parent={key:_pKey,label:gcx_.label,finca:gcx_.finca||'',unitLabel:gcx_.unitLabel,precio:gcx_.precio,ct:gcx_.ct,subs:[],grandAcres:0,isAcresInput:false};
+      _parent={key:_pKey,label:gcx_.label,finca:gcx_.finca||'',paga:gcx_.paga||'',unitLabel:gcx_.unitLabel,precio:gcx_.precio,ct:gcx_.ct,subs:[],grandAcres:0,isAcresInput:false};
       grpParents.push(_parent);
     }
     _parent.subs.push(gcx_);
@@ -15038,7 +15041,10 @@ function _colMatchesWAct(col, wa){
     trPrice+='<td'+_gcsp+' style="text-align:center;color:#c0392b;font-weight:700;border:1px solid #000">$'+_gp2.precio.toFixed(2)+'</td>';
     // V3_0_0_0: las grupales aun no tienen el switch (vive en el modal de individuales),
     // asi que la celda va VACIA — mejor en blanco que inventarle un bolsillo. PENDIENTE.
-    trPaga+='<td'+_gcsp+' style="border:1px solid #000"></td>';
+    // V3_0_0_1: ya no va en blanco — la grupal tiene su propia marca.
+    var _pgG = (_gp2 && _gp2.paga) || '';
+    var _pgGCol = (_pgG==='1') ? '#1a2b8c' : ((_pgG==='2') ? '#2e7d4f' : '#999');
+    trPaga+='<td'+_gcsp+' style="text-align:center;border:1px solid #000;color:'+_pgGCol+';font-weight:700;font-size:11px">'+esc(_pgG)+'</td>';
     trLabor+='<td'+_gcsp+' style="text-align:center;border:1px solid #000;color:#3a7fd4;font-size:9px">'+(_gp2.finca||'')+'</td>';
     // V2_0_0_22: cada sub grupal ya trae su `med` (se copió de g.vars._med al armar la columna).
     try {
@@ -16159,6 +16165,7 @@ function sendToSheets() {
   // V2_0_1_8: ¿el día trae actividades de más de un rancho? Se avisa ANTES de enviar — es
   // el último punto donde se puede evitar que las horas se carguen a la finca equivocada.
   if(!_chequeoMezcla(sendToSheets, 'Enviar')) return;
+  if(!_chequeoPagaGrp(sendToSheets, 'Enviar')) return; // V3_0_0_1
   // V2_0_1_0: advertir de actividades asignadas sin cantidad. Si acepta, no se envían.
   if(!_confirmSinCantidad()) return;
   if(!navigator.onLine || window._exceptionsClearedFor === gVal('fecha')){ return _sendToSheetsCore(); }
@@ -16490,6 +16497,7 @@ function _sendToSheetsCore() {
         hSal:       g.vars.fin || '',
         // V1_0_0_39 FIX: el lonche grupal ahora vive en g.vars.lonches (por actividad), ya NO en Parámetros.
         // Mandar el horario del lonche del grupal para que llegue a FIELD_DROP (L.Inicio/L.Fin). Fallback global.
+        paga:       (g.vars && g.vars.paga) || '', // V3_0_0_1: FIELD_DROP col V, igual que las individuales
         hLIni:      (g.vars.lonches && g.vars.lonches[0] && g.vars.lonches[0].ini) ? g.vars.lonches[0].ini : (gVal('lIni') || ''),
         hLFin:      (g.vars.lonches && g.vars.lonches[0] && g.vars.lonches[0].fin) ? g.vars.lonches[0].fin : (gVal('lFin') || ''),
         isGrupal:   true,               // V20_56: flag para FieldSync v5.15 col 20 Is_grupal
@@ -16869,6 +16877,7 @@ function addGrpAct(gai){
   // V20_114: si la grupal es de tipo cajas, sembrar precioC desde el MASTER (ya no editable por surquero).
   var _initVars = {inputs: {}}; // V20_177: motor data-driven inputs object
   _initVars.lonches = [{ini:'12:00',fin:'12:30'}]; // V1_0_0_6: lonche por actividad grupal (default 12:00-12:30, editable, varios)
+  _initVars.paga = ''; // V3_0_0_1: sin marcar, igual que las individuales (ningun default)
   if(_gact && (typeof grpCalcType === 'function') && grpCalcType(_gact) === 'cajas'){
     _initVars.precioC = parseFloat(_gact.p) || 0;
   }
@@ -16966,6 +16975,86 @@ function _fincaGrpHtml(gi, val){
 }
 
 // V1_0_0_6: helper + funciones del lonche por actividad GRUPAL (mismo patrón que el individual)
+// V3_0_0_1: el mismo switch de las individuales, en la tarjeta del grupal.
+// '1' = la paga la empresa (eBerry) · '2' = la paga el ranchero · '' = sin marcar.
+// V3_0_0_1: grupales sin marcar. A diferencia de las individuales esto NO bloquea: la grupal
+// no tiene un momento de "confirmar", asi que el unico punto posible es al generar/enviar, y
+// ahi dejar al surquero sin poder entregar la nomina del dia seria peor que la falta de marca
+// (misma regla que el aviso de mezcla de ranchos, V2_0_1_8).
+var _pgOK = false, _pgSeguir = null;
+function _grpsSinPaga(){
+  var out = [];
+  for(var i=0;i<grpActs.length;i++){
+    var g = grpActs[i]; if(!g) continue;
+    if(!(g.vars && g.vars.paga)) out.push(g.esName || (g.vars && g.vars._actEs) || ('Grupal #'+(i+1)));
+  }
+  return out;
+}
+function _chequeoPagaGrp(seguir, queHace){
+  if(_readOnlyMode) return true;
+  if(_pgOK) return true;
+  var faltan = _grpsSinPaga();
+  if(!faltan.length) return true;
+  _pgSeguir = seguir;
+  var ov = gEl('pgOv');
+  if(!ov){
+    ov = document.createElement('div');
+    ov.id = 'pgOv'; ov.className = 'ov'; ov.style.display = 'flex';
+    document.body.appendChild(ov);
+  }
+  var li = '';
+  for(var k=0;k<faltan.length;k++) li += '<li style="margin-bottom:4px">' + esc(faltan[k]) + '</li>';
+  ov.innerHTML = '<div class="md" style="max-width:430px">'
+    + '<div style="font-family:\'Bebas Neue\',sans-serif;font-size:21px;color:#c25e00;letter-spacing:.6px;margin-bottom:6px">'
+    +   '\u26a0\ufe0f Falta decir qui\u00e9n paga</div>'
+    + '<div style="font-size:13.5px;color:#333;margin-bottom:10px">Estas actividades <b>grupales</b> no tienen marcado si las paga '
+    +   '<b>eBerry</b> o <b>' + esc(_pagaNombreRancho()) + '</b>:</div>'
+    + '<ul style="font-size:13.5px;color:#333;margin:0 0 12px;padding-left:20px">' + li + '</ul>'
+    + '<button onclick="_pagaRevisar()" style="width:100%;background:#1a2b8c;color:#fff;border:none;padding:13px;'
+    +   'border-radius:8px;font-weight:700;font-size:15px;cursor:pointer;min-height:48px">Revisar y marcarlas</button>'
+    + '<button onclick="_pagaContinuar()" style="width:100%;margin-top:8px;background:none;color:#888;border:none;'
+    +   'padding:9px;font-size:12.5px;cursor:pointer;text-decoration:underline">' + esc(queHace) + ' as\u00ed de todos modos</button>'
+    + '</div>';
+  ov.style.display = 'flex';
+  return false;
+}
+function _pagaRevisar(){ _pgSeguir = null; var ov = gEl('pgOv'); if(ov) ov.style.display='none'; try{ go(4); }catch(e){} }
+function _pagaContinuar(){
+  var f = _pgSeguir; _pgSeguir = null; _pgOK = true;
+  var ov = gEl('pgOv'); if(ov) ov.style.display='none';
+  if(typeof f === 'function') f();
+}
+function _grpPagaHtml(gi, g){
+  if(!g.vars) g.vars={};
+  var v = g.vars.paga || '';
+  var base = 'flex:1;padding:11px 8px;border:1.5px solid;border-radius:9px;font-family:inherit;'
+           + 'font-size:13px;font-weight:700;cursor:pointer;min-height:46px;text-align:center;';
+  var onE = 'border-color:#1a2b8c;background:#1a2b8c;color:#fff';
+  var onR = 'border-color:#2e7d4f;background:#2e7d4f;color:#fff';
+  var off = 'border-color:#dee2e6;background:#fff;color:#666';
+  var bd  = (v==='1') ? '1.5px solid #1a2b8c' : ((v==='2') ? '1.5px solid #2e7d4f' : '1.5px dashed #dee2e6');
+  var bg  = (v==='1') ? '#eaecf7' : ((v==='2') ? '#e8f5ee' : 'transparent');
+  var h = '<div style="margin:8px 0 4px;padding:10px 10px 12px;border:'+bd+';background:'+bg+';border-radius:10px">'
+    + '<div style="font-size:11.5px;font-weight:700;color:#666;margin-bottom:7px;display:flex;gap:6px">'
+    +   '<span>\uD83D\uDCB5 \u00bfQui\u00e9n paga esta actividad?</span>'
+    +   '<span style="margin-left:auto;font-family:\'Bebas Neue\',sans-serif;font-size:16px;letter-spacing:2px;'
+    +     'color:'+((v==='1')?'#1a2b8c':((v==='2')?'#2e7d4f':'#999'))+'">'+(v || '\u2014')+'</span>'
+    + '</div>'
+    + '<div style="display:flex;gap:8px">'
+    +   '<button type="button" onclick="setGrpPaga('+gi+',\'1\')" aria-pressed="'+(v==='1')+'" style="'+base+(v==='1'?onE:off)+'">eBerry'
+    +     '<small style="display:block;font-weight:400;font-size:10px;opacity:.8">la empresa</small></button>'
+    +   '<button type="button" onclick="setGrpPaga('+gi+',\'2\')" aria-pressed="'+(v==='2')+'" style="'+base+(v==='2'?onR:off)+'">'+esc(_pagaNombreRancho())
+    +     '<small style="display:block;font-weight:400;font-size:10px;opacity:.8">el ranchero</small></button>'
+    + '</div></div>';
+  return h;
+}
+function setGrpPaga(gi, v){
+  var g = grpActs[gi]; if(!g) return;
+  if(!g.vars) g.vars = {};
+  g.vars.paga = v;
+  renderGrpActs();
+  autoSave();
+}
 function _grpLoncheHtml(gi, g){
   if(!g.vars) g.vars={};
   if(!g.vars.lonches) g.vars.lonches=[{ini:'12:00',fin:'12:30'}];
@@ -17282,7 +17371,7 @@ function renderGrpActs(){
     var resHtml = '<div class="gr2 gaR" id="gaR'+gi+'" style="display:none"></div>';
 
     card.innerHTML = headHtml
-      + '<div class="acc-act-body gaBody">' + removeBtn + varsHtml + _grpLoncheHtml(gi, g)
+      + '<div class="acc-act-body gaBody">' + removeBtn + varsHtml + _grpPagaHtml(gi, g) + _grpLoncheHtml(gi, g)
         + _medGrpHtml(gi, g, act) // V2_0_0_21: Medida/Detalle de la grupal
         + partHtml + resHtml + '</div>';
     list.appendChild(card);
