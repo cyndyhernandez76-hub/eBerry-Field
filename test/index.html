@@ -35,7 +35,7 @@
 </script>
 <script>
 // V20_21: check versión + ackedVersion para romper loop infinito cuando version.txt≠APP_VERSION
-window.APP_VERSION = 'V2_0_1_8';
+window.APP_VERSION = 'V3_0_0_0';
 (function(){
   // V20_77: AUTO-LIMPIEZA de _ackedVersion envenenado.
   // Bug detectado: surqueros tocaban "Actualizar ahora" pero el SW interceptaba el reload con HTML viejo.
@@ -1255,6 +1255,22 @@ html.login-locked{overflow:hidden!important;height:100%!important}
     <div id="assignFincaWrap" style="margin-bottom:12px">
       <label style="display:block;font-size:12px;font-weight:600;color:#666;margin-bottom:4px">Finca</label>
       <div id="assignFincaSlot"></div>
+    </div>
+
+    <!-- V3_0_0_0: ¿quien paga? Arranca SIN nada elegido a proposito. -->
+    <div id="pagaWrap" style="border:1.5px dashed #dee2e6;border-radius:10px;padding:11px 11px 13px;margin-bottom:12px">
+      <div style="font-size:12.5px;font-weight:700;color:#666;margin-bottom:8px;display:flex;gap:6px">
+        <span>\uD83D\uDCB5 \u00bfQui\u00e9n paga esta actividad?</span>
+        <span id="pagaCod" style="margin-left:auto;font-family:'Bebas Neue',sans-serif;font-size:17px;letter-spacing:2px">\u2014</span>
+      </div>
+      <div style="display:flex;gap:9px">
+        <button type="button" id="pagaEmpresaBtn" aria-pressed="false" onclick="setAssignPaga(PAGA_EMPRESA)">eBerry<small style="display:block;font-weight:400;font-size:10.5px;opacity:.8;margin-top:1px">la empresa</small></button>
+        <button type="button" id="pagaRancheroBtn" aria-pressed="false" onclick="setAssignPaga(PAGA_RANCHERO)">\u2014<small style="display:block;font-weight:400;font-size:10.5px;opacity:.8;margin-top:1px">el ranchero</small></button>
+      </div>
+      <div id="pagaAviso" style="display:none;border:2px solid #c0392b;background:#fdecea;border-radius:10px;padding:12px;margin-top:11px">
+        <div style="font-family:'Bebas Neue',sans-serif;font-size:17px;color:#c0392b;letter-spacing:.5px;margin-bottom:4px">\u26a0\ufe0f Falta decir qui\u00e9n paga</div>
+        <div id="pagaAvisoTxt" style="font-size:13px;color:#333"></div>
+      </div>
     </div>
 
     <!-- V20_186: turno principal (T1) + contenedor de turnos extras + botón "+ Agregar turno" -->
@@ -6349,6 +6365,7 @@ function _enterReadOnly(payload){
         // V20_181: _variable usa _variableForAct (preservado de pa.variable si backend v5.36+ lo manda,
         // o lookup tolerante en ACTS/ALL_ACTS para clientes con v5.35-). Garantiza valor correcto
         // independiente de la versión del backend.
+        paga: pa.paga || '', // V3_0_0_0: la marca vuelve de FIELD_DROP col V (vacia si el backend aun no la manda)
         _frozen: true, _actEs: pa.actEs || '', _variable: _variableForAct,
         _unitPrice: price, _payType: _payTypeForAct
       });
@@ -10149,6 +10166,7 @@ function _serializeState(){
                         : (sa.ai != null && ACTS[sa.ai] && ACTS[sa.ai].p != null) ? (parseFloat(ACTS[sa.ai].p)||0)
                         : (sact ? (parseFloat(sact.p)||0) : 0);
       actSv._variable  = sa._variable || (sact ? (sact.variable||'') : '');
+      actSv.paga = sa.paga || ''; // V3_0_0_0: quien paga sobrevive al autoSave/recarga
       if(sa.surcos&&sa.surcos.length) actSv.surcos=sa.surcos;
       if(sa.anchoCama) actSv.anchoCama=sa.anchoCama;
       if(sa.indPies) actSv.indPies=sa.indPies;
@@ -11473,6 +11491,10 @@ function editActivityGroup(groupKey){
     // V1_0_0_7: pre-cargar el/los lonche(s) de la actividad editada en el modal (sino aparecería el default)
     // V1_0_0_14 FIX: usar Array.isArray (no .length) para RESPETAR el lonche quitado ([] = sin lonche).
     // Antes [].length===0 caía al default → el lonche que el surquero QUITÓ reaparecía al editar.
+    // V3_0_0_0: traer la marca de quien paga para poder corregirla. Si la actividad es
+    // vieja y no tiene, queda vacia y el guard la va a pedir al guardar.
+    _assignPaga = (firstAct && firstAct.paga) ? String(firstAct.paga) : '';
+    try { renderAssignPaga(); } catch(e){}
     _assignLonches = (firstAct && Array.isArray(firstAct.lonches)) ? JSON.parse(JSON.stringify(firstAct.lonches)) : [{ini:'12:00',fin:'12:30'}];
     // V2_0_0_29: precargar la Medida/Detalle que la actividad YA tenia. Sin esto el modal de
     // edicion abria en blanco y, al guardar, se perdia lo que hubiera — el surquero corregia un
@@ -11675,6 +11697,7 @@ function _saveEditedActivityGroup(){
       // viene precargado con lo anterior), y si ahi no hay nada se conserva lo que la actividad
       // ya traia. Antes este objeto no la copiaba y se perdia en cada edicion.
       _med: _medEditado ? JSON.parse(JSON.stringify(_medEditado)) : ((preserved && preserved._med) ? JSON.parse(JSON.stringify(preserved._med)) : null),
+      paga: _assignPaga || ((preserved && preserved.paga) ? preserved.paga : ''), // V3_0_0_0
       lonches: JSON.parse(JSON.stringify(_assignLonches)) // V1_0_0_14 FIX: guardar lonche(s) editado(s) en la act FINAL — antes solo iba al tempActs de validación y se perdía → editar reseteaba al default
     };
     var newIdx = wTarget.acts.length;
@@ -11749,6 +11772,55 @@ function renderAssignExtraShifts(){
 
 // V1_0_0_6: lonche(s) del modal "Asignar a varios" (mismo patrón que turnos extras)
 var _assignLonches = [];
+// ── V3_0_0_0: ¿QUIEN PAGA la actividad? ──────────────────────────────────────
+// '1' = la paga la EMPRESA (eBerry) · '2' = la paga el RANCHERO · '' = sin marcar.
+// Sin marcar NO es un estado invalido: las actividades capturadas antes de esta version
+// quedan asi a proposito y los dias viejos se abren igual que siempre. Lo que no se
+// permite es GUARDAR una actividad nueva sin marca (ver confirmAssignMany).
+var PAGA_EMPRESA = '1';
+var PAGA_RANCHERO = '2';
+var _assignPaga = '';
+// El boton del ranchero lleva el nombre del rancho donde esta parado el surquero, no la
+// palabra "ranchero": en el campo se decide mirando el rancho, no el concepto.
+function _pagaNombreRancho(){
+  var r = '';
+  try { r = (gVal('rancho') || '').trim(); } catch(e){ r = ''; }
+  return r || 'el ranchero';
+}
+function _pagaEtiqueta(cod){
+  if(cod === PAGA_EMPRESA) return 'eBerry';
+  if(cod === PAGA_RANCHERO) return _pagaNombreRancho();
+  return '';
+}
+// Pinta los dos botones segun lo elegido. Se llama al abrir el modal, al elegir, y al
+// cambiar de actividad (porque el nombre del rancho puede cambiar entre ranchos).
+function renderAssignPaga(){
+  var be = gEl('pagaEmpresaBtn'), br = gEl('pagaRancheroBtn'), wrap = gEl('pagaWrap');
+  if(!be || !br) return;
+  br.innerHTML = esc(_pagaNombreRancho()) + '<small>el ranchero</small>';
+  var on = 'border-color:#1a2b8c;background:#1a2b8c;color:#fff';
+  var onR = 'border-color:#2e7d4f;background:#2e7d4f;color:#fff';
+  var off = 'border-color:#dee2e6;background:#fff;color:#666';
+  be.setAttribute('style', _pagaBtnBase + (_assignPaga === PAGA_EMPRESA ? on : off));
+  br.setAttribute('style', _pagaBtnBase + (_assignPaga === PAGA_RANCHERO ? onR : off));
+  be.setAttribute('aria-pressed', _assignPaga === PAGA_EMPRESA ? 'true' : 'false');
+  br.setAttribute('aria-pressed', _assignPaga === PAGA_RANCHERO ? 'true' : 'false');
+  if(wrap){
+    var b = '1.5px dashed #dee2e6', bg = 'transparent';
+    if(_assignPaga === PAGA_EMPRESA){ b = '1.5px solid #1a2b8c'; bg = '#eaecf7'; }
+    else if(_assignPaga === PAGA_RANCHERO){ b = '1.5px solid #2e7d4f'; bg = '#e8f5ee'; }
+    wrap.style.border = b; wrap.style.background = bg;
+  }
+  var cod = gEl('pagaCod');
+  if(cod) cod.textContent = _assignPaga || '\u2014';
+}
+var _pagaBtnBase = 'flex:1;padding:12px 8px;border:1.5px solid;border-radius:9px;'
+  + 'font-family:inherit;font-size:14px;font-weight:700;cursor:pointer;min-height:48px;text-align:center;';
+function setAssignPaga(v){
+  _assignPaga = v;
+  var av = gEl('pagaAviso'); if(av) av.style.display = 'none';
+  renderAssignPaga();
+}
 function addAssignLonche(){ _assignLonches.push({ini:'', fin:''}); renderAssignLonches(); }
 function removeAssignLonche(idx){ if(idx<0||idx>=_assignLonches.length) return; _assignLonches.splice(idx,1); renderAssignLonches(); }
 function _onAssignLoncheChange(idx, field, value){ if(!_assignLonches[idx]) return; _assignLonches[idx][field]=value; }
@@ -11781,6 +11853,11 @@ function openAssignManyModal(){
   // V1_0_0_6: reset lonche(s) al abrir el modal — default 12:00-12:30
   _assignLonches = [{ini:'12:00', fin:'12:30'}];
   try { renderAssignLonches(); } catch(e){}
+  // V3_0_0_0: sin marcar. NO se preselecciona ninguno — decision de Serafin: "no hay
+  // [mas comun] porque a inicio de temporada todo va el ranchero", asi que un default
+  // seria correcto unas semanas y silenciosamente erroneo el resto.
+  _assignPaga = '';
+  try { renderAssignPaga(); } catch(e){}
   // Llenar dropdown actividades del MASTER (ACTS ya filtrado por rancho activo)
   var sel = gEl('assignActSel');
   if(sel){
@@ -12447,6 +12524,22 @@ function confirmAssignMany(){
   if(!_assignSelectedIds.length){ toast && toast('⚠️ Selecciona al menos un trabajador'); return; }
   var act = ACTS[_assignCurrentActIdx];
   if(!act){ toast && toast('⚠️ Actividad no encontrada'); return; }
+  // V3_0_0_0: sin saber quien paga no se puede facturar despues, asi que aqui se para.
+  // El aviso va DENTRO del modal (no es un confirm() del navegador: ver los 75 dialogos
+  // nativos que el navegador puede suprimir sin dar senal) y repite el nombre del rancho
+  // para que no haya que adivinar cual es "el ranchero".
+  if(!_assignPaga){
+    var _pa = gEl('pagaAviso'), _pt = gEl('pagaAvisoTxt'), _pw = gEl('pagaWrap');
+    if(_pt) _pt.innerHTML = 'Antes de guardar <b>' + esc(act.es || '') + '</b>, dime si la paga '
+      + '<b>eBerry</b> o la paga <b>' + esc(_pagaNombreRancho()) + '</b>.';
+    if(_pa) _pa.style.display = '';
+    if(_pw){
+      _pw.style.border = '1.5px solid #c0392b';
+      _pw.style.background = '#fdecea';
+      try { _pw.scrollIntoView({block:'nearest'}); } catch(e){}
+    }
+    return;
+  }
   var ini = gVal('assignIni') || '';
   var fin = gVal('assignFin') || '';
   // V1_0_0_74: si la actividad NO requiere reloj (VarMil/VarExt/Extra), permitir horario en blanco.
@@ -12578,6 +12671,7 @@ function confirmAssignMany(){
       // turnos lo comparten llevan el MISMO mid, y por eso el día no los suma dos veces.
       // null = la actividad no tiene esos campos, o el surquero los dejó vacíos.
       _med: _medGuardar ? JSON.parse(JSON.stringify(_medGuardar)) : null,
+      paga: _assignPaga, // V3_0_0_0: '1' empresa · '2' ranchero (nunca vacio aqui: lo exige el guard de arriba)
       lonches: JSON.parse(JSON.stringify(_assignLonches)) // V1_0_0_22 FIX: guardar el lonche en el newAct FINAL. Antes el lonche solo iba al tempAct de validación de translape (que se descarta con pop) → al ASIGNAR a varios el lonche se PERDÍA (act sin el campo). Mismo bug que V14 arregló en EDITAR, pero faltaba en ASIGNAR.
     };
     var newAi = w.acts.length;
@@ -13918,13 +14012,20 @@ function buildPDFWindow(vals, wks, ep, hp, cp, ausArr, grpActsArr){
       // (a_._unitPrice = act.p al asignar) → mismo task = mismo precio = 1 columna (sin regresión);
       // devuelve '' si el precio es 0/ausente → NO parte columnas Hours con rate 0.
       var _kPrice = _waPriceKey(a_);
-      colKey = actName + '|' + _fincaKey + '|' + (actPayT||'') + '|' + _kPrice;
+      // V2_0_1_9: + LONCHE. Mecca 2026-11-06: 29 personas con lonche de 60 min (12 h) y el
+      // surquero con 30 min (12.50 h) compartian columna; el TOTAL sumaba las dos y las filas
+      // L.Inicio/L.Fin salian en blanco (parche V2_0_0_17) porque no habia un valor unico que
+      // poner. Separando la columna el valor vuelve a ser unico y la hoja explica la diferencia.
+      var _kLon = _waLonKey(a_);
+      // V3_0_0_0: + QUIEN PAGA
+      var _kPaga = _waPagaKey(a_);
+      colKey = actName + '|' + _fincaKey + '|' + (actPayT||'') + '|' + _kPrice + '|' + _kLon + '|' + _kPaga;
       var found=false;
       for(var k=0;k<actCols.length;k++){ if(actCols[k].colKey===colKey){found=true;break;} }
       if(!found) actCols.push({
         ai:ai, colKey:colKey, wid:null,
         label:actLabel, tipo:actTipo, payType:actPayT, hr:actHr,
-        esName:actName, finca:_fincaKey, keyPrice:_kPrice
+        esName:actName, finca:_fincaKey, keyPrice:_kPrice, keyLon:_kLon, keyPaga:_kPaga
       });
     }
   }
@@ -13949,6 +14050,26 @@ function buildPDFWindow(vals, wks, ep, hp, cp, ausArr, grpActsArr){
     var n = parseFloat(p);
     if(isNaN(n) || n <= 0) return '';
     return (Math.round(n*100)/100).toFixed(2);
+  }
+  // V3_0_0_0: clave de QUIEN PAGA. Dos actividades iguales pagadas por distinto bolsillo no
+  // son la misma linea de factura, asi que tampoco deben ser la misma columna. Vacio ('') = sin
+  // marcar: los dias capturados antes de esta version siguen saliendo en UNA columna como hoy.
+  function _waPagaKey(wa){
+    return (wa && wa.paga) ? String(wa.paga) : '';
+  }
+  // V2_0_1_9: clave del LONCHE de un worker-act. Dos actividades con lonches distintos NO son
+  // comparables en horas, igual que no lo son con precios distintos (V1_0_0_44) — asi que el
+  // lonche entra al colKey y deja de mezclarse en la misma columna. La forma de la clave es la
+  // misma que ya usaba el detector de mezcla de la V2_0_0_17 (lista completa, no solo el primero:
+  // alguien puede traer comida Y descanso). Sin lonche devuelve '' → no parte nada.
+  function _waLonKey(wa){
+    if(!wa || !wa.lonches || !wa.lonches.length) return '';
+    var out = [];
+    for(var _li=0; _li<wa.lonches.length; _li++){
+      var _l = wa.lonches[_li];
+      out.push(((_l && _l.ini) || '') + '-' + ((_l && _l.fin) || ''));
+    }
+    return out.join(',');
   }
   // V20_152: comparación columna-vs-worker-act incluyendo payType para separar Hours/Pieces homónimas.
   // V2_0_0_22: la medida (col Q) y el detalle (col R) de una columna individual, para el turno
@@ -14006,6 +14127,13 @@ function _colMatchesWAct(col, wa){
     // descarta (cae a payType) y las columnas Hours rate 0 (keyPrice '') no filtran por precio.
     var _waP = _waPriceKey(wa);
     if(col.keyPrice && _waP && _waP !== col.keyPrice) return false;
+    // V2_0_1_9: el lonche tambien discrimina. A diferencia del precio aqui se comparan SIEMPRE
+    // los dos lados (incluido vacio contra vacio): "sin lonche" y "con lonche de 30 min" son
+    // justamente los dos casos que no deben caer en la misma columna.
+    if((col.keyLon||'') !== _waLonKey(wa)) return false;
+    // V3_0_0_0: y quien paga. Igual que el lonche, se comparan los dos lados incluido el
+    // vacio: una actividad sin marcar NO se mezcla con una marcada.
+    if((col.keyPaga||'') !== _waPagaKey(wa)) return false;
     // V1_0_0_9 FIX: payType es el discriminador ESTABLE (Pieces/Hours/Daywork). El campo 'tipo'
     // tiene 2 vocabularios ('pieza' de _derivarTipoActividad en vivo vs 'Ficha' del MASTER al
     // serializar/cargar); compararlo estricto rompía el match para Pieces (columna 'Ficha' vs
@@ -14490,6 +14618,13 @@ function _colMatchesWAct(col, wa){
     +'<td style="border:1px solid #000"></td>'
     +'<td style="border:1px solid #000"></td>'
     +'<td style="text-align:right;padding:2px 4px;border:1px solid #000;border-right:2px solid #407623;color:#000;font-weight:600">Pago Unit.</td>';
+  // V3_0_0_0: fila "Paga" — 1 = la empresa (eBerry) · 2 = el ranchero · vacio = sin marcar.
+  // Va con las otras de arriba (Labor, Entrada, Salida, L.Inicio, L.Fin) porque describe
+  // la columna entera, no a cada persona.
+  var trPaga='<tr style="font-size:9px;background:#f5f8ff">'
+    +'<td style="border:1px solid #000"></td>'
+    +'<td style="border:1px solid #000"></td>'
+    +'<td style="text-align:right;padding:2px 4px;border:1px solid #000;border-right:2px solid #407623;color:#000;font-weight:600">Paga</td>';
   var trLabor='<tr style="font-size:9px;background:#f5f8ff">'
     +'<td style="border:1px solid #000"></td>'
     +'<td style="border:1px solid #000"></td>'
@@ -14730,6 +14865,10 @@ function _colMatchesWAct(col, wa){
       trTotal+='<td'+_csp+' style="text-align:center;border:1px solid #000;border-top:3px solid #1a2b8c;color:#1a2b8c;font-weight:700">'+totLbl+'</td>';
     }
     trPrice+='<td'+_csp+' style="text-align:center;border:1px solid #000;color:#c0392b;font-weight:700">'+unitPr+'</td>';
+    // V3_0_0_0: el numero, con el color del bolsillo (azul = empresa, verde = ranchero)
+    var _pgC4 = col4.keyPaga || '';
+    var _pgCol4 = (_pgC4==='1') ? '#1a2b8c' : ((_pgC4==='2') ? '#2e7d4f' : '#999');
+    trPaga+='<td'+_csp+' style="text-align:center;border:1px solid #000;color:'+_pgCol4+';font-weight:700;font-size:11px">'+esc(_pgC4)+'</td>';
     trLabor+='<td'+_csp+' style="text-align:center;border:1px solid #000;color:#3a7fd4;font-size:9px">'+laborLbl+'</td>';
     // V2_0_0_22: Medida/Detalle por sub-columna; los turnos que comparten el dato van fusionados.
     try {
@@ -14809,14 +14948,19 @@ function _colMatchesWAct(col, wa){
     // V1_0_0_68: L.Inicio/L.Fin de la actividad (colspan=N — el lonche es por actividad, compartido entre sub-shifts)
     // V2_0_0_17: con lonches distintos dentro de la columna no se imprime ninguno — cada quien
     // lleva el suyo en sus horas, y un valor unico aqui seria falso para parte de la cuadrilla.
+    // V2_0_1_9: con el lonche dentro del colKey una columna YA NO PUEDE traer lonches
+    // mezclados, asi que el valor vuelve a imprimirse siempre. El guard de la V2_0_0_17 se
+    // queda como red: si algun dia se dispara es que una columna se formo mal, y entonces
+    // avisa en consola en vez de callarse (no dejar que perdone en silencio).
+    if(_lonMix4) console.warn('[V2_0_1_9] columna con lonches mezclados pese al colKey:', col4 && col4.colKey);
     var _lonITxt = (_lonMix4 || !_lonI4) ? '' : to12h(_lonI4);
     var _lonFTxt = (_lonMix4 || !_lonF4) ? '' : to12h(_lonF4);
     trLunchIni+='<td'+_csp+' style="text-align:center;border:1px solid #000;color:#8a6d1a">'+_lonITxt+'</td>';
     trLunchFin+='<td'+_csp+' style="text-align:center;border:1px solid #000;color:#8a6d1a">'+_lonFTxt+'</td>';
   }
-  if(cp&&cp.length&&cajasT){ trTotal+='<td style="border-top:3px solid #1a2b8c"></td>'; trPrice+='<td></td>'; trLabor+='<td></td>'; trEntry+='<td></td>'; trExit+='<td></td>'; trLunchIni+='<td></td>'; trLunchFin+='<td></td>'; trMed+='<td></td>'; trDet+='<td></td>'; }
-  if(ep&&ep.length&&estA&&estAn){ trTotal+='<td style="border-top:3px solid #1a2b8c"></td>'; trPrice+='<td></td>'; trLabor+='<td></td>'; trEntry+='<td></td>'; trExit+='<td></td>'; trLunchIni+='<td></td>'; trLunchFin+='<td></td>'; trMed+='<td></td>'; trDet+='<td></td>'; }
-  if(hp&&hp.length&&hilA&&hilAn){ trTotal+='<td style="border-top:3px solid #1a2b8c"></td>'; trPrice+='<td></td>'; trLabor+='<td></td>'; trEntry+='<td></td>'; trExit+='<td></td>'; trLunchIni+='<td></td>'; trLunchFin+='<td></td>'; trMed+='<td></td>'; trDet+='<td></td>'; }
+  if(cp&&cp.length&&cajasT){ trTotal+='<td style="border-top:3px solid #1a2b8c"></td>'; trPrice+='<td></td>'; trPaga+='<td></td>'; trLabor+='<td></td>'; trEntry+='<td></td>'; trExit+='<td></td>'; trLunchIni+='<td></td>'; trLunchFin+='<td></td>'; trMed+='<td></td>'; trDet+='<td></td>'; }
+  if(ep&&ep.length&&estA&&estAn){ trTotal+='<td style="border-top:3px solid #1a2b8c"></td>'; trPrice+='<td></td>'; trPaga+='<td></td>'; trLabor+='<td></td>'; trEntry+='<td></td>'; trExit+='<td></td>'; trLunchIni+='<td></td>'; trLunchFin+='<td></td>'; trMed+='<td></td>'; trDet+='<td></td>'; }
+  if(hp&&hp.length&&hilA&&hilAn){ trTotal+='<td style="border-top:3px solid #1a2b8c"></td>'; trPrice+='<td></td>'; trPaga+='<td></td>'; trLabor+='<td></td>'; trEntry+='<td></td>'; trExit+='<td></td>'; trLunchIni+='<td></td>'; trLunchFin+='<td></td>'; trMed+='<td></td>'; trDet+='<td></td>'; }
   // V20_06: Meta rows de grupales con subdivisión por grpParents (label+finca).
   // V20_30: TOTAL ahora emite N celdas separadas (una por sub), igual que V20_26 hizo con individuales.
   // Pago/Labor mantienen colspan (valor compartido). Entrada/Salida ya eran N celdas.
@@ -14892,6 +15036,9 @@ function _colMatchesWAct(col, wa){
     }
     // Pago Unit y Labor siguen con colspan (valor único compartido entre subs)
     trPrice+='<td'+_gcsp+' style="text-align:center;color:#c0392b;font-weight:700;border:1px solid #000">$'+_gp2.precio.toFixed(2)+'</td>';
+    // V3_0_0_0: las grupales aun no tienen el switch (vive en el modal de individuales),
+    // asi que la celda va VACIA — mejor en blanco que inventarle un bolsillo. PENDIENTE.
+    trPaga+='<td'+_gcsp+' style="border:1px solid #000"></td>';
     trLabor+='<td'+_gcsp+' style="text-align:center;border:1px solid #000;color:#3a7fd4;font-size:9px">'+(_gp2.finca||'')+'</td>';
     // V2_0_0_22: cada sub grupal ya trae su `med` (se copió de g.vars._med al armar la columna).
     try {
@@ -14945,7 +15092,7 @@ function _colMatchesWAct(col, wa){
       trLunchFin+='<td style="text-align:center;border:1px solid #000;color:#8a6d1a">'+(_sub.lFin?to12h(_sub.lFin):'')+'</td>';
     }
   }
-  trTotal+='</tr>'; trPrice+='</tr>'; trLabor+='</tr>'; trEntry+='</tr>'; trExit+='</tr>'; trLunchIni+='</tr>'; trLunchFin+='</tr>';
+  trTotal+='</tr>'; trPrice+='</tr>'; trPaga+='</tr>'; trLabor+='</tr>'; trEntry+='</tr>'; trExit+='</tr>'; trLunchIni+='</tr>'; trLunchFin+='</tr>';
   trMed+='</tr>'; trDet+='</tr>';
   // V2_0_0_22: el rótulo se resuelve ahora, que ya se sabe qué midió cada columna.
   // Una sola etiqueta en toda la hoja → esa palabra ("Acres"). Varias → el genérico, y la unidad
@@ -14954,7 +15101,7 @@ function _colMatchesWAct(col, wa){
   trMed = trMed.replace('{{LBL_MED}}', esc(_kMed.length === 1 ? _kMed[0] : 'Medida'));
   trDet = trDet.replace('{{LBL_DET}}', esc(_kDet.length === 1 ? _kDet[0] : 'Detalle'));
   // Si nadie capturó nada, los renglones no se imprimen: la hoja queda igual que siempre.
-  var metaRows=trTotal+trPrice+trLabor+(_hayMed?trMed:'')+(_hayDet?trDet:'')+trEntry+trExit+trLunchIni+trLunchFin;
+  var metaRows=trTotal+trPrice+trPaga+trLabor+(_hayMed?trMed:'')+(_hayDet?trDet:'')+trEntry+trExit+trLunchIni+trLunchFin;
 
   // ── Upsilon2: ordenar workers por actividad principal (columna más a la izq donde tienen datos)
   // Esto agrupa visualmente: Bus Driver juntos, Equip Op juntos, Harvest juntos, etc.
@@ -16198,6 +16345,7 @@ function _sendToSheetsCore() {
         // Fallback al global por retrocompat. Multi-turno: se manda el 1er lonche (las horas ya descuentan todos).
         hLIni:      (a.lonches && a.lonches[0] && a.lonches[0].ini) ? a.lonches[0].ini : (gVal('lIni') || ''),
         hLFin:      (a.lonches && a.lonches[0] && a.lonches[0].fin) ? a.lonches[0].fin : (gVal('lFin') || ''),
+        paga:       a.paga || '', // V3_0_0_0: '1' empresa · '2' ranchero · '' sin marcar (dias viejos). FIELD_DROP col V
         localRowId: a.localRowId, // V20_127: ID único para UPSERT en FIELD_DROP (col 21 backend v5.30)
         // V2_0_0_10: backend v5.52 escribe una fila por turno (localRowId + '_t1', '_t2'...).
         // Un backend anterior ignora este campo y escribe la fila de siempre — sin romperse.
@@ -19436,9 +19584,14 @@ function buildInvoiceAutoData(){
         if(!_shifts.length) _shifts.push({ini:'',fin:''});
         for(var sis=0; sis<_shifts.length; sis++){
           var sh=_shifts[sis];
-          var keyH=finca+'|'+esName+'|'+sh.ini+'|'+sh.fin;
+          // V2_0_1_9: + lonche. Aqui el total son HORAS (`nh(... , a.lonches)` mas abajo), asi que
+          // dos personas con el mismo horario pero distinto lonche aportan numeros distintos y no
+          // pueden ir en el mismo renglon. La rama de piezas/daywork NO lleva lonche a proposito:
+          // ahi la cantidad no depende de el y separar solo duplicaria renglones iguales.
+          var _lonKeyInv = _waLonKey(a);
+          var keyH=finca+'|'+esName+'|'+sh.ini+'|'+sh.fin+'|'+_lonKeyInv;
           if(!actMap[keyH]){
-            actMap[keyH]={product:finca, equipment:esName, personas:0, totalField:0, isHr:true, ini:sh.ini, fin:sh.fin, _workerIds:{}};
+            actMap[keyH]={product:finca, equipment:esName, personas:0, totalField:0, isHr:true, ini:sh.ini, fin:sh.fin, _lon:_lonKeyInv, _workerIds:{}};
           }
           if(!actMap[keyH]._workerIds[w.id]){
             actMap[keyH]._workerIds[w.id]=true;
